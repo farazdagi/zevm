@@ -2,22 +2,6 @@
 
 A custom test runner for Zig that provides Rust-like test output with colored status indicators, detailed test results, and filtering capabilities.
 
-## Quick Start
-
-```bash
-# Run all tests
-zig build test
-
-# Run tests in a specific file
-zig build test -Dfilter=primitives.address
-
-# Run a specific test in `lib.zig`
-zig build test -Dfilter="lib::basic"
-
-# Show timing + filter
-zig build test -Dfilter=address -Dtiming
-```
-
 ## Features
 
 - **Rust-like output format**: Clean, readable test output similar to Rust's test framework
@@ -155,7 +139,6 @@ Options can be set in three ways (in order of precedence):
 | `-Dfilter=<value>` | `--filter=<value>` or positional | `TEST_FILTER` | Filter tests by substring |
 | `-Dtiming` | `--timing` | `TEST_TIMING=true` | Show timing for each test |
 | `-Dfail-first` | `--fail-first` | `TEST_FAIL_FIRST=true` | Stop on first test failure |
-| - | - | `TEST_SHOW_IGNORED=true` | Include ignored tests (env only) |
 
 **View all options:**
 ```bash
@@ -173,7 +156,7 @@ Tests are displayed as: `module.path::test_name`
 Examples:
 - `lib::test_0` - unnamed test in lib module
 - `lib::basic add functionality` - named test in lib module
-- `primitives.address::Address.fromHexString runtime` - test in nested module
+- `primitives.address::Address.fromHexString` - test in nested module
 
 **Filtering Examples:**
 

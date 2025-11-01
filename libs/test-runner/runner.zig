@@ -403,7 +403,6 @@ const Config = struct {
     filter: ?[]const u8,
     fail_first: bool,
     show_timing: bool,
-    show_ignored: bool,
     test_name: ?[]const u8,
     owns_filter: bool, // Track if we need to free filter
     owns_test_name: bool,
@@ -472,7 +471,6 @@ const Config = struct {
             .filter = filter,
             .fail_first = fail_first orelse false,
             .show_timing = show_timing orelse false,
-            .show_ignored = readEnvBool(allocator, "TEST_SHOW_IGNORED", false),
             .test_name = test_name,
             .owns_filter = owns_filter,
             .owns_test_name = owns_test_name,
