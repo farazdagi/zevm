@@ -37,13 +37,8 @@ zig build test -Dfilter=address -Dtiming
 
 ## Installation
 
-### As a Local Library (Recommended for monorepos)
 
-If you're using this test runner within a monorepo or as part of your project structure:
-
-1. Copy the `test-runner` directory to your project's `libs/` folder (or any location you prefer)
-
-2. In your project's `build.zig`, add the test runner module:
+In your project's `build.zig`, add the test runner module:
 
 ```zig
 const std = @import("std");
@@ -93,48 +88,11 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-### As a Zig Package (to be extracted later on)
-
-If you want to use this as a proper Zig package dependency, you can add it to your `build.zig.zon`:
-
-```zig
-.dependencies = .{
-    .test_runner = .{
-        .url = "https://your-repo-url/archive/tag.tar.gz",
-        .hash = "...", // Run `zig build` to auto-populate
-    },
-},
-```
-
-Then in your `build.zig`:
-
-```zig
-const test_runner_dep = b.dependency("test_runner", .{
-    .target = target,
-    .optimize = optimize,
-});
-
-const tests = b.addTest(.{
-    .root_module = your_module,
-    .test_runner = .{
-        .path = test_runner_dep.path("runner.zig"),
-        .mode = .simple,
-    },
-});
-
-const run_tests = b.addRunArtifact(tests);
-
-// Forward command-line arguments to test runner
-if (b.args) |args| {
-    run_tests.addArgs(args);
-}
-```
-
 ## Usage
 
 ### Running Tests
 
-**Recommended: Using `-D` flags (no `--` separator needed):**
+**Recommended: Using `-D` flags:**
 
 ```bash
 # Run all tests
@@ -162,7 +120,7 @@ zig build test -Dfail-first
 zig build test -Dfilter=primitives -Dtiming -Dfail-first
 ```
 
-**Alternative: Using `--` separator (also works):**
+**Alternative: Using `--` separator (more similar to `cargo test`):**
 
 ```bash
 # Filter tests (three equivalent ways)
@@ -245,126 +203,6 @@ zig build test -Dfilter=add
 
 **Note:** The filter is a substring match applied to the full formatted test path, just like `cargo test` in Rust.
 
-### Writing Tests
-
-Tests are written using standard Zig test syntax:
-
-```zig
-test "my test name" {
-    try std.testing.expect(true);
-}
-
-test "this test will be skipped" {
-    return error.SkipZigTest;
-}
-```
-
-## Example Output
-
-### Successful Run
-
-```
-running 4 tests (lib)
-test lib::test_0 ... ok
-test lib::basic add functionality ... ok
-test primitives.address::Address.fromHexString runtime ... ok
-test primitives.address::address() is comptime-only and works as expected ... ok
-
-test result: ok. 4 passed; 0 failed
-```
-
-**Note:** The test suite name is automatically detected from the test function names and shown in parentheses. If a test suite has 0 tests, no output is produced for that suite.
-
-### Multiple Test Suites
-
-When running `zig build test` with multiple test suites (e.g., separate library and executable tests), only test suites with tests produce output:
-
-```
-running 4 tests (lib)
-test lib::test_0 ... ok
-test lib::basic add functionality ... ok
-test primitives.address::Address.fromHexString runtime ... ok
-test primitives.address::address() is comptime-only and works as expected ... ok
-
-test result: ok. 4 passed; 0 failed
-```
-
-In this example, the executable test suite has no tests and produces no output. Only the library test suite (with 4 tests) displays results.
-
-### With Timing Enabled
-
-```
-$ zig build test -Dtiming
-
-running 4 tests (lib)
-test lib::test_0 ... ok (0.00ms)
-test lib::basic add functionality ... ok (0.02ms)
-test primitives.address::Address.fromHexString runtime ... ok (0.01ms)
-test primitives.address::address() is comptime-only and works as expected ... ok (0.00ms)
-
-test result: ok. 4 passed; 0 failed
-```
-
-### Filtered Runs
-
-**Filter by module (all tests in a file):**
-
-```
-$ zig build test -Dfilter=primitives.address
-
-running 2 tests (lib)
-test primitives.address::Address.fromHexString runtime ... ok
-test primitives.address::address() is comptime-only and works as expected ... ok
-
-test result: ok. 2 passed; 0 failed; 2 filtered out
-```
-
-**Filter by test name prefix in a module:**
-
-```
-$ zig build test -Dfilter="primitives.address::Address"
-
-running 1 test (lib)
-test primitives.address::Address.fromHexString runtime ... ok
-
-test result: ok. 1 passed; 0 failed; 3 filtered out
-```
-
-**Filter by test name across all modules:**
-
-```
-$ zig build test -Dfilter="::basic"
-
-running 1 test (lib)
-test lib::basic add functionality ... ok
-
-test result: ok. 1 passed; 0 failed; 3 filtered out
-```
-
-### Failed Run (Example)
-
-```
-running 5 tests
-test lib::basic add functionality ... ok
-test lib::failing test ... FAILED
-test primitives::another slow test ... ok
-test primitives::memory leak test ... LEAK
-
-failures:
-
----- lib::failing test ----
-TestUnexpectedResult
-
----- primitives::memory leak test ----
-Memory leak detected
-
-
-slowest 2 tests (exceeding 1s threshold):
-  1234.56ms  primitives::another slow test
-  1001.23ms  lib::failing test
-
-test result: FAILED. 2 passed; 2 failed; 0 ignored
-```
 
 ## Comparison with Default Zig Test Runner
 
@@ -379,15 +217,3 @@ The default Zig test runner provides minimal output. This custom runner adds:
 - **Flexible configuration**: `-D` flags, `--` arguments, or environment variables
 - **Detailed statistics**: Shows passed, failed, ignored, leaked, and filtered counts
 
-## License
-
-This test runner can be used freely in any Zig project.
-
-## Contributing
-
-This test runner is designed to be simple and focused. If you want to add features:
-
-1. Keep the Rust-like output format
-2. Maintain backward compatibility with environment variable configuration
-3. Ensure colors work on all major terminals
-4. Keep dependencies minimal (standard library only)
