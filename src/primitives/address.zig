@@ -241,6 +241,35 @@ pub const Address = struct {
     pub fn eql(self: Address, other: Address) bool {
         return std.mem.eql(u8, &self.bytes, &other.bytes);
     }
+
+    /// Format the address for use with `std.fmt`
+    ///
+    /// Implements the standard Zig formatting protocol, allowing Address to be
+    /// used with `std.fmt.format`, `std.fmt.bufPrint`, `std.fmt.allocPrint` etc.
+    ///
+    /// The address is formatted as a checksummed hex string (EIP-55).
+    ///
+    /// Example:
+    /// ```zig
+    /// const addr = try Address.fromHex("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+    ///
+    /// // With bufPrint
+    /// var buf: [100]u8 = undefined;
+    /// const s = try std.fmt.bufPrint(&buf, "Address: {f}", .{addr});
+    ///
+    /// // With allocPrint
+    /// const s2 = try std.fmt.allocPrint(allocator, "{f}", .{addr});
+    /// defer allocator.free(s2);
+    /// ```
+    pub fn format(
+        self: Address,
+        writer: anytype,
+    ) @TypeOf(writer.*).Error!void {
+        var buf: [42]u8 = undefined;
+        // We know the buffer is large enough, so this can't fail with BufferTooSmall
+        const hex = self.toChecksummedHex(&buf, null) catch unreachable;
+        try writer.writeAll(hex);
+    }
 };
 
 // ============================================================================
@@ -486,19 +515,11 @@ test "Address.fromChecksummedHex - EIP-55 validation" {
     }
 }
 
-// Test vectors from EIP-1191 specification for opted-in chains
-// Source: https://eips.ethereum.org/EIPS/eip-1191 (now at https://github.com/ethereum/ercs)
-//
-// NOTE: EIP-1191 was officially adopted only by RSK Mainnet (30) and RSK Testnet (31).
-// This test verifies our implementation matches the official EIP-1191 test vectors
-// for these opted-in chains.
 test "Address.toChecksummedHex - EIP-1191 opted-in chains (30, 31)" {
     // Test vectors from EIP-1191 specification for opted-in chains
     // Source: https://eips.ethereum.org/EIPS/eip-1191
     //
     // NOTE: EIP-1191 was officially adopted only by RSK Mainnet (30) and RSK Testnet (31).
-    // This test verifies our implementation matches the official EIP-1191 test vectors
-    // for these opted-in chains.
 
     const test_cases = [_]struct {
         input: []const u8,
@@ -559,9 +580,6 @@ test "Address.toChecksummedHex - EIP-1191 opted-in chains (30, 31)" {
     }
 }
 
-// Test EIP-1191 behavior for non-opted-in chains
-// For chains that didn't officially adopt EIP-1191, our implementation still
-// applies EIP-1191 when chain_id is provided (for flexibility with L2s).
 test "Address.toChecksummedHex - EIP-1191 for non-opted-in chains" {
     // Test EIP-1191 behavior for non-opted-in chains
     // For chains that didn't officially adopt EIP-1191, our implementation still
@@ -573,7 +591,6 @@ test "Address.toChecksummedHex - EIP-1191 for non-opted-in chains" {
         expected: []const u8,
     }{
         // Chain ID 1 (Ethereum Mainnet - not opted in to EIP-1191)
-        // Hash input: "10x27b1fdb04752bbc536007a920d24acb045561c26"
         .{
             .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
             .chain_id = 1,
@@ -586,7 +603,6 @@ test "Address.toChecksummedHex - EIP-1191 for non-opted-in chains" {
             .expected = "0x27b1fdb04752bbc536007a920d24acb045561c26",
         },
         // Chain ID 10 (Optimism - not opted in)
-        // Hash input: "100x27b1fdb04752bbc536007a920d24acb045561c26"
         .{
             .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
             .chain_id = 10,
@@ -602,12 +618,9 @@ test "Address.toChecksummedHex - EIP-1191 for non-opted-in chains" {
     }
 }
 
-// Test demonstrating the difference between EIP-55 and EIP-1191
-// Source: Comparing our implementation behavior
 test "Address.toChecksummedHex - EIP-55 vs EIP-1191 difference" {
     // The same address produces different checksums depending on whether
     // chain_id is provided (EIP-1191) or not (EIP-55)
-    const addr = try Address.fromHex("0x27b1fdb04752bbc536007a920d24acb045561c26");
 
     const test_cases = [_]struct {
         input: []const u8,
@@ -654,7 +667,6 @@ test "Address.toChecksummedHex - EIP-55 vs EIP-1191 difference" {
     try expect(!std.mem.eql(u8, chain1, chain30));
 }
 
-// Test checksum validation for EIP-1191
 test "Address.fromChecksummedHex - EIP-1191 validation" {
     // Test checksum validation for EIP-1191, with all chains considered as opted-in.
     const test_cases = [_]struct {
@@ -775,5 +787,64 @@ test "Address round-trip: checksummed hex -> Address -> checksummed hex" {
         var buf: [42]u8 = undefined;
         const result = try addr.toChecksummedHex(&buf, null);
         try expectEqualStrings(original, result);
+    }
+}
+
+test "Address.format" {
+    const test_cases = [_]struct {
+        input: []const u8,
+        expected: []const u8,
+    }{
+        // EIP-55 test vectors
+        .{
+            .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            .expected = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+        },
+        .{
+            .input = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+            .expected = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+        },
+        .{
+            .input = "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+            .expected = "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+        },
+        // All lowercase
+        .{
+            .input = "0xde709f2102306220921060314715629080e2fb77",
+            .expected = "0xde709f2102306220921060314715629080e2fb77",
+        },
+        // All uppercase
+        .{
+            .input = "0x52908400098527886E0F7030069857D2E4169EE7",
+            .expected = "0x52908400098527886E0F7030069857D2E4169EE7",
+        },
+    };
+
+    for (test_cases) |tc| {
+        const addr = try Address.fromHex(tc.input);
+
+        // Test with bufPrint
+        var buf: [100]u8 = undefined;
+        const result = try std.fmt.bufPrint(&buf, "{f}", .{addr});
+        try expectEqualStrings(tc.expected, result);
+
+        // Test with bufPrint in a longer format string
+        const result2 = try std.fmt.bufPrint(&buf, "Address: {f}", .{addr});
+        var buf2: [100]u8 = undefined;
+        const expected_with_prefix = try std.fmt.bufPrint(&buf2, "Address: {s}", .{tc.expected});
+        try expectEqualStrings(expected_with_prefix, result2);
+
+        // Test with allocPrint
+        const allocator = std.testing.allocator;
+        const result3 = try std.fmt.allocPrint(allocator, "{f}", .{addr});
+        defer allocator.free(result3);
+        try expectEqualStrings(tc.expected, result3);
+
+        // Test with multiple addresses in format string
+        const result4 = try std.fmt.allocPrint(allocator, "{f} and {f}", .{ addr, addr });
+        defer allocator.free(result4);
+        const expected_double = try std.fmt.allocPrint(allocator, "{s} and {s}", .{ tc.expected, tc.expected });
+        defer allocator.free(expected_double);
+        try expectEqualStrings(expected_double, result4);
     }
 }
