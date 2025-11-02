@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// Errors that can occur when working with Ethereum addresses
+/// Ethereum address errors
 pub const AddressError = error{
     InvalidHexStringLength,
     InvalidHexDigit,
@@ -28,28 +28,26 @@ pub const Address = struct {
         return Address{ .bytes = bytes };
     }
 
-    /// Parse an address from a hex string
+    /// Parse an address from a hex string (run-time)
     ///
     /// Accepts hex strings with or without "0x" prefix.
     /// The hex string must represent exactly 20 bytes (40 hex digits).
     ///
-    /// This function does NOT validate EIP-55 checksums. Use `fromChecksummedHex`
-    /// if you want to validate the checksum.
+    /// This function does NOT validate EIP-55 checksums.
+    /// Use `fromChecksummedHex` if you want to validate the checksum.
     ///
     /// Examples:
     /// - "0xd8da6bf26964af9d7eed9e03e53415d37aa96045" (with prefix)
     /// - "d8da6bf26964af9d7eed9e03e53415d37aa96045" (without prefix)
     /// - "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045" (uppercase)
     pub fn fromHex(hex: []const u8) AddressError!Address {
-        const start: usize = if (hex.len >= 2 and hex[0] == '0' and (hex[1] == 'x' or hex[1] == 'X')) 2 else 0;
-        const hex_digits = hex[start..];
-
-        if (hex_digits.len != 40)
+        if (hex.len != 40 and hex.len != 42)
             return AddressError.InvalidHexStringLength;
 
+        const hex_digits = if (hex.len == 42) hex[2..] else hex[0..];
+
         var bytes: [20]u8 = undefined;
-        var i: usize = 0;
-        while (i < 20) : (i += 1) {
+        for (0..20) |i| {
             const hi = std.fmt.charToDigit(hex_digits[i * 2], 16) catch
                 return AddressError.InvalidHexDigit;
             const lo = std.fmt.charToDigit(hex_digits[i * 2 + 1], 16) catch
@@ -60,24 +58,48 @@ pub const Address = struct {
         return Address{ .bytes = bytes };
     }
 
+    /// Parse an address from a hex string (compile-time)
+    ///
+    /// This function can only be used at compile time. It's useful for defining
+    /// constant addresses (e.g., precompile addresses, system contracts).
+    ///
+    /// Example:
+    /// ```zig
+    /// const zero_address = address("0x0000000000000000000000000000000000000000");
+    /// ```
+    pub fn fromHexComptime(comptime hex: []const u8) Address {
+        @setEvalBranchQuota(2000);
+
+        if (hex.len != 40 and hex.len != 42)
+            @compileError("Address hex string must be 40 hex digits (20 bytes), possibly with '0x' prefix");
+
+        const hex_digits = if (hex.len == 42) hex[2..] else hex[0..];
+
+        var bytes: [20]u8 = undefined;
+        inline for (0..20) |i| {
+            const hi = std.fmt.charToDigit(hex_digits[i * 2], 16) catch unreachable;
+            const lo = std.fmt.charToDigit(hex_digits[i * 2 + 1], 16) catch unreachable;
+            bytes[i] = (hi << 4) | lo;
+        }
+
+        return Address{ .bytes = bytes };
+    }
+
     /// Parse an address from a checksummed hex string and validate the checksum
     ///
-    /// Validates EIP-55 checksums (or EIP-1191 if chain_id is provided).
-    /// Returns error if the checksum is invalid.
+    /// Validates EIP-55 checksums (or EIP-1191 if `chain_id` is provided).
     ///
-    /// For backward compatibility with pre-EIP-55 addresses, all-lowercase and
-    /// all-uppercase addresses are accepted without checksum validation, as they
-    /// cannot have a checksum encoded (checksums require mixed case).
+    /// For backward compatibility with pre-EIP-55 addresses, all-lowercase and all-uppercase
+    /// addresses are accepted without checksum validation (checksum encoding requires mixed case).
     ///
     /// Parameters:
     /// - hex: The checksummed hex string (with or without "0x" prefix)
     /// - chain_id: Optional chain ID for EIP-1191 validation. If null, uses EIP-55.
     pub fn fromChecksummedHex(hex: []const u8, chain_id: ?u64) AddressError!Address {
-        const start: usize = if (hex.len >= 2 and hex[0] == '0' and (hex[1] == 'x' or hex[1] == 'X')) 2 else 0;
-        const hex_digits = hex[start..];
-
-        if (hex_digits.len != 40)
+        if (hex.len != 40 and hex.len != 42)
             return AddressError.InvalidHexStringLength;
+
+        const hex_digits = if (hex.len == 42) hex[2..] else hex[0..];
 
         // Check if all lowercase or all uppercase (no checksum to validate)
         var has_lowercase = false;
@@ -85,6 +107,7 @@ pub const Address = struct {
         for (hex_digits) |c| {
             if (c >= 'a' and c <= 'f') has_lowercase = true;
             if (c >= 'A' and c <= 'F') has_uppercase = true;
+            if (has_lowercase and has_uppercase) break;
         }
 
         // All lowercase or all uppercase = no checksum, just parse
@@ -92,11 +115,8 @@ pub const Address = struct {
             return fromHex(hex);
         }
 
-        // Mixed case = checksum must be valid
-        // First, parse the address
+        // Mixed case, parse and validate
         const addr = try fromHex(hex);
-
-        // Validate the checksum
         if (!addr.validateChecksum(hex_digits, chain_id)) {
             return AddressError.InvalidChecksumFormat;
         }
@@ -105,19 +125,14 @@ pub const Address = struct {
     }
 
     /// Format address as a hex string (lowercase, with "0x" prefix)
-    ///
-    /// The output buffer must be at least 42 bytes (2 for "0x" + 40 for hex digits).
-    ///
-    /// Returns a slice of the buffer containing the formatted address.
     pub fn toHex(self: Address, buf: []u8) ![]const u8 {
+        // The output buffer must be at least 42 bytes (2 for "0x" + 40 for hex digits).
         if (buf.len < 42) return error.BufferTooSmall;
 
         buf[0] = '0';
         buf[1] = 'x';
 
-        var i: usize = 0;
-        while (i < 20) : (i += 1) {
-            const byte = self.bytes[i];
+        for (self.bytes, 0..) |byte, i| {
             buf[2 + i * 2] = std.fmt.digitToChar(byte >> 4, .lower);
             buf[2 + i * 2 + 1] = std.fmt.digitToChar(byte & 0x0F, .lower);
         }
@@ -137,12 +152,11 @@ pub const Address = struct {
     ///
     /// **Note**: The official ERC-1191 specification states that the chain-specific
     /// checksum should only be used for networks that have "opted in" (specifically
-    /// RSK Mainnet=30 and RSK Testnet=31). However, this implementation follows a
-    /// simpler API: if chain_id is provided, EIP-1191 is used for ANY chain ID;
-    /// if null, EIP-55 is used. This provides maximum flexibility for L2s and other
-    /// chains that may want chain-specific checksums.
+    /// RSK Mainnet=30 and RSK Testnet=31). However, in this implementation if `chain_id`
+    /// is provided, EIP-1191 is used for ANY chain ID, otherwise EIP-55 is used.
     ///
-    /// The output buffer must be at least 42 bytes (2 for "0x" + 40 for hex digits).
+    /// This provides the maximum flexibility: end-users can choose whether to use
+    /// chain-specific encoding or not.
     ///
     /// Parameters:
     /// - buf: Output buffer for the formatted address
@@ -154,6 +168,7 @@ pub const Address = struct {
     /// - EIP-55: https://eips.ethereum.org/EIPS/eip-55
     /// - EIP-1191/ERC-1191: https://eips.ethereum.org/EIPS/eip-1191
     pub fn toChecksummedHex(self: Address, buf: []u8, chain_id: ?u64) ![]const u8 {
+        // The output buffer must be at least 42 bytes (2 for "0x" + 40 for hex digits).
         if (buf.len < 42) return error.BufferTooSmall;
 
         buf[0] = '0';
@@ -161,9 +176,7 @@ pub const Address = struct {
 
         // First, convert address to lowercase hex (without 0x prefix)
         var addr_hex: [40]u8 = undefined;
-        var i: usize = 0;
-        while (i < 20) : (i += 1) {
-            const byte = self.bytes[i];
+        for (self.bytes, 0..) |byte, i| {
             addr_hex[i * 2] = std.fmt.digitToChar(byte >> 4, .lower);
             addr_hex[i * 2 + 1] = std.fmt.digitToChar(byte & 0x0F, .lower);
         }
@@ -193,19 +206,15 @@ pub const Address = struct {
         var hash: [32]u8 = undefined;
         std.crypto.hash.sha3.Keccak256.hash(hash_input[0..hash_input_len], &hash, .{});
 
-        // Apply checksum by capitalizing characters based on hash bits
-        i = 0;
-        while (i < 40) : (i += 1) {
-            const c = addr_hex[i];
-            // Only apply checksum to alphabetic characters (a-f)
+        // Capitalize characters based on hash bits
+        for (addr_hex, 0..) |c, i| {
             if (c >= 'a' and c <= 'f') {
-                // Get the corresponding nibble from the hash
                 const hash_byte = hash[i / 2];
                 const nibble = if (i % 2 == 0) hash_byte >> 4 else hash_byte & 0x0F;
 
                 // If the nibble's high bit is set (≥8), capitalize the character
                 if (nibble >= 8) {
-                    buf[2 + i] = c - 32; // Convert to uppercase
+                    buf[2 + i] = c - 32; // uppercase
                 } else {
                     buf[2 + i] = c;
                 }
@@ -219,19 +228,16 @@ pub const Address = struct {
     }
 
     /// Validate the checksum of a hex string against this address
-    ///
-    /// The hex string should be 40 characters (without "0x" prefix).
-    /// Returns true if the checksum is valid, false otherwise.
     fn validateChecksum(self: Address, hex_digits: []const u8, chain_id: ?u64) bool {
+        // The hex string should be 40 characters (without "0x" prefix).
         if (hex_digits.len != 40) return false;
 
         // Generate the expected checksummed version
         var expected_buf: [42]u8 = undefined;
+        // Expected will be "0x" + 40 chars
         const expected = self.toChecksummedHex(&expected_buf, chain_id) catch return false;
 
-        // Compare (skip "0x" prefix)
-        var i: usize = 0;
-        while (i < 40) : (i += 1) {
+        for (0..40) |i| {
             if (hex_digits[i] != expected[2 + i]) return false;
         }
 
@@ -243,34 +249,6 @@ pub const Address = struct {
         return std.mem.eql(u8, &self.bytes, &other.bytes);
     }
 };
-
-/// Compile-time address creation from hex string
-///
-/// This function can only be used at compile time. It's useful for defining
-/// constant addresses (e.g., precompile addresses, system contracts).
-///
-/// Example:
-/// ```zig
-/// const zero_address = address("0x0000000000000000000000000000000000000000");
-/// ```
-pub fn address(comptime hex: []const u8) Address {
-    @setEvalBranchQuota(2000);
-    const start = if (hex.len >= 2 and hex[0] == '0' and (hex[1] == 'x' or hex[1] == 'X')) 2 else 0;
-    const hex_digits = hex[start..];
-
-    if (hex_digits.len != 40)
-        @compileError("Address hex string must be 40 hex digits (20 bytes)");
-
-    var bytes: [20]u8 = undefined;
-    comptime var i: usize = 0;
-    inline while (i < 20) : (i += 1) {
-        const hi = std.fmt.charToDigit(hex_digits[i * 2], 16) catch unreachable;
-        const lo = std.fmt.charToDigit(hex_digits[i * 2 + 1], 16) catch unreachable;
-        bytes[i] = (hi << 4) | lo;
-    }
-
-    return Address{ .bytes = bytes };
-}
 
 // ============================================================================
 // Tests
@@ -590,16 +568,16 @@ test "Address.fromChecksummedHex - EIP-1191 validation" {
 
 test "address() - compile-time address creation" {
     // Valid usage at comptime
-    const addr = address("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
+    const addr = Address.fromHexComptime("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
     try expect(addr.bytes[0] == 0xd8);
     try expect(addr.bytes[19] == 0x45);
 
     // Without 0x prefix
-    const addr2 = address("5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+    const addr2 = Address.fromHexComptime("5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
     try expect(addr2.bytes[0] == 0x5a);
 
     // All zeros
-    const zero = address("0x0000000000000000000000000000000000000000");
+    const zero = Address.fromHexComptime("0x0000000000000000000000000000000000000000");
     try expect(zero.bytes[0] == 0x00);
     try expect(zero.bytes[19] == 0x00);
 }
