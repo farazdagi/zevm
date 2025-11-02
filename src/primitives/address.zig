@@ -1,4 +1,8 @@
 const std = @import("std");
+const bytes_mod = @import("bytes.zig");
+const bytes = @import("bytes.zig");
+const B160 = bytes_mod.B160;
+const FixedBytesError = bytes_mod.FixedBytesError;
 
 /// Ethereum address errors
 pub const AddressError = error{
@@ -21,11 +25,21 @@ pub const AddressError = error{
 /// - EIP-55: https://eips.ethereum.org/EIPS/eip-55
 /// - EIP-1191: https://eips.ethereum.org/EIPS/eip-1191
 pub const Address = struct {
-    bytes: [20]u8,
+    inner: B160,
 
     /// Initialize an address from a 20-byte array
-    pub fn init(bytes: [20]u8) Address {
-        return Address{ .bytes = bytes };
+    pub fn init(b: [20]u8) Address {
+        return Address{ .inner = B160.init(b) };
+    }
+
+    /// Create a zero-filled address
+    pub fn zero() Address {
+        return Address{ .inner = B160.zero() };
+    }
+
+    /// Check if the address is all zeros
+    pub fn isZero(self: Address) bool {
+        return self.inner.isZero();
     }
 
     /// Parse an address from a hex string (run-time)
@@ -41,21 +55,12 @@ pub const Address = struct {
     /// - "d8da6bf26964af9d7eed9e03e53415d37aa96045" (without prefix)
     /// - "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045" (uppercase)
     pub fn fromHex(hex: []const u8) AddressError!Address {
-        if (hex.len != 40 and hex.len != 42)
-            return AddressError.InvalidHexStringLength;
-
-        const hex_digits = if (hex.len == 42) hex[2..] else hex[0..];
-
-        var bytes: [20]u8 = undefined;
-        for (0..20) |i| {
-            const hi = std.fmt.charToDigit(hex_digits[i * 2], 16) catch
-                return AddressError.InvalidHexDigit;
-            const lo = std.fmt.charToDigit(hex_digits[i * 2 + 1], 16) catch
-                return AddressError.InvalidHexDigit;
-            bytes[i] = (hi << 4) | lo;
-        }
-
-        return Address{ .bytes = bytes };
+        const b160 = B160.fromHex(hex) catch |err| switch (err) {
+            FixedBytesError.InvalidHexStringLength => return AddressError.InvalidHexStringLength,
+            FixedBytesError.InvalidHexDigit => return AddressError.InvalidHexDigit,
+            else => unreachable,
+        };
+        return Address{ .inner = b160 };
     }
 
     /// Parse an address from a hex string (compile-time)
@@ -68,21 +73,7 @@ pub const Address = struct {
     /// const zero_address = address("0x0000000000000000000000000000000000000000");
     /// ```
     pub fn fromHexComptime(comptime hex: []const u8) Address {
-        @setEvalBranchQuota(2000);
-
-        if (hex.len != 40 and hex.len != 42)
-            @compileError("Address hex string must be 40 hex digits (20 bytes), possibly with '0x' prefix");
-
-        const hex_digits = if (hex.len == 42) hex[2..] else hex[0..];
-
-        var bytes: [20]u8 = undefined;
-        inline for (0..20) |i| {
-            const hi = std.fmt.charToDigit(hex_digits[i * 2], 16) catch unreachable;
-            const lo = std.fmt.charToDigit(hex_digits[i * 2 + 1], 16) catch unreachable;
-            bytes[i] = (hi << 4) | lo;
-        }
-
-        return Address{ .bytes = bytes };
+        return Address{ .inner = B160.fromHexComptime(hex) };
     }
 
     /// Parse an address from a checksummed hex string and validate the checksum
@@ -126,18 +117,7 @@ pub const Address = struct {
 
     /// Format address as a hex string (lowercase, with "0x" prefix)
     pub fn toHex(self: Address, buf: []u8) ![]const u8 {
-        // The output buffer must be at least 42 bytes (2 for "0x" + 40 for hex digits).
-        if (buf.len < 42) return error.BufferTooSmall;
-
-        buf[0] = '0';
-        buf[1] = 'x';
-
-        for (self.bytes, 0..) |byte, i| {
-            buf[2 + i * 2] = std.fmt.digitToChar(byte >> 4, .lower);
-            buf[2 + i * 2 + 1] = std.fmt.digitToChar(byte & 0x0F, .lower);
-        }
-
-        return buf[0..42];
+        return self.inner.toHex(buf);
     }
 
     /// Format address as a checksummed hex string per EIP-55 or EIP-1191
@@ -176,7 +156,7 @@ pub const Address = struct {
 
         // First, convert address to lowercase hex (without 0x prefix)
         var addr_hex: [40]u8 = undefined;
-        for (self.bytes, 0..) |byte, i| {
+        for (self.inner.bytes, 0..) |byte, i| {
             addr_hex[i * 2] = std.fmt.digitToChar(byte >> 4, .lower);
             addr_hex[i * 2 + 1] = std.fmt.digitToChar(byte & 0x0F, .lower);
         }
@@ -239,7 +219,7 @@ pub const Address = struct {
 
     /// Check if two addresses are equal
     pub fn eql(self: Address, other: Address) bool {
-        return std.mem.eql(u8, &self.bytes, &other.bytes);
+        return self.inner.eql(other.inner);
     }
 
     /// Format the address for use with `std.fmt`
@@ -327,8 +307,8 @@ test "Address.fromHex - valid addresses" {
 
     for (test_cases) |tc| {
         const addr = try Address.fromHex(tc.input);
-        try expect(addr.bytes[0] == tc.expected_first);
-        try expect(addr.bytes[19] == tc.expected_last);
+        try expect(addr.inner.bytes[0] == tc.expected_first);
+        try expect(addr.inner.bytes[19] == tc.expected_last);
     }
 }
 
@@ -755,8 +735,8 @@ test "Address.fromHexComptime" {
 
     inline for (test_cases) |tc| {
         const addr = Address.fromHexComptime(tc.input);
-        try expect(addr.bytes[0] == tc.expected_first);
-        try expect(addr.bytes[19] == tc.expected_last);
+        try expect(addr.inner.bytes[0] == tc.expected_first);
+        try expect(addr.inner.bytes[19] == tc.expected_last);
     }
 }
 
