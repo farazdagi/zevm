@@ -208,20 +208,13 @@ pub const Address = struct {
 
         // Capitalize characters based on hash bits
         for (addr_hex, 0..) |c, i| {
-            if (c >= 'a' and c <= 'f') {
-                const hash_byte = hash[i / 2];
-                const nibble = if (i % 2 == 0) hash_byte >> 4 else hash_byte & 0x0F;
-
-                // If the nibble's high bit is set (≥8), capitalize the character
-                if (nibble >= 8) {
-                    buf[2 + i] = c - 32; // uppercase
-                } else {
-                    buf[2 + i] = c;
-                }
-            } else {
-                // Numeric character (0-9), no checksum
-                buf[2 + i] = c;
-            }
+            // For a given byte in the hash, get the corresponding nibble:
+            // if i is even, get high nibble (by shifting it to right, and masking/zeroing left side);
+            // if odd, get low nibble (by directly masking left side).
+            const nibble = (hash[i / 2] >> @intCast(4 * (1 - i % 2))) & 0xf;
+            // To uppercase `a..=f` you need to subtract 32 from the ASCII code,
+            // or set bit 5 to 0 (XOR char with 0b0010_0000 if uppercase is needed).
+            buf[2 + i] = c ^ (@as(u8, 0b0010_0000) * @intFromBool(c >= 'a' and c <= 'f' and nibble >= 8));
         }
 
         return buf[0..42];
@@ -260,83 +253,164 @@ const expectError = std.testing.expectError;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 test "Address.fromHex - valid addresses" {
-    // With 0x prefix, lowercase
-    const addr1 = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-    try expect(addr1.bytes[0] == 0xd8);
-    try expect(addr1.bytes[19] == 0x45);
+    const test_cases = [_]struct {
+        input: []const u8,
+        expected_first: u8,
+        expected_last: u8,
+    }{
+        // With 0x prefix, lowercase
+        .{
+            .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .expected_first = 0xd8,
+            .expected_last = 0x45,
+        },
+        // Without 0x prefix
+        .{
+            .input = "d8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .expected_first = 0xd8,
+            .expected_last = 0x45,
+        },
+        // Uppercase hex
+        .{
+            .input = "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045",
+            .expected_first = 0xd8,
+            .expected_last = 0x45,
+        },
+        // Mixed case
+        .{
+            .input = "0xD8da6BF26964af9d7eed9e03e53415d37aa96045",
+            .expected_first = 0xd8,
+            .expected_last = 0x45,
+        },
+        // All zeros
+        .{
+            .input = "0x0000000000000000000000000000000000000000",
+            .expected_first = 0x00,
+            .expected_last = 0x00,
+        },
+        // All ones
+        .{
+            .input = "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+            .expected_first = 0xFF,
+            .expected_last = 0xFF,
+        },
+    };
 
-    // Without 0x prefix
-    const addr2 = try Address.fromHex("d8da6bf26964af9d7eed9e03e53415d37aa96045");
-    try expect(addr2.bytes[0] == 0xd8);
-    try expect(addr2.bytes[19] == 0x45);
-
-    // Uppercase hex
-    const addr3 = try Address.fromHex("0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045");
-    try expect(addr3.bytes[0] == 0xD8);
-    try expect(addr3.bytes[0] == 0xd8); // Same value
-    try expect(addr3.bytes[19] == 0x45);
-
-    // Mixed case
-    const addr4 = try Address.fromHex("0xD8da6BF26964af9d7eed9e03e53415d37aa96045");
-    try expect(addr4.bytes[0] == 0xD8);
-
-    // All zeros
-    const addr5 = try Address.fromHex("0x0000000000000000000000000000000000000000");
-    try expect(addr5.bytes[0] == 0x00);
-    try expect(addr5.bytes[19] == 0x00);
-
-    // All ones
-    const addr6 = try Address.fromHex("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
-    try expect(addr6.bytes[0] == 0xFF);
-    try expect(addr6.bytes[19] == 0xFF);
+    for (test_cases) |tc| {
+        const addr = try Address.fromHex(tc.input);
+        try expect(addr.bytes[0] == tc.expected_first);
+        try expect(addr.bytes[19] == tc.expected_last);
+    }
 }
 
 test "Address.fromHex - invalid inputs" {
-    // Too short
-    try expectError(AddressError.InvalidHexStringLength, Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa9604"));
+    const test_cases = [_]struct {
+        input: []const u8,
+        expected_error: AddressError,
+    }{
+        // Too short
+        .{
+            .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa9604",
+            .expected_error = AddressError.InvalidHexStringLength,
+        },
+        // Too long
+        .{
+            .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa9604500",
+            .expected_error = AddressError.InvalidHexStringLength,
+        },
+        // Invalid character
+        .{
+            .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa9604z",
+            .expected_error = AddressError.InvalidHexDigit,
+        },
+        // Empty string
+        .{
+            .input = "",
+            .expected_error = AddressError.InvalidHexStringLength,
+        },
+        // Only 0x
+        .{
+            .input = "0x",
+            .expected_error = AddressError.InvalidHexStringLength,
+        },
+    };
 
-    // Too long
-    try expectError(AddressError.InvalidHexStringLength, Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa9604500"));
-
-    // Invalid character
-    try expectError(AddressError.InvalidHexDigit, Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa9604z"));
-
-    // Empty string
-    try expectError(AddressError.InvalidHexStringLength, Address.fromHex(""));
-
-    // Only 0x
-    try expectError(AddressError.InvalidHexStringLength, Address.fromHex("0x"));
+    for (test_cases) |tc| {
+        try expectError(tc.expected_error, Address.fromHex(tc.input));
+    }
 }
 
-test "Address.toHex - basic formatting" {
-    const addr = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-    var buf: [42]u8 = undefined;
-    const hex = try addr.toHex(&buf);
+test "Address.toHex" {
+    const test_cases = [_]struct {
+        input: []const u8,
+        expected: []const u8,
+    }{
+        // Basic formatting
+        .{
+            .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .expected = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        },
+        // Zero address
+        .{
+            .input = "0x0000000000000000000000000000000000000000",
+            .expected = "0x0000000000000000000000000000000000000000",
+        },
+        // All ones (should be lowercase)
+        .{
+            .input = "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+            .expected = "0xffffffffffffffffffffffffffffffffffffffff",
+        },
+        // Mixed case input (should output lowercase)
+        .{
+            .input = "0xD8da6BF26964af9d7eed9e03e53415d37aa96045",
+            .expected = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        },
+    };
 
-    try expectEqualStrings("0xd8da6bf26964af9d7eed9e03e53415d37aa96045", hex);
-}
-
-test "Address.toHex - zero address" {
-    const addr = try Address.fromHex("0x0000000000000000000000000000000000000000");
-    var buf: [42]u8 = undefined;
-    const hex = try addr.toHex(&buf);
-
-    try expectEqualStrings("0x0000000000000000000000000000000000000000", hex);
+    for (test_cases) |tc| {
+        const addr = try Address.fromHex(tc.input);
+        var buf: [42]u8 = undefined;
+        const hex = try addr.toHex(&buf);
+        try expectEqualStrings(tc.expected, hex);
+    }
 }
 
 test "Address.eql" {
-    const addr1 = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-    const addr2 = try Address.fromHex("0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045");
-    const addr3 = try Address.fromHex("0x0000000000000000000000000000000000000000");
+    const test_cases = [_]struct {
+        addr1: []const u8,
+        addr2: []const u8,
+        is_equal: bool,
+    }{
+        // Same address, different case
+        .{
+            .addr1 = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .addr2 = "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045",
+            .is_equal = true,
+        },
+        // Different addresses
+        .{
+            .addr1 = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .addr2 = "0xb8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .is_equal = false,
+        },
+        // Same zero address
+        .{
+            .addr1 = "0x0000000000000000000000000000000000000000",
+            .addr2 = "0x0000000000000000000000000000000000000000",
+            .is_equal = true,
+        },
+    };
 
-    try expect(addr1.eql(addr2));
-    try expect(!addr1.eql(addr3));
+    for (test_cases) |tc| {
+        const a1 = try Address.fromHex(tc.addr1);
+        const a2 = try Address.fromHex(tc.addr2);
+        try expect(a1.eql(a2) == tc.is_equal);
+    }
 }
 
-// Test vectors from EIP-55 specification
-// Source: https://eips.ethereum.org/EIPS/eip-55
-test "Address.toChecksummedHex - EIP-55 test vectors" {
-    // Test vectors from EIP-55 (no chain ID = use EIP-55)
+test "Address.toChecksummedHex - EIP-55 specs test vectors" {
+    // Test vectors from EIP-55 specification
+    // Source: https://eips.ethereum.org/EIPS/eip-55
     const test_cases = [_]struct {
         input: []const u8,
         expected: []const u8,
@@ -359,7 +433,7 @@ test "Address.toChecksummedHex - EIP-55 test vectors" {
             .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
             .expected = "0x27b1fdb04752bbc536007a920d24acb045561c26",
         },
-        // Mixed case - typical checksummed addresses
+        // Mixed case - some chars are uppercased, some are not
         .{
             .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
             .expected = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
@@ -387,22 +461,29 @@ test "Address.toChecksummedHex - EIP-55 test vectors" {
 }
 
 test "Address.fromChecksummedHex - EIP-55 validation" {
-    // Valid checksummed addresses (should succeed)
-    _ = try Address.fromChecksummedHex("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", null);
-    _ = try Address.fromChecksummedHex("0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", null);
-    _ = try Address.fromChecksummedHex("0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB", null);
+    const test_cases = [_]struct {
+        input: []const u8,
+        should_succeed: bool,
+    }{
+        // Valid checksummed addresses
+        .{ .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", .should_succeed = true },
+        .{ .input = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", .should_succeed = true },
+        .{ .input = "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB", .should_succeed = true },
+        // All lowercase (no checksum - should succeed)
+        .{ .input = "0xde709f2102306220921060314715629080e2fb77", .should_succeed = true },
+        // All uppercase (no checksum - should succeed)
+        .{ .input = "0x52908400098527886E0F7030069857D2E4169EE7", .should_succeed = true },
+        // Invalid checksum (last char should be 'd' not 'D')
+        .{ .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD", .should_succeed = false },
+    };
 
-    // All lowercase (no checksum - should succeed)
-    _ = try Address.fromChecksummedHex("0xde709f2102306220921060314715629080e2fb77", null);
-
-    // All uppercase (no checksum - should succeed)
-    _ = try Address.fromChecksummedHex("0x52908400098527886E0F7030069857D2E4169EE7", null);
-
-    // Invalid checksum (should fail)
-    try expectError(
-        AddressError.InvalidChecksumFormat,
-        Address.fromChecksummedHex("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD", null), // Last char should be 'd' not 'D'
-    );
+    for (test_cases) |tc| {
+        if (tc.should_succeed) {
+            _ = try Address.fromChecksummedHex(tc.input, null);
+        } else {
+            try expectError(AddressError.InvalidChecksumFormat, Address.fromChecksummedHex(tc.input, null));
+        }
+    }
 }
 
 // Test vectors from EIP-1191 specification for opted-in chains
@@ -412,91 +493,113 @@ test "Address.fromChecksummedHex - EIP-55 validation" {
 // This test verifies our implementation matches the official EIP-1191 test vectors
 // for these opted-in chains.
 test "Address.toChecksummedHex - EIP-1191 opted-in chains (30, 31)" {
-    // Test vectors from ERC-1191 for RSK chains
+    // Test vectors from EIP-1191 specification for opted-in chains
+    // Source: https://eips.ethereum.org/EIPS/eip-1191
+    //
+    // NOTE: EIP-1191 was officially adopted only by RSK Mainnet (30) and RSK Testnet (31).
+    // This test verifies our implementation matches the official EIP-1191 test vectors
+    // for these opted-in chains.
 
-    // Address 1: 0x27b1fdb04752bbc536007a920d24acb045561c26
-    const addr1 = try Address.fromHex("0x27b1fdb04752bbc536007a920d24acb045561c26");
+    const test_cases = [_]struct {
+        input: []const u8,
+        chain_id: u64,
+        expected: []const u8,
+    }{
+        // Address 1: 0x27b1fdb04752bbc536007a920d24acb045561c26
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = 30,
+            .expected = "0x27b1FdB04752BBc536007A920D24ACB045561c26",
+        },
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = 31,
+            .expected = "0x27B1FdB04752BbC536007a920D24acB045561C26",
+        },
+        // Address 2: 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed
+        .{
+            .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            .chain_id = 30,
+            .expected = "0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD",
+        },
+        .{
+            .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            .chain_id = 31,
+            .expected = "0x5aAeb6053F3e94c9b9A09F33669435E7EF1BEaEd",
+        },
+        // Address 3: 0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb
+        .{
+            .input = "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+            .chain_id = 30,
+            .expected = "0xD1220A0Cf47c7B9BE7a2e6ba89F429762E7B9adB",
+        },
+        .{
+            .input = "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+            .chain_id = 31,
+            .expected = "0xd1220a0CF47c7B9Be7A2E6Ba89f429762E7b9adB",
+        },
+        // Address 4: 0x3599689E6292b81B2d85451025146515070129Bb
+        .{
+            .input = "0x3599689E6292b81B2d85451025146515070129Bb",
+            .chain_id = 30,
+            .expected = "0x3599689E6292B81B2D85451025146515070129Bb",
+        },
+        .{
+            .input = "0x3599689E6292b81B2d85451025146515070129Bb",
+            .chain_id = 31,
+            .expected = "0x3599689e6292b81b2D85451025146515070129Bb",
+        },
+    };
 
-    // Chain ID 30 (RSK Mainnet) - official ERC-1191 test vector
-    var buf1_chain30: [42]u8 = undefined;
-    const checksummed1_chain30 = try addr1.toChecksummedHex(&buf1_chain30, 30);
-    try expectEqualStrings("0x27b1FdB04752BBc536007A920D24ACB045561c26", checksummed1_chain30);
-
-    // Chain ID 31 (RSK Testnet) - official ERC-1191 test vector
-    var buf1_chain31: [42]u8 = undefined;
-    const checksummed1_chain31 = try addr1.toChecksummedHex(&buf1_chain31, 31);
-    try expectEqualStrings("0x27B1FdB04752BbC536007a920D24acB045561C26", checksummed1_chain31);
-
-    // Address 2: 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed
-    const addr2 = try Address.fromHex("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
-
-    // Chain ID 30 (RSK Mainnet) - official ERC-1191 test vector
-    var buf2_chain30: [42]u8 = undefined;
-    const checksummed2_chain30 = try addr2.toChecksummedHex(&buf2_chain30, 30);
-    try expectEqualStrings("0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD", checksummed2_chain30);
-
-    // Chain ID 31 (RSK Testnet) - official ERC-1191 test vector
-    var buf2_chain31: [42]u8 = undefined;
-    const checksummed2_chain31 = try addr2.toChecksummedHex(&buf2_chain31, 31);
-    try expectEqualStrings("0x5aAeb6053F3e94c9b9A09F33669435E7EF1BEaEd", checksummed2_chain31);
-
-    // Address 3: 0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb
-    const addr3 = try Address.fromHex("0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb");
-
-    // Chain ID 30 (RSK Mainnet) - official ERC-1191 test vector
-    var buf3_chain30: [42]u8 = undefined;
-    const checksummed3_chain30 = try addr3.toChecksummedHex(&buf3_chain30, 30);
-    try expectEqualStrings("0xD1220A0Cf47c7B9BE7a2e6ba89F429762E7B9adB", checksummed3_chain30);
-
-    // Chain ID 31 (RSK Testnet) - official ERC-1191 test vector
-    var buf3_chain31: [42]u8 = undefined;
-    const checksummed3_chain31 = try addr3.toChecksummedHex(&buf3_chain31, 31);
-    try expectEqualStrings("0xd1220a0CF47c7B9Be7A2E6Ba89f429762E7b9adB", checksummed3_chain31);
-
-    // Address 4: 0x3599689E6292b81B2d85451025146515070129Bb
-    const addr4 = try Address.fromHex("0x3599689E6292b81B2d85451025146515070129Bb");
-
-    // Chain ID 30 (RSK Mainnet) - official ERC-1191 test vector
-    var buf4_chain30: [42]u8 = undefined;
-    const checksummed4_chain30 = try addr4.toChecksummedHex(&buf4_chain30, 30);
-    try expectEqualStrings("0x3599689E6292B81B2D85451025146515070129Bb", checksummed4_chain30);
-
-    // Chain ID 31 (RSK Testnet) - official ERC-1191 test vector
-    var buf4_chain31: [42]u8 = undefined;
-    const checksummed4_chain31 = try addr4.toChecksummedHex(&buf4_chain31, 31);
-    try expectEqualStrings("0x3599689e6292b81b2D85451025146515070129Bb", checksummed4_chain31);
+    for (test_cases) |tc| {
+        const addr = try Address.fromHex(tc.input);
+        var buf: [42]u8 = undefined;
+        const checksummed = try addr.toChecksummedHex(&buf, tc.chain_id);
+        try expectEqualStrings(tc.expected, checksummed);
+    }
 }
 
 // Test EIP-1191 behavior for non-opted-in chains
 // For chains that didn't officially adopt EIP-1191, our implementation still
 // applies EIP-1191 when chain_id is provided (for flexibility with L2s).
 test "Address.toChecksummedHex - EIP-1191 for non-opted-in chains" {
-    // Address: 0x27b1fdb04752bbc536007a920d24acb045561c26
-    const addr = try Address.fromHex("0x27b1fdb04752bbc536007a920d24acb045561c26");
+    // Test EIP-1191 behavior for non-opted-in chains
+    // For chains that didn't officially adopt EIP-1191, our implementation still
+    // applies EIP-1191 when chain_id is provided (for flexibility with L2s).
 
-    // Chain ID 1 (Ethereum Mainnet - not opted in to EIP-1191)
-    // When chain_id is provided, we apply EIP-1191 algorithm
-    var buf_chain1: [42]u8 = undefined;
-    const checksummed_chain1 = try addr.toChecksummedHex(&buf_chain1, 1);
-    // This is computed using EIP-1191 with chain_id=1
-    // Hash input: "10x27b1fdb04752bbc536007a920d24acb045561c26"
-    try expectEqualStrings("0x27b1FdB04752bBc536007a920D24ACB045561c26", checksummed_chain1);
+    const test_cases = [_]struct {
+        input: []const u8,
+        chain_id: ?u64,
+        expected: []const u8,
+    }{
+        // Chain ID 1 (Ethereum Mainnet - not opted in to EIP-1191)
+        // Hash input: "10x27b1fdb04752bbc536007a920d24acb045561c26"
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = 1,
+            .expected = "0x27b1FdB04752bBc536007a920D24ACB045561c26",
+        },
+        // Without chain_id (null), use EIP-55
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = null,
+            .expected = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+        },
+        // Chain ID 10 (Optimism - not opted in)
+        // Hash input: "100x27b1fdb04752bbc536007a920d24acb045561c26"
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = 10,
+            .expected = "0x27B1fDB04752BBC536007a920D24acB045561C26",
+        },
+    };
 
-    // Without chain_id (null), use EIP-55
-    var buf_no_chain: [42]u8 = undefined;
-    const checksummed_no_chain = try addr.toChecksummedHex(&buf_no_chain, null);
-    // This matches the official EIP-55 test vector
-    try expectEqualStrings("0x27b1fdb04752bbc536007a920d24acb045561c26", checksummed_no_chain);
-
-    // Verify they're different
-    try expect(!std.mem.eql(u8, checksummed_chain1, checksummed_no_chain));
-
-    // Another example with chain_id=10 (Optimism - not opted in)
-    var buf_chain10: [42]u8 = undefined;
-    const checksummed_chain10 = try addr.toChecksummedHex(&buf_chain10, 10);
-    // Computed using EIP-1191 with chain_id=10
-    // Hash input: "100x27b1fdb04752bbc536007a920d24acb045561c26"
-    try expectEqualStrings("0x27B1fDB04752BBC536007a920D24acB045561C26", checksummed_chain10);
+    for (test_cases) |tc| {
+        const addr = try Address.fromHex(tc.input);
+        var buf: [42]u8 = undefined;
+        const checksummed = try addr.toChecksummedHex(&buf, tc.chain_id);
+        try expectEqualStrings(tc.expected, checksummed);
+    }
 }
 
 // Test demonstrating the difference between EIP-55 and EIP-1191
@@ -506,22 +609,46 @@ test "Address.toChecksummedHex - EIP-55 vs EIP-1191 difference" {
     // chain_id is provided (EIP-1191) or not (EIP-55)
     const addr = try Address.fromHex("0x27b1fdb04752bbc536007a920d24acb045561c26");
 
-    // Without chain_id: EIP-55 (all lowercase for this particular address)
-    var buf_eip55: [42]u8 = undefined;
-    const eip55 = try addr.toChecksummedHex(&buf_eip55, null);
-    try expectEqualStrings("0x27b1fdb04752bbc536007a920d24acb045561c26", eip55);
+    const test_cases = [_]struct {
+        input: []const u8,
+        chain_id: ?u64,
+        expected: []const u8,
+    }{
+        // Without chain_id: EIP-55 (all lowercase for this particular address)
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = null,
+            .expected = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+        },
+        // With chain_id=1: EIP-1191 (different checksum!)
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = 1,
+            .expected = "0x27b1FdB04752bBc536007a920D24ACB045561c26",
+        },
+        // With chain_id=30: EIP-1191 (yet another different checksum!)
+        .{
+            .input = "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            .chain_id = 30,
+            .expected = "0x27b1FdB04752BBc536007A920D24ACB045561c26",
+        },
+    };
 
-    // With chain_id=1: EIP-1191 (different checksum!)
-    var buf_chain1: [42]u8 = undefined;
-    const chain1 = try addr.toChecksummedHex(&buf_chain1, 1);
-    try expectEqualStrings("0x27b1FdB04752bBc536007a920D24ACB045561c26", chain1);
-
-    // With chain_id=30: EIP-1191 (yet another different checksum!)
-    var buf_chain30: [42]u8 = undefined;
-    const chain30 = try addr.toChecksummedHex(&buf_chain30, 30);
-    try expectEqualStrings("0x27b1FdB04752BBc536007A920D24ACB045561c26", chain30);
+    for (test_cases) |tc| {
+        const addr = try Address.fromHex(tc.input);
+        var buf: [42]u8 = undefined;
+        const checksummed = try addr.toChecksummedHex(&buf, tc.chain_id);
+        try expectEqualStrings(tc.expected, checksummed);
+    }
 
     // Verify they're all different
+    const addr = try Address.fromHex("0x27b1fdb04752bbc536007a920d24acb045561c26");
+    var buf_eip55: [42]u8 = undefined;
+    var buf_chain1: [42]u8 = undefined;
+    var buf_chain30: [42]u8 = undefined;
+    const eip55 = try addr.toChecksummedHex(&buf_eip55, null);
+    const chain1 = try addr.toChecksummedHex(&buf_chain1, 1);
+    const chain30 = try addr.toChecksummedHex(&buf_chain30, 30);
     try expect(!std.mem.eql(u8, eip55, chain1));
     try expect(!std.mem.eql(u8, eip55, chain30));
     try expect(!std.mem.eql(u8, chain1, chain30));
@@ -529,71 +656,124 @@ test "Address.toChecksummedHex - EIP-55 vs EIP-1191 difference" {
 
 // Test checksum validation for EIP-1191
 test "Address.fromChecksummedHex - EIP-1191 validation" {
-    // Valid: EIP-1191 checksummed address for chain_id = 1
-    // Our implementation applies EIP-1191 when chain_id is provided
-    _ = try Address.fromChecksummedHex("0x27b1FdB04752bBc536007a920D24ACB045561c26", 1);
+    // Test checksum validation for EIP-1191, with all chains considered as opted-in.
+    const test_cases = [_]struct {
+        input: []const u8,
+        chain_id: u64,
+        should_succeed: bool,
+    }{
+        // Valid: EIP-1191 checksummed address for chain_id = 1
+        .{
+            .input = "0x27b1FdB04752bBc536007a920D24ACB045561c26",
+            .chain_id = 1,
+            .should_succeed = true,
+        },
+        // Valid: EIP-1191 checksummed address for RSK Mainnet (chain_id = 30)
+        .{
+            .input = "0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD",
+            .chain_id = 30,
+            .should_succeed = true,
+        },
+        // Valid: EIP-1191 checksummed address for RSK Testnet (chain_id = 31)
+        .{
+            .input = "0x5aAeb6053F3e94c9b9A09F33669435E7EF1BEaEd",
+            .chain_id = 31,
+            .should_succeed = true,
+        },
+        // Invalid: Using RSK Mainnet (chain_id=30) checksum for chain_id=1
+        .{
+            .input = "0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD",
+            .chain_id = 1,
+            .should_succeed = false,
+        },
+        // Invalid: Using RSK Testnet (chain_id=31) checksum for RSK Mainnet (chain_id=30)
+        .{
+            .input = "0x5aAeb6053F3e94c9b9A09F33669435E7EF1BEaEd",
+            .chain_id = 30,
+            .should_succeed = false,
+        },
+        // Invalid: Using chain_id=1 checksum for RSK Mainnet (chain_id=30)
+        .{
+            .input = "0x27b1FdB04752bBc536007a920D24ACB045561c26",
+            .chain_id = 30,
+            .should_succeed = false,
+        },
+        // Invalid: Using EIP-55 (no chain_id) checksum when chain_id is specified
+        .{
+            .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            .chain_id = 1,
+            .should_succeed = false,
+        },
+    };
 
-    // Valid: EIP-1191 checksummed address for RSK Mainnet (chain_id = 30)
-    _ = try Address.fromChecksummedHex("0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD", 30);
-
-    // Valid: EIP-1191 checksummed address for RSK Testnet (chain_id = 31)
-    _ = try Address.fromChecksummedHex("0x5aAeb6053F3e94c9b9A09F33669435E7EF1BEaEd", 31);
-
-    // Invalid: Using RSK Mainnet (chain_id=30) checksum for chain_id=1
-    // The same address checksums differently depending on chain ID
-    try expectError(
-        AddressError.InvalidChecksumFormat,
-        Address.fromChecksummedHex("0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD", 1),
-    );
-
-    // Invalid: Using RSK Testnet (chain_id=31) checksum for RSK Mainnet (chain_id=30)
-    try expectError(
-        AddressError.InvalidChecksumFormat,
-        Address.fromChecksummedHex("0x5aAeb6053F3e94c9b9A09F33669435E7EF1BEaEd", 30),
-    );
-
-    // Invalid: Using chain_id=1 checksum for RSK Mainnet (chain_id=30)
-    try expectError(
-        AddressError.InvalidChecksumFormat,
-        Address.fromChecksummedHex("0x27b1FdB04752bBc536007a920D24ACB045561c26", 30),
-    );
-
-    // Invalid: Using EIP-55 (no chain_id) checksum when chain_id is specified
-    // EIP-55 and EIP-1191 produce different checksums
-    try expectError(
-        AddressError.InvalidChecksumFormat,
-        Address.fromChecksummedHex("0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", 1),
-    );
+    for (test_cases) |tc| {
+        if (tc.should_succeed) {
+            _ = try Address.fromChecksummedHex(tc.input, tc.chain_id);
+        } else {
+            try expectError(AddressError.InvalidChecksumFormat, Address.fromChecksummedHex(tc.input, tc.chain_id));
+        }
+    }
 }
 
-test "address() - compile-time address creation" {
-    // Valid usage at comptime
-    const addr = Address.fromHexComptime("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-    try expect(addr.bytes[0] == 0xd8);
-    try expect(addr.bytes[19] == 0x45);
+test "Address.fromHexComptime" {
+    const test_cases = [_]struct {
+        input: []const u8,
+        expected_first: u8,
+        expected_last: u8,
+    }{
+        // With 0x prefix
+        .{
+            .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            .expected_first = 0xd8,
+            .expected_last = 0x45,
+        },
+        // Without 0x prefix
+        .{
+            .input = "5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            .expected_first = 0x5a,
+            .expected_last = 0xed,
+        },
+        // All zeros
+        .{
+            .input = "0x0000000000000000000000000000000000000000",
+            .expected_first = 0x00,
+            .expected_last = 0x00,
+        },
+    };
 
-    // Without 0x prefix
-    const addr2 = Address.fromHexComptime("5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
-    try expect(addr2.bytes[0] == 0x5a);
-
-    // All zeros
-    const zero = Address.fromHexComptime("0x0000000000000000000000000000000000000000");
-    try expect(zero.bytes[0] == 0x00);
-    try expect(zero.bytes[19] == 0x00);
+    inline for (test_cases) |tc| {
+        const addr = Address.fromHexComptime(tc.input);
+        try expect(addr.bytes[0] == tc.expected_first);
+        try expect(addr.bytes[19] == tc.expected_last);
+    }
 }
 
 test "Address round-trip: hex -> Address -> hex" {
-    const original = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045";
-    const addr = try Address.fromHex(original);
-    var buf: [42]u8 = undefined;
-    const result = try addr.toHex(&buf);
-    try expectEqualStrings(original, result);
+    const test_cases = [_][]const u8{
+        "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        "0x0000000000000000000000000000000000000000",
+        "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed",
+    };
+
+    for (test_cases) |original| {
+        const addr = try Address.fromHex(original);
+        var buf: [42]u8 = undefined;
+        const result = try addr.toHex(&buf);
+        try expectEqualStrings(original, result);
+    }
 }
 
 test "Address round-trip: checksummed hex -> Address -> checksummed hex" {
-    const original = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
-    const addr = try Address.fromChecksummedHex(original, null);
-    var buf: [42]u8 = undefined;
-    const result = try addr.toChecksummedHex(&buf, null);
-    try expectEqualStrings(original, result);
+    const test_cases = [_][]const u8{
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+        "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+        "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+    };
+
+    for (test_cases) |original| {
+        const addr = try Address.fromChecksummedHex(original, null);
+        var buf: [42]u8 = undefined;
+        const result = try addr.toChecksummedHex(&buf, null);
+        try expectEqualStrings(original, result);
+    }
 }
