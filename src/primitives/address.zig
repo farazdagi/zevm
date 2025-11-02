@@ -1,8 +1,7 @@
 const std = @import("std");
-const bytes_mod = @import("bytes.zig");
 const bytes = @import("bytes.zig");
-const B160 = bytes_mod.B160;
-const FixedBytesError = bytes_mod.FixedBytesError;
+const B160 = bytes.B160;
+const FixedBytesError = bytes.FixedBytesError;
 
 /// Ethereum address errors
 pub const AddressError = error{
