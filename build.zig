@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allow the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -11,6 +11,11 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    // Test runner options (can be used without -- separator)
+    const test_filter = b.option([]const u8, "filter", "Filter tests by name");
+    const test_timing = b.option(bool, "timing", "Show timing for each test") orelse true;
+    const test_fail_first = b.option(bool, "fail-first", "Stop on first test failure") orelse false;
 
     // It's also possible to define more custom flags to toggle optional features
     // of this build script using `b.option()`. All defined flags (including
@@ -95,20 +100,62 @@ pub fn build(b: *std.Build) void {
     // set the releative field.
     const mod_tests = b.addTest(.{
         .root_module = mod,
+        .test_runner = .{
+            .path = b.path("libs/test-runner/runner.zig"),
+            .mode = .simple,
+        },
     });
 
     // A run step that will run the test executable.
     const run_mod_tests = b.addRunArtifact(mod_tests);
+
+    // Pass build options to test runner (e.g., -Dfilter=address)
+    if (test_filter) |filter| {
+        run_mod_tests.addArg("--filter");
+        run_mod_tests.addArg(filter);
+    }
+    if (test_timing) {
+        run_mod_tests.addArg("--timing");
+    }
+    if (test_fail_first) {
+        run_mod_tests.addArg("--fail-first");
+    }
+
+    // Also forward any direct command-line arguments (e.g., zig build test -- --filter address)
+    if (b.args) |args| {
+        run_mod_tests.addArgs(args);
+    }
 
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
     // hence why we have to create two separate ones.
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
+        .test_runner = .{
+            .path = b.path("libs/test-runner/runner.zig"),
+            .mode = .simple,
+        },
     });
 
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
+
+    // Pass build options to test runner
+    if (test_filter) |filter| {
+        run_exe_tests.addArg("--filter");
+        run_exe_tests.addArg(filter);
+    }
+    if (test_timing) {
+        run_exe_tests.addArg("--timing");
+    }
+    if (test_fail_first) {
+        run_exe_tests.addArg("--fail-first");
+    }
+
+    // Also forward any direct command-line arguments
+    if (b.args) |args| {
+        run_exe_tests.addArgs(args);
+    }
 
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
