@@ -16,6 +16,128 @@ pub const B256 = FixedBytes(32);
 /// around `B160` and includes address-specific utilities such as EIP-55 checksumming.
 pub const B160 = FixedBytes(20);
 
+/// Dynamic byte array for variable-length data
+///
+/// A thin wrapper around `std.ArrayList(u8)` that provides a clean, encapsulated API
+/// for working with variable-length byte sequences in the EVM.
+///
+/// Usage example:
+/// ```zig
+/// const allocator = std.heap.page_allocator;
+/// var data = Bytes.init();
+/// defer data.deinit(allocator);
+///
+/// try data.appendSlice(allocator, &[_]u8{ 0x60, 0x60, 0x60, 0x40 }); // PUSH1 0x60 PUSH1 0x40
+/// const slice = data.items(); // Access underlying slice
+/// ```
+pub const Bytes = struct {
+    data: std.ArrayList(u8),
+
+    const Self = @This();
+
+    /// Initialize an empty Bytes container
+    pub fn init() Self {
+        return Self{ .data = std.ArrayList(u8){} };
+    }
+
+    /// Create Bytes from an existing slice (copies the data)
+    ///
+    /// Example:
+    /// ```zig
+    /// const bytecode = [_]u8{ 0x60, 0x40, 0x52 };
+    /// var bytes = try Bytes.fromSlice(allocator, &bytecode);
+    /// defer bytes.deinit(allocator);
+    /// ```
+    pub fn fromSlice(allocator: std.mem.Allocator, slice: []const u8) !Self {
+        var self = Self.init();
+        try self.data.appendSlice(allocator, slice);
+        return self;
+    }
+
+    /// Free all allocated memory
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        self.data.deinit(allocator);
+    }
+
+    /// Get a const slice view of the bytes
+    pub fn items(self: *const Self) []const u8 {
+        return self.data.items;
+    }
+
+    /// Get a mutable slice view of the bytes
+    pub fn itemsMut(self: *Self) []u8 {
+        return self.data.items;
+    }
+
+    /// Get the number of bytes
+    pub fn len(self: *const Self) usize {
+        return self.data.items.len;
+    }
+
+    /// Get the allocated capacity
+    pub fn capacity(self: *const Self) usize {
+        return self.data.capacity;
+    }
+
+    /// Append a single byte
+    pub fn append(self: *Self, allocator: std.mem.Allocator, byte: u8) !void {
+        try self.data.append(allocator, byte);
+    }
+
+    /// Append a slice of bytes
+    pub fn appendSlice(self: *Self, allocator: std.mem.Allocator, slice: []const u8) !void {
+        try self.data.appendSlice(allocator, slice);
+    }
+
+    /// Create a deep copy of this Bytes
+    ///
+    /// The returned Bytes must be deinitialized separately.
+    pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
+        var cloned = Self.init();
+        cloned.data = try self.data.clone(allocator);
+        return cloned;
+    }
+
+    /// Transfer ownership of the underlying buffer to the caller
+    ///
+    /// After calling this, the Bytes is empty and can be reused or deinitialized.
+    /// The caller owns the returned slice and must free it with `allocator.free()`.
+    pub fn toOwnedSlice(self: *Self, allocator: std.mem.Allocator) ![]u8 {
+        return try self.data.toOwnedSlice(allocator);
+    }
+
+    /// Clear all bytes while retaining the allocated capacity
+    pub fn clearRetainingCapacity(self: *Self) void {
+        self.data.clearRetainingCapacity();
+    }
+
+    /// Clear all bytes and free the allocated memory
+    pub fn clearAndFree(self: *Self, allocator: std.mem.Allocator) void {
+        self.data.clearAndFree(allocator);
+    }
+
+    /// Resize the byte array
+    ///
+    /// If growing, new bytes are zero-initialized.
+    /// If shrinking, excess bytes are discarded.
+    pub fn resize(self: *Self, allocator: std.mem.Allocator, new_len: usize) !void {
+        const old_len = self.data.items.len;
+        try self.data.resize(allocator, new_len);
+
+        // Zero-fill if we grew
+        if (new_len > old_len) {
+            @memset(self.data.items[old_len..new_len], 0);
+        }
+    }
+
+    /// Ensure the Bytes has at least the specified capacity
+    ///
+    /// Useful for pre-allocating when you know how much data you'll need.
+    pub fn ensureTotalCapacity(self: *Self, allocator: std.mem.Allocator, new_capacity: usize) !void {
+        try self.data.ensureTotalCapacity(allocator, new_capacity);
+    }
+};
+
 /// Fixed-size byte array errors
 pub const FixedBytesError = error{
     InvalidHexStringLength,
@@ -815,4 +937,193 @@ test "FixedBytes - different sizes" {
         try expect(zero.bytes.len == tc.size);
         try expect(zero.isZero());
     }
+}
+
+test "Bytes - init and deinit" {
+    const allocator = std.testing.allocator;
+    var data = Bytes.init();
+    defer data.deinit(allocator);
+
+    // Initially empty
+    try expectEqual(0, data.len());
+    try expectEqual(0, data.items().len);
+}
+
+test "Bytes - append and access" {
+    const allocator = std.testing.allocator;
+    var data = Bytes.init();
+    defer data.deinit(allocator);
+
+    // Append individual bytes
+    try data.append(allocator, 0x60);
+    try data.append(allocator, 0x40);
+
+    try expectEqual(2, data.len());
+    try expectEqual(0x60, data.items()[0]);
+    try expectEqual(0x40, data.items()[1]);
+}
+
+test "Bytes - appendSlice" {
+    const allocator = std.testing.allocator;
+    var data = Bytes.init();
+    defer data.deinit(allocator);
+
+    // Append a slice (e.g., bytecode)
+    const bytecode = [_]u8{ 0x60, 0x60, 0x60, 0x40, 0x52 };
+    try data.appendSlice(allocator, &bytecode);
+
+    try expectEqual(5, data.len());
+    try expect(std.mem.eql(u8, data.items(), &bytecode));
+}
+
+test "Bytes - calldata" {
+    const allocator = std.testing.allocator;
+    var calldata = Bytes.init();
+    defer calldata.deinit(allocator);
+
+    // Simulate function selector (4 bytes)
+    const selector = [_]u8{ 0x12, 0x34, 0x56, 0x78 };
+    try calldata.appendSlice(allocator, &selector);
+
+    // Add parameter (32 bytes)
+    const param = [_]u8{0x00} ** 31 ++ [_]u8{0x42};
+    try calldata.appendSlice(allocator, &param);
+
+    try expectEqual(36, calldata.len());
+    try expectEqual(0x12, calldata.items()[0]);
+    try expectEqual(0x42, calldata.items()[35]);
+}
+
+test "Bytes - clone/copy" {
+    const allocator = std.testing.allocator;
+    var original = Bytes.init();
+    defer original.deinit(allocator);
+
+    try original.appendSlice(allocator, &[_]u8{ 0xAA, 0xBB, 0xCC });
+
+    // Clone the data
+    var copy = try original.clone(allocator);
+    defer copy.deinit(allocator);
+
+    // Verify clone has same data
+    try expectEqual(original.len(), copy.len());
+    try expect(std.mem.eql(u8, original.items(), copy.items()));
+
+    // Modify original - copy should be unaffected
+    try original.append(allocator, 0xDD);
+    try expectEqual(4, original.len());
+    try expectEqual(3, copy.len());
+}
+
+test "Bytes - fromSlice" {
+    const allocator = std.testing.allocator;
+    const source = [_]u8{ 0x11, 0x22, 0x33, 0x44 };
+
+    var bytes = try Bytes.fromSlice(allocator, &source);
+    defer bytes.deinit(allocator);
+
+    try expectEqual(4, bytes.len());
+    try expect(std.mem.eql(u8, bytes.items(), &source));
+}
+
+test "Bytes - itemsMut" {
+    const allocator = std.testing.allocator;
+    var bytes = Bytes.init();
+    defer bytes.deinit(allocator);
+
+    try bytes.appendSlice(allocator, &[_]u8{ 0x10, 0x20, 0x30 });
+
+    // Modify through mutable slice
+    const mut_slice = bytes.itemsMut();
+    mut_slice[1] = 0xFF;
+
+    try expectEqual(0x10, bytes.items()[0]);
+    try expectEqual(0xFF, bytes.items()[1]);
+    try expectEqual(0x30, bytes.items()[2]);
+}
+
+test "Bytes - capacity" {
+    const allocator = std.testing.allocator;
+    var bytes = Bytes.init();
+    defer bytes.deinit(allocator);
+
+    // Initially zero capacity
+    try expectEqual(0, bytes.capacity());
+
+    // Ensure capacity
+    try bytes.ensureTotalCapacity(allocator, 100);
+    try expect(bytes.capacity() >= 100);
+    try expectEqual(0, bytes.len()); // still zero
+}
+
+test "Bytes - resize" {
+    const allocator = std.testing.allocator;
+    var bytes = Bytes.init();
+    defer bytes.deinit(allocator);
+
+    try bytes.appendSlice(allocator, &[_]u8{ 0xAA, 0xBB });
+
+    // Grow - should zero-fill
+    try bytes.resize(allocator, 5);
+    try expectEqual(5, bytes.len());
+    try expectEqual(0xAA, bytes.items()[0]);
+    try expectEqual(0xBB, bytes.items()[1]);
+    try expectEqual(0x00, bytes.items()[2]);
+    try expectEqual(0x00, bytes.items()[3]);
+    try expectEqual(0x00, bytes.items()[4]);
+
+    // Shrink
+    try bytes.resize(allocator, 2);
+    try expectEqual(2, bytes.len());
+    try expectEqual(0xAA, bytes.items()[0]);
+    try expectEqual(0xBB, bytes.items()[1]);
+}
+
+test "Bytes - clearRetainingCapacity" {
+    const allocator = std.testing.allocator;
+    var bytes = Bytes.init();
+    defer bytes.deinit(allocator);
+
+    try bytes.appendSlice(allocator, &[_]u8{ 0x11, 0x22, 0x33 });
+    const old_capacity = bytes.capacity();
+
+    bytes.clearRetainingCapacity();
+
+    try expectEqual(0, bytes.len());
+    try expectEqual(old_capacity, bytes.capacity()); // unchanged
+}
+
+test "Bytes - clearAndFree" {
+    const allocator = std.testing.allocator;
+    var bytes = Bytes.init();
+    defer bytes.deinit(allocator);
+
+    try bytes.appendSlice(allocator, &[_]u8{ 0x11, 0x22, 0x33 });
+
+    bytes.clearAndFree(allocator);
+
+    try expectEqual(0, bytes.len());
+    try expectEqual(0, bytes.capacity()); // freed
+}
+
+test "Bytes - toOwnedSlice" {
+    const allocator = std.testing.allocator;
+    var bytes = Bytes.init();
+
+    try bytes.appendSlice(allocator, &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF });
+
+    // Transfer ownership
+    const owned = try bytes.toOwnedSlice(allocator);
+    defer allocator.free(owned);
+
+    // bytes is now empty
+    try expectEqual(0, bytes.len());
+    bytes.deinit(allocator); // Still safe to deinit
+
+    // Owned slice has the data
+    try expectEqual(4, owned.len);
+    try expectEqual(0xDE, owned[0]);
+    try expectEqual(0xAD, owned[1]);
+    try expectEqual(0xBE, owned[2]);
+    try expectEqual(0xEF, owned[3]);
 }

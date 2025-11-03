@@ -10,6 +10,7 @@ pub const Address = address.Address;
 pub const B256 = bytes.B256;
 pub const B160 = bytes.B160;
 pub const FixedBytes = bytes.FixedBytes;
+pub const Bytes = bytes.Bytes;
 pub const U256 = big.U256;
 
 test {
