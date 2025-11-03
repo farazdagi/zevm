@@ -157,12 +157,48 @@ pub fn build(b: *std.Build) !void {
         run_exe_tests.addArgs(args);
     }
 
+    // Integration tests (tests/ directory)
+    const integration_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/big.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zevm", .module = mod },
+            },
+        }),
+        .test_runner = .{
+            .path = b.path("libs/test-runner/runner.zig"),
+            .mode = .simple,
+        },
+    });
+
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+
+    // Pass build options to test runner
+    if (test_filter) |filter| {
+        run_integration_tests.addArg("--filter");
+        run_integration_tests.addArg(filter);
+    }
+    if (test_timing) {
+        run_integration_tests.addArg("--timing");
+    }
+    if (test_fail_first) {
+        run_integration_tests.addArg("--fail-first");
+    }
+
+    // Also forward any direct command-line arguments
+    if (b.args) |args| {
+        run_integration_tests.addArgs(args);
+    }
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&run_integration_tests.step);
 
     // Benchmark optimization level
     // Default to Debug to prevent over-optimization of benchmark loops
