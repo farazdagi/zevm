@@ -589,12 +589,12 @@ pub const U256 = struct {
         return if (self_negative) remainder.twosComplement() else remainder;
     }
 
-    /// Helper: Two's complement negation
+    /// Helper: Two's complement negation.
     fn twosComplement(self: U256) U256 {
         return self.bitNot().add(U256.ONE);
     }
 
-    /// Helper: Divide by a u64 divisor (fast path)
+    /// Helper: Divide by a u64 divisor (fast path).
     fn divRemU64(self: U256, divisor: u64) [2]U256 {
         var quotient = U256.ZERO;
         var remainder: u64 = 0;

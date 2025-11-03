@@ -2,7 +2,7 @@ const std = @import("std");
 const bytes = @import("bytes.zig");
 const B160 = bytes.B160;
 
-/// Ethereum address type
+/// Ethereum address type.
 ///
 /// Represents a 20-byte Ethereum address. Ethereum addresses are derived from
 /// the rightmost 160 bits (20 bytes) of the Keccak-256 hash of the public key.
@@ -18,29 +18,29 @@ const B160 = bytes.B160;
 pub const Address = struct {
     inner: B160,
 
-    /// Address errors
+    /// Address errors.
     pub const Error = error{
         InvalidHexStringLength,
         InvalidHexDigit,
         InvalidChecksumFormat,
     };
 
-    /// Initialize an address from a 20-byte array
+    /// Initialize an address from a 20-byte array.
     pub fn init(b: [20]u8) Address {
         return Address{ .inner = B160.init(b) };
     }
 
-    /// Create a zero-filled address
+    /// Create a zero-filled address.
     pub fn zero() Address {
         return Address{ .inner = B160.zero() };
     }
 
-    /// Check if the address is all zeros
+    /// Check if the address is all zeros.
     pub fn isZero(self: Address) bool {
         return self.inner.isZero();
     }
 
-    /// Parse an address from a hex string (run-time)
+    /// Parse an address from a hex string (run-time).
     ///
     /// Accepts hex strings with or without "0x" prefix.
     /// The hex string must represent exactly 20 bytes (40 hex digits).
@@ -61,7 +61,7 @@ pub const Address = struct {
         return Address{ .inner = b160 };
     }
 
-    /// Parse an address from a hex string (compile-time)
+    /// Parse an address from a hex string (compile-time).
     ///
     /// This function can only be used at compile time. It's useful for defining
     /// constant addresses (e.g., precompile addresses, system contracts).
@@ -74,7 +74,7 @@ pub const Address = struct {
         return Address{ .inner = B160.fromHexComptime(hex) };
     }
 
-    /// Parse an address from a checksummed hex string and validate the checksum
+    /// Parse an address from a checksummed hex string and validate the checksum.
     ///
     /// Validates EIP-55 checksums (or EIP-1191 if `chain_id` is provided).
     ///
@@ -113,12 +113,12 @@ pub const Address = struct {
         return addr;
     }
 
-    /// Format address as a hex string (lowercase, with "0x" prefix)
+    /// Format address as a hex string (lowercase, with "0x" prefix).
     pub fn toHex(self: Address, buf: []u8) ![]const u8 {
         return self.inner.toHex(buf);
     }
 
-    /// Format address as a checksummed hex string per EIP-55 or EIP-1191
+    /// Format address as a checksummed hex string per EIP-55 or EIP-1191.
     ///
     /// EIP-55 specifies mixed-case checksumming: each alphabetic hex character
     /// is capitalized if the corresponding nibble in the hash is >= 8.
@@ -198,7 +198,7 @@ pub const Address = struct {
         return buf[0..42];
     }
 
-    /// Validate the checksum of a hex string against this address
+    /// Validate the checksum of a hex string against this address.
     fn validateChecksum(self: Address, hex_digits: []const u8, chain_id: ?u64) bool {
         // The hex string should be 40 characters (without "0x" prefix).
         if (hex_digits.len != 40) return false;
@@ -215,12 +215,12 @@ pub const Address = struct {
         return true;
     }
 
-    /// Check if two addresses are equal
+    /// Check if two addresses are equal.
     pub fn eql(self: Address, other: Address) bool {
         return self.inner.eql(other.inner);
     }
 
-    /// Format the address for use with `std.fmt`
+    /// Format the address for use with `std.fmt`.
     ///
     /// Implements the standard Zig formatting protocol, allowing Address to be
     /// used with `std.fmt.format`, `std.fmt.bufPrint`, `std.fmt.allocPrint` etc.

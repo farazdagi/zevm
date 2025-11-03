@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// 32-byte fixed bytes (256 bits)
+/// 32-byte fixed bytes (256 bits).
 ///
 /// Commonly used for:
 /// - Keccak-256 hashes
@@ -10,13 +10,13 @@ const std = @import("std");
 /// - Block hashes
 pub const B256 = FixedBytes(32);
 
-/// 20-byte fixed bytes (160 bits)
+/// 20-byte fixed bytes (160 bits).
 ///
 /// Note: For Ethereum addresses, use the dedicated `Address` type which is a wrapper
 /// around `B160` and includes address-specific utilities such as EIP-55 checksumming.
 pub const B160 = FixedBytes(20);
 
-/// Dynamic byte array for variable-length data
+/// Dynamic byte array for variable-length data.
 ///
 /// A thin wrapper around `std.ArrayList(u8)` that provides a clean, encapsulated API
 /// for working with variable-length byte sequences in the EVM.
@@ -35,12 +35,12 @@ pub const Bytes = struct {
 
     const Self = @This();
 
-    /// Initialize an empty Bytes container
+    /// Initialize an empty Bytes container.
     pub fn init() Self {
         return Self{ .data = std.ArrayList(u8){} };
     }
 
-    /// Create Bytes from an existing slice (copies the data)
+    /// Create Bytes from an existing slice (copies the data).
     ///
     /// Example:
     /// ```zig
@@ -54,42 +54,42 @@ pub const Bytes = struct {
         return self;
     }
 
-    /// Free all allocated memory
+    /// Free all allocated memory.
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         self.data.deinit(allocator);
     }
 
-    /// Get a const slice view of the bytes
+    /// Get a const slice view of the bytes.
     pub fn items(self: *const Self) []const u8 {
         return self.data.items;
     }
 
-    /// Get a mutable slice view of the bytes
+    /// Get a mutable slice view of the bytes.
     pub fn itemsMut(self: *Self) []u8 {
         return self.data.items;
     }
 
-    /// Get the number of bytes
+    /// Get the number of bytes.
     pub fn len(self: *const Self) usize {
         return self.data.items.len;
     }
 
-    /// Get the allocated capacity
+    /// Get the allocated capacity.
     pub fn capacity(self: *const Self) usize {
         return self.data.capacity;
     }
 
-    /// Append a single byte
+    /// Append a single byte.
     pub fn append(self: *Self, allocator: std.mem.Allocator, byte: u8) !void {
         try self.data.append(allocator, byte);
     }
 
-    /// Append a slice of bytes
+    /// Append a slice of bytes.
     pub fn appendSlice(self: *Self, allocator: std.mem.Allocator, slice: []const u8) !void {
         try self.data.appendSlice(allocator, slice);
     }
 
-    /// Create a deep copy of this Bytes
+    /// Create a deep copy of this Bytes.
     ///
     /// The returned Bytes must be deinitialized separately.
     pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
@@ -98,7 +98,7 @@ pub const Bytes = struct {
         return cloned;
     }
 
-    /// Transfer ownership of the underlying buffer to the caller
+    /// Transfer ownership of the underlying buffer to the caller.
     ///
     /// After calling this, the Bytes is empty and can be reused or deinitialized.
     /// The caller owns the returned slice and must free it with `allocator.free()`.
@@ -106,17 +106,17 @@ pub const Bytes = struct {
         return try self.data.toOwnedSlice(allocator);
     }
 
-    /// Clear all bytes while retaining the allocated capacity
+    /// Clear all bytes while retaining the allocated capacity.
     pub fn clearRetainingCapacity(self: *Self) void {
         self.data.clearRetainingCapacity();
     }
 
-    /// Clear all bytes and free the allocated memory
+    /// Clear all bytes and free the allocated memory.
     pub fn clearAndFree(self: *Self, allocator: std.mem.Allocator) void {
         self.data.clearAndFree(allocator);
     }
 
-    /// Resize the byte array
+    /// Resize the byte array.
     ///
     /// If growing, new bytes are zero-initialized.
     /// If shrinking, excess bytes are discarded.
@@ -130,7 +130,7 @@ pub const Bytes = struct {
         }
     }
 
-    /// Ensure the Bytes has at least the specified capacity
+    /// Ensure the Bytes has at least the specified capacity.
     ///
     /// Useful for pre-allocating when you know how much data you'll need.
     pub fn ensureTotalCapacity(self: *Self, allocator: std.mem.Allocator, new_capacity: usize) !void {
@@ -138,17 +138,17 @@ pub const Bytes = struct {
     }
 };
 
-/// Generic fixed-size byte array
+/// Generic fixed-size byte array.
 pub fn FixedBytes(comptime size: usize) type {
     return struct {
         bytes: [size]u8,
 
         const Self = @This();
 
-        /// The size of this fixed bytes array
+        /// The size of this fixed bytes array.
         pub const len = size;
 
-        /// Fixed-size byte array errors
+        /// Fixed-size byte array errors.
         pub const Error = error{
             InvalidHexStringLength,
             InvalidHexDigit,
@@ -156,22 +156,22 @@ pub fn FixedBytes(comptime size: usize) type {
             BufferTooSmall,
         };
 
-        /// Initialize from a byte array
+        /// Initialize from a byte array.
         pub fn init(bytes: [size]u8) Self {
             return Self{ .bytes = bytes };
         }
 
-        /// Create a zero-filled fixed bytes array
+        /// Create a zero-filled fixed bytes array.
         pub fn zero() Self {
             return Self{ .bytes = [_]u8{0} ** size };
         }
 
-        /// Create a fixed bytes array filled with a repeated byte value
+        /// Create a fixed bytes array filled with a repeated byte value.
         pub fn repeat(byte: u8) Self {
             return Self{ .bytes = [_]u8{byte} ** size };
         }
 
-        /// Parse from a hex string (run-time)
+        /// Parse from a hex string (run-time).
         ///
         /// Accepts hex strings with or without "0x" prefix.
         /// Pair of hex digits represents a byte, so expected length of the
@@ -198,7 +198,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return Self{ .bytes = bytes };
         }
 
-        /// Parse from a hex string (compile-time)
+        /// Parse from a hex string (compile-time).
         ///
         /// This function can only be used at compile time. It's useful for defining
         /// constant byte arrays (e.g., well-known hashes, constants).
@@ -229,7 +229,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return Self{ .bytes = bytes };
         }
 
-        /// Create from a slice with length validation
+        /// Create from a slice with length validation.
         ///
         /// Returns an error if the slice length doesn't match the expected size.
         pub fn fromSlice(slice: []const u8) Error!Self {
@@ -241,7 +241,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return Self{ .bytes = bytes };
         }
 
-        /// Create from a slice, left-padding with zeros if too short
+        /// Create from a slice, left-padding with zeros if too short.
         ///
         /// If the slice is longer than size, only the rightmost bytes are used.
         /// If the slice is shorter, it's left-padded with zeros.
@@ -261,7 +261,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return Self{ .bytes = bytes };
         }
 
-        /// Create from a slice, right-padding with zeros if too short
+        /// Create from a slice, right-padding with zeros if too short.
         ///
         /// If the slice is longer than size, only the leftmost bytes are used.
         /// If the slice is shorter, it's right-padded with zeros.
@@ -281,7 +281,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return Self{ .bytes = bytes };
         }
 
-        /// Zero-cost pointer cast from const array reference
+        /// Zero-cost pointer cast from const array reference.
         ///
         /// This is useful for performance-critical code where you want to
         /// reinterpret a byte array as a FixedBytes type without copying.
@@ -289,12 +289,12 @@ pub fn FixedBytes(comptime size: usize) type {
             return @ptrCast(bytes);
         }
 
-        /// Zero-cost pointer cast from mutable array reference
+        /// Zero-cost pointer cast from mutable array reference.
         pub fn fromMut(bytes: *[size]u8) *Self {
             return @ptrCast(bytes);
         }
 
-        /// Helper function for hex encoding
+        /// Helper function for hex encoding.
         ///
         /// offset: buffer offset (0 for no prefix, 2 for "0x" prefix)
         /// case: character case (.lower or .upper)
@@ -305,7 +305,7 @@ pub fn FixedBytes(comptime size: usize) type {
             }
         }
 
-        /// Format as a hex string (lowercase, with "0x" prefix)
+        /// Format as a hex string (lowercase, with "0x" prefix).
         ///
         /// The output buffer must be at least (size * 2 + 2) bytes.
         pub fn toHex(self: Self, buf: []u8) ![]const u8 {
@@ -319,7 +319,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return buf[0..required_len];
         }
 
-        /// Format as a hex string (lowercase, without "0x" prefix)
+        /// Format as a hex string (lowercase, without "0x" prefix).
         ///
         /// The output buffer must be at least (size * 2) bytes.
         pub fn toHexNoPrefix(self: Self, buf: []u8) ![]const u8 {
@@ -331,7 +331,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return buf[0..required_len];
         }
 
-        /// Format as a hex string (uppercase, with "0x" prefix)
+        /// Format as a hex string (uppercase, with "0x" prefix).
         ///
         /// The output buffer must be at least (size * 2 + 2) bytes.
         pub fn toHexUpper(self: Self, buf: []u8) ![]const u8 {
@@ -345,22 +345,22 @@ pub fn FixedBytes(comptime size: usize) type {
             return buf[0..required_len];
         }
 
-        /// Get a const slice view of the bytes
+        /// Get a const slice view of the bytes.
         pub fn asSlice(self: *const Self) []const u8 {
             return &self.bytes;
         }
 
-        /// Get a mutable slice view of the bytes
+        /// Get a mutable slice view of the bytes.
         pub fn asMutSlice(self: *Self) []u8 {
             return &self.bytes;
         }
 
-        /// Check if two fixed bytes arrays are equal
+        /// Check if two fixed bytes arrays are equal.
         pub fn eql(self: Self, other: Self) bool {
             return std.mem.eql(u8, &self.bytes, &other.bytes);
         }
 
-        /// Check if all bytes are zero
+        /// Check if all bytes are zero.
         pub fn isZero(self: Self) bool {
             for (self.bytes) |byte| {
                 if (byte != 0) return false;
@@ -368,7 +368,7 @@ pub fn FixedBytes(comptime size: usize) type {
             return true;
         }
 
-        /// Format the fixed bytes for use with `std.fmt`
+        /// Format the fixed bytes for use with `std.fmt`.
         ///
         /// Implements the standard Zig formatting protocol, allowing FixedBytes to be
         /// used with `std.fmt.format`, `std.fmt.bufPrint`, `std.fmt.allocPrint` etc.
