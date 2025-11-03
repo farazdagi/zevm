@@ -41,3 +41,39 @@ zig build test -- --test-target=lib address::
 # Run all tests (default)
 zig build test
 ```
+
+## Benchmarking
+
+Run benchmarks using `zig build bench`. Benchmark files are located in the `bench/` directory and are automatically discovered by the build system.
+
+### Run all benchmarks
+
+```bash
+# Run all benchmarks (default, Debug mode)
+zig build bench
+```
+
+### Run specific benchmarks
+
+```bash
+# Run only the stack benchmark
+zig build bench -Dbench-target=stack
+
+# Run only the big integer benchmark
+zig build bench -Dbench-target=big
+
+# Alternative: specify with .zig extension
+zig build bench -Dbench-target=stack.zig
+```
+
+### Optimization modes
+
+By default, benchmarks run in Debug mode to prevent over-optimization of benchmark loops. You can specify different optimization levels:
+
+```bash
+# Run with full optimizations
+zig build bench -Dbench-optimize=ReleaseFast
+
+# Run specific benchmark with optimizations
+zig build bench -Dbench-target=stack -Dbench-optimize=ReleaseFast
+```

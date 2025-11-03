@@ -287,31 +287,102 @@ pub fn build(b: *std.Build) !void {
     // Default to Debug to prevent over-optimization of benchmark loops
     // Use -Dbench-optimize=ReleaseFast to test with full optimizations
     const bench_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "Optimization mode for benchmarks") orelse .Debug;
+    const bench_target = b.option([]const u8, "bench-target", "Run specific benchmark (e.g., big, stack, or bench/<file>)");
 
-    // Create benchmark executable
-    const bench_exe = b.addExecutable(.{
-        .name = "bench",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("bench/big.zig"),
-            .target = target,
-            .optimize = bench_optimize,
-            .imports = &.{
-                .{ .name = "zevm", .module = mod },
-            },
-        }),
-    });
+    // Auto-discover benchmark files in bench/ directory
+    const Benchmark = struct {
+        run: *std.Build.Step.Run,
+        file_name: []const u8,
+    };
+    var benchmark_runs = std.ArrayList(Benchmark){};
+    defer benchmark_runs.deinit(b.allocator);
 
-    // Create run step for benchmarks
-    const run_bench = b.addRunArtifact(bench_exe);
+    const bench_dir = std.fs.cwd().openDir("bench", .{
+        .iterate = true,
+    }) catch |err| blk: {
+        if (err == error.FileNotFound) {
+            // No bench directory, skip benchmarks
+            break :blk null;
+        }
+        return err;
+    };
 
-    // Forward command-line arguments to benchmark
-    if (b.args) |args| {
-        run_bench.addArgs(args);
+    if (bench_dir) |dir| {
+        var bench_dir_mut = dir;
+        defer bench_dir_mut.close();
+
+        var iter = bench_dir_mut.iterate();
+        while (try iter.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.name, ".zig")) continue;
+
+            const bench_file_path = b.fmt("bench/{s}", .{entry.name});
+
+            const bench_exe = b.addExecutable(.{
+                .name = b.fmt("bench-{s}", .{entry.name[0 .. entry.name.len - 4]}), // Remove .zig extension
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(bench_file_path),
+                    .target = target,
+                    .optimize = bench_optimize,
+                    .imports = &.{
+                        .{ .name = "zevm", .module = mod },
+                    },
+                }),
+            });
+
+            const run_bench = b.addRunArtifact(bench_exe);
+
+            // Forward command-line arguments to benchmark
+            if (b.args) |args| {
+                run_bench.addArgs(args);
+            }
+
+            try benchmark_runs.append(b.allocator, .{
+                .run = run_bench,
+                .file_name = entry.name,
+            });
+        }
     }
 
     // Create top-level "bench" step
     const bench_step = b.step("bench", "Run benchmarks");
-    bench_step.dependOn(&run_bench.step);
+
+    // Conditional benchmark execution based on -Dbench-target flag
+    if (bench_target) |target_name| {
+        var bench_file_name: []const u8 = undefined;
+        if (std.mem.startsWith(u8, target_name, "bench/")) {
+            // If specified as "bench/foo.zig", extract "foo.zig"
+            bench_file_name = target_name[6..];
+        } else if (std.mem.endsWith(u8, target_name, ".zig")) {
+            // If specified as "foo.zig", use as is
+            bench_file_name = target_name;
+        } else {
+            // If specified as "foo", add .zig extension
+            bench_file_name = b.fmt("{s}.zig", .{target_name});
+        }
+
+        var found = false;
+        for (benchmark_runs.items) |benchmark| {
+            if (std.mem.eql(u8, benchmark.file_name, bench_file_name)) {
+                bench_step.dependOn(&benchmark.run.step);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            std.log.err("Benchmark file not found: {s}", .{bench_file_name});
+            std.log.err("Available benchmarks:", .{});
+            for (benchmark_runs.items) |benchmark| {
+                std.log.err("  - {s}", .{benchmark.file_name[0 .. benchmark.file_name.len - 4]});
+            }
+            std.process.exit(1);
+        }
+    } else {
+        // No target specified, run all benchmarks
+        for (benchmark_runs.items) |benchmark| {
+            bench_step.dependOn(&benchmark.run.step);
+        }
+    }
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
