@@ -1,7 +1,10 @@
-/// Number of block hashes that EVM can access in the past (pre-Prague)
+/// Maximum stack depth as defined by the Ethereum specification.
+pub const STACK_LIMIT: usize = 1024;
+
+/// Number of block hashes that EVM can access in the past (pre-Prague).
 pub const BLOCK_HASH_HISTORY: u64 = 256;
 
-/// Keccak-256 hash of empty string
+/// Keccak-256 hash of empty string.
 /// keccak256("") = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
 pub const EMPTY_KECCAK256: [32]u8 = [_]u8{
     0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c,

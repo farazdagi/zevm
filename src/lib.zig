@@ -2,6 +2,7 @@
 
 const std = @import("std");
 pub const primitives = @import("primitives/mod.zig");
+pub const interpreter = @import("interpreter/mod.zig");
 
 pub fn add(a: i32, b: i32) i32 {
     return a + b;
@@ -11,4 +12,5 @@ pub fn add(a: i32, b: i32) i32 {
 test {
     std.testing.refAllDecls(@This());
     _ = primitives;
+    _ = interpreter;
 }
