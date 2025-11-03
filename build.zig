@@ -16,6 +16,17 @@ pub fn build(b: *std.Build) !void {
     const test_filter = b.option([]const u8, "filter", "Filter tests by name");
     const test_timing = b.option(bool, "timing", "Show timing for each test") orelse true;
     const test_fail_first = b.option(bool, "fail-first", "Stop on first test failure") orelse false;
+    var test_target = b.option([]const u8, "test-target", "Run specific test target (lib, main, integration, or tests/<file>)");
+
+    // Also check for --test-target in b.args (when using `zig build test -- --test-target=lib`)
+    if (test_target == null and b.args != null) {
+        for (b.args.?) |arg| {
+            if (std.mem.startsWith(u8, arg, "--test-target=")) {
+                test_target = arg[14..]; // Skip "--test-target=" prefix
+                break;
+            }
+        }
+    }
 
     // It's also possible to define more custom flags to toggle optional features
     // of this build script using `b.option()`. All defined flags (including
@@ -157,48 +168,120 @@ pub fn build(b: *std.Build) !void {
         run_exe_tests.addArgs(args);
     }
 
-    // Integration tests (tests/ directory)
-    const integration_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/big.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "zevm", .module = mod },
-            },
-        }),
-        .test_runner = .{
-            .path = b.path("libs/test-runner/runner.zig"),
-            .mode = .simple,
-        },
-    });
+    // Integration tests (`tests/` directory) - auto-discover all .zig files
+    const IntegrationTest = struct {
+        run: *std.Build.Step.Run,
+        file_name: []const u8,
+    };
+    var integration_test_runs = std.ArrayList(IntegrationTest){};
+    defer integration_test_runs.deinit(b.allocator);
 
-    const run_integration_tests = b.addRunArtifact(integration_tests);
+    const tests_dir = std.fs.cwd().openDir("tests", .{
+        .iterate = true,
+    }) catch |err| blk: {
+        if (err == error.FileNotFound) {
+            // No tests directory, skip integration tests
+            break :blk null;
+        }
+        return err;
+    };
 
-    // Pass build options to test runner
-    if (test_filter) |filter| {
-        run_integration_tests.addArg("--filter");
-        run_integration_tests.addArg(filter);
-    }
-    if (test_timing) {
-        run_integration_tests.addArg("--timing");
-    }
-    if (test_fail_first) {
-        run_integration_tests.addArg("--fail-first");
-    }
+    if (tests_dir) |dir| {
+        var tests_dir_mut = dir;
+        defer tests_dir_mut.close();
 
-    // Also forward any direct command-line arguments
-    if (b.args) |args| {
-        run_integration_tests.addArgs(args);
+        var iter = tests_dir_mut.iterate();
+        while (try iter.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.name, ".zig")) continue;
+
+            const test_file_path = b.fmt("tests/{s}", .{entry.name});
+
+            const integration_tests = b.addTest(.{
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(test_file_path),
+                    .target = target,
+                    .optimize = optimize,
+                    .imports = &.{
+                        .{ .name = "zevm", .module = mod },
+                    },
+                }),
+                .test_runner = .{
+                    .path = b.path("libs/test-runner/runner.zig"),
+                    .mode = .simple,
+                },
+            });
+
+            const run_integration_tests = b.addRunArtifact(integration_tests);
+
+            // Pass build options to test runner
+            if (test_filter) |filter| {
+                run_integration_tests.addArg("--filter");
+                run_integration_tests.addArg(filter);
+            }
+            if (test_timing) {
+                run_integration_tests.addArg("--timing");
+            }
+            if (test_fail_first) {
+                run_integration_tests.addArg("--fail-first");
+            }
+
+            // Also forward any direct command-line arguments
+            if (b.args) |args| {
+                run_integration_tests.addArgs(args);
+            }
+
+            try integration_test_runs.append(b.allocator, .{
+                .run = run_integration_tests,
+                .file_name = entry.name,
+            });
+        }
     }
 
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
-    test_step.dependOn(&run_mod_tests.step);
-    test_step.dependOn(&run_exe_tests.step);
-    test_step.dependOn(&run_integration_tests.step);
+
+    // Conditional test execution based on -Dtarget flag
+    if (test_target) |target_name| {
+        if (std.mem.eql(u8, target_name, "lib")) {
+            test_step.dependOn(&run_mod_tests.step);
+        } else if (std.mem.eql(u8, target_name, "main")) {
+            test_step.dependOn(&run_exe_tests.step);
+        } else if (std.mem.eql(u8, target_name, "integration")) {
+            // Run all integration tests
+            for (integration_test_runs.items) |integration_test| {
+                test_step.dependOn(&integration_test.run.step);
+            }
+        } else if (std.mem.startsWith(u8, target_name, "tests/")) {
+            // Run specific integration test file
+            const test_file_name = target_name[6..]; // Skip "tests/" prefix
+            var found = false;
+            for (integration_test_runs.items) |integration_test| {
+                if (std.mem.eql(u8, integration_test.file_name, test_file_name)) {
+                    test_step.dependOn(&integration_test.run.step);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                std.log.err("Test file not found: {s}", .{target_name});
+                std.process.exit(1);
+            }
+        } else {
+            std.log.err("Unknown test target: {s}. Valid targets: lib, main, integration, tests/<file>", .{target_name});
+            std.log.err("Usage: zig build test -Dtest-target=<target>", .{});
+            std.process.exit(1);
+        }
+    } else {
+        // No target specified, run all tests (default behavior)
+        test_step.dependOn(&run_mod_tests.step);
+        test_step.dependOn(&run_exe_tests.step);
+        for (integration_test_runs.items) |integration_test| {
+            test_step.dependOn(&integration_test.run.step);
+        }
+    }
 
     // Benchmark optimization level
     // Default to Debug to prevent over-optimization of benchmark loops
