@@ -1,14 +1,6 @@
 const std = @import("std");
 const bytes = @import("bytes.zig");
 const B160 = bytes.B160;
-const FixedBytesError = bytes.FixedBytesError;
-
-/// Ethereum address errors
-pub const AddressError = error{
-    InvalidHexStringLength,
-    InvalidHexDigit,
-    InvalidChecksumFormat,
-};
 
 /// Ethereum address type
 ///
@@ -25,6 +17,13 @@ pub const AddressError = error{
 /// - EIP-1191: https://eips.ethereum.org/EIPS/eip-1191
 pub const Address = struct {
     inner: B160,
+
+    /// Address errors
+    pub const Error = error{
+        InvalidHexStringLength,
+        InvalidHexDigit,
+        InvalidChecksumFormat,
+    };
 
     /// Initialize an address from a 20-byte array
     pub fn init(b: [20]u8) Address {
@@ -53,10 +52,10 @@ pub const Address = struct {
     /// - "0xd8da6bf26964af9d7eed9e03e53415d37aa96045" (with prefix)
     /// - "d8da6bf26964af9d7eed9e03e53415d37aa96045" (without prefix)
     /// - "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045" (uppercase)
-    pub fn fromHex(hex: []const u8) AddressError!Address {
+    pub fn fromHex(hex: []const u8) Error!Address {
         const b160 = B160.fromHex(hex) catch |err| switch (err) {
-            FixedBytesError.InvalidHexStringLength => return AddressError.InvalidHexStringLength,
-            FixedBytesError.InvalidHexDigit => return AddressError.InvalidHexDigit,
+            B160.Error.InvalidHexStringLength => return Error.InvalidHexStringLength,
+            B160.Error.InvalidHexDigit => return Error.InvalidHexDigit,
             else => unreachable,
         };
         return Address{ .inner = b160 };
@@ -85,9 +84,9 @@ pub const Address = struct {
     /// Parameters:
     /// - hex: The checksummed hex string (with or without "0x" prefix)
     /// - chain_id: Optional chain ID for EIP-1191 validation. If null, uses EIP-55.
-    pub fn fromChecksummedHex(hex: []const u8, chain_id: ?u64) AddressError!Address {
+    pub fn fromChecksummedHex(hex: []const u8, chain_id: ?u64) Error!Address {
         if (hex.len != 40 and hex.len != 42)
-            return AddressError.InvalidHexStringLength;
+            return Error.InvalidHexStringLength;
 
         const hex_digits = if (hex.len == 42) hex[2..] else hex[0..];
 
@@ -108,7 +107,7 @@ pub const Address = struct {
         // Mixed case, parse and validate
         const addr = try fromHex(hex);
         if (!addr.validateChecksum(hex_digits, chain_id)) {
-            return AddressError.InvalidChecksumFormat;
+            return Error.InvalidChecksumFormat;
         }
 
         return addr;
@@ -314,32 +313,32 @@ test "Address.fromHex - valid addresses" {
 test "Address.fromHex - invalid inputs" {
     const test_cases = [_]struct {
         input: []const u8,
-        expected_error: AddressError,
+        expected_error: Address.Error,
     }{
         // Too short
         .{
             .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa9604",
-            .expected_error = AddressError.InvalidHexStringLength,
+            .expected_error = Address.Error.InvalidHexStringLength,
         },
         // Too long
         .{
             .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa9604500",
-            .expected_error = AddressError.InvalidHexStringLength,
+            .expected_error = Address.Error.InvalidHexStringLength,
         },
         // Invalid character
         .{
             .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa9604z",
-            .expected_error = AddressError.InvalidHexDigit,
+            .expected_error = Address.Error.InvalidHexDigit,
         },
         // Empty string
         .{
             .input = "",
-            .expected_error = AddressError.InvalidHexStringLength,
+            .expected_error = Address.Error.InvalidHexStringLength,
         },
         // Only 0x
         .{
             .input = "0x",
-            .expected_error = AddressError.InvalidHexStringLength,
+            .expected_error = Address.Error.InvalidHexStringLength,
         },
     };
 
@@ -489,7 +488,7 @@ test "Address.fromChecksummedHex - EIP-55 validation" {
         if (tc.should_succeed) {
             _ = try Address.fromChecksummedHex(tc.input, null);
         } else {
-            try expectError(AddressError.InvalidChecksumFormat, Address.fromChecksummedHex(tc.input, null));
+            try expectError(Address.Error.InvalidChecksumFormat, Address.fromChecksummedHex(tc.input, null));
         }
     }
 }
@@ -701,7 +700,7 @@ test "Address.fromChecksummedHex - EIP-1191 validation" {
         if (tc.should_succeed) {
             _ = try Address.fromChecksummedHex(tc.input, tc.chain_id);
         } else {
-            try expectError(AddressError.InvalidChecksumFormat, Address.fromChecksummedHex(tc.input, tc.chain_id));
+            try expectError(Address.Error.InvalidChecksumFormat, Address.fromChecksummedHex(tc.input, tc.chain_id));
         }
     }
 }

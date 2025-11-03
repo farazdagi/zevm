@@ -138,14 +138,6 @@ pub const Bytes = struct {
     }
 };
 
-/// Fixed-size byte array errors
-pub const FixedBytesError = error{
-    InvalidHexStringLength,
-    InvalidHexDigit,
-    InvalidSliceLength,
-    BufferTooSmall,
-};
-
 /// Generic fixed-size byte array
 pub fn FixedBytes(comptime size: usize) type {
     return struct {
@@ -155,6 +147,14 @@ pub fn FixedBytes(comptime size: usize) type {
 
         /// The size of this fixed bytes array
         pub const len = size;
+
+        /// Fixed-size byte array errors
+        pub const Error = error{
+            InvalidHexStringLength,
+            InvalidHexDigit,
+            InvalidSliceLength,
+            BufferTooSmall,
+        };
 
         /// Initialize from a byte array
         pub fn init(bytes: [size]u8) Self {
@@ -176,22 +176,22 @@ pub fn FixedBytes(comptime size: usize) type {
         /// Accepts hex strings with or without "0x" prefix.
         /// Pair of hex digits represents a byte, so expected length of the
         /// input hex is `size*2` (+2 for "0x", if present).
-        pub fn fromHex(hex: []const u8) FixedBytesError!Self {
+        pub fn fromHex(hex: []const u8) Error!Self {
             // Check for "0x" prefix
             const has_prefix = hex.len >= 2 and hex[0] == '0' and hex[1] == 'x';
 
             // Validate length
             const expected_len = size * 2 + if (has_prefix) 2 else @as(usize, 0);
             if (hex.len != expected_len)
-                return FixedBytesError.InvalidHexStringLength;
+                return Error.InvalidHexStringLength;
 
             const hex_digits = if (has_prefix) hex[2..] else hex[0..];
             var bytes: [size]u8 = undefined;
             for (0..size) |i| {
                 const hi = std.fmt.charToDigit(hex_digits[i * 2], 16) catch
-                    return FixedBytesError.InvalidHexDigit;
+                    return Error.InvalidHexDigit;
                 const lo = std.fmt.charToDigit(hex_digits[i * 2 + 1], 16) catch
-                    return FixedBytesError.InvalidHexDigit;
+                    return Error.InvalidHexDigit;
                 bytes[i] = (hi << 4) | lo;
             }
 
@@ -232,9 +232,9 @@ pub fn FixedBytes(comptime size: usize) type {
         /// Create from a slice with length validation
         ///
         /// Returns an error if the slice length doesn't match the expected size.
-        pub fn fromSlice(slice: []const u8) FixedBytesError!Self {
+        pub fn fromSlice(slice: []const u8) Error!Self {
             if (slice.len != size)
-                return FixedBytesError.InvalidSliceLength;
+                return Error.InvalidSliceLength;
 
             var bytes: [size]u8 = undefined;
             @memcpy(&bytes, slice);
@@ -477,32 +477,32 @@ test "FixedBytes.fromHex - invalid inputs" {
     const B4 = FixedBytes(4);
     const test_cases = [_]struct {
         input: []const u8,
-        expected_error: FixedBytesError,
+        expected_error: B4.Error,
     }{
         // Too short
         .{
             .input = "0x123456",
-            .expected_error = FixedBytesError.InvalidHexStringLength,
+            .expected_error = B4.Error.InvalidHexStringLength,
         },
         // Too long
         .{
             .input = "0x123456789a",
-            .expected_error = FixedBytesError.InvalidHexStringLength,
+            .expected_error = B4.Error.InvalidHexStringLength,
         },
         // Invalid character
         .{
             .input = "0x1234567z",
-            .expected_error = FixedBytesError.InvalidHexDigit,
+            .expected_error = B4.Error.InvalidHexDigit,
         },
         // Empty string
         .{
             .input = "",
-            .expected_error = FixedBytesError.InvalidHexStringLength,
+            .expected_error = B4.Error.InvalidHexStringLength,
         },
         // Only 0x
         .{
             .input = "0x",
-            .expected_error = FixedBytesError.InvalidHexStringLength,
+            .expected_error = B4.Error.InvalidHexStringLength,
         },
     };
 
@@ -552,8 +552,8 @@ test "FixedBytes.fromSlice - invalid length" {
     const slice_short = [_]u8{ 0x12, 0x34 };
     const slice_long = [_]u8{ 0x12, 0x34, 0x56, 0x78, 0x9a };
 
-    try expectError(FixedBytesError.InvalidSliceLength, B4.fromSlice(&slice_short));
-    try expectError(FixedBytesError.InvalidSliceLength, B4.fromSlice(&slice_long));
+    try expectError(B4.Error.InvalidSliceLength, B4.fromSlice(&slice_short));
+    try expectError(B4.Error.InvalidSliceLength, B4.fromSlice(&slice_long));
 }
 
 test "FixedBytes.leftPadFrom" {
