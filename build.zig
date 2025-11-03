@@ -164,6 +164,36 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    // Benchmark optimization level
+    // Default to Debug to prevent over-optimization of benchmark loops
+    // Use -Dbench-optimize=ReleaseFast to test with full optimizations
+    const bench_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "Optimization mode for benchmarks") orelse .Debug;
+
+    // Create benchmark executable
+    const bench_exe = b.addExecutable(.{
+        .name = "bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/big.zig"),
+            .target = target,
+            .optimize = bench_optimize,
+            .imports = &.{
+                .{ .name = "zevm", .module = mod },
+            },
+        }),
+    });
+
+    // Create run step for benchmarks
+    const run_bench = b.addRunArtifact(bench_exe);
+
+    // Forward command-line arguments to benchmark
+    if (b.args) |args| {
+        run_bench.addArgs(args);
+    }
+
+    // Create top-level "bench" step
+    const bench_step = b.step("bench", "Run benchmarks");
+    bench_step.dependOn(&run_bench.step);
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // Lastly, the Zig build system is relatively simple and self-contained,
