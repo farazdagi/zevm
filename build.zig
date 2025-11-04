@@ -1,6 +1,47 @@
 const std = @import("std");
 
+// Helper function to configure test runner with common options
+fn configureTestRunner(
+    run: *std.Build.Step.Run,
+    filter: ?[]const u8,
+    timing: bool,
+    fail_first: bool,
+    args: ?[]const []const u8,
+) void {
+    if (filter) |f| {
+        run.addArg("--filter");
+        run.addArg(f);
+    }
+    if (timing) {
+        run.addArg("--timing");
+    }
+    if (fail_first) {
+        run.addArg("--fail-first");
+    }
+    if (args) |a| {
+        run.addArgs(a);
+    }
+}
+
+// Helper function to discover .zig files in a directory
+fn discoverZigFiles(
+    dir_path: []const u8,
+) !?std.fs.Dir {
+    return std.fs.cwd().openDir(dir_path, .{
+        .iterate = true,
+    }) catch |err| {
+        if (err == error.FileNotFound) {
+            return null;
+        }
+        return err;
+    };
+}
+
 pub fn build(b: *std.Build) !void {
+    // ============================================================================
+    // Build Options
+    // ============================================================================
+
     // Standard target options allow the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -12,7 +53,7 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    // Test runner options (can be used without -- separator)
+    // Test options (can be used without -- separator)
     const test_filter = b.option([]const u8, "filter", "Filter tests by name");
     const test_timing = b.option(bool, "timing", "Show timing for each test") orelse true;
     const test_fail_first = b.option(bool, "fail-first", "Stop on first test failure") orelse false;
@@ -28,10 +69,13 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
-    // It's also possible to define more custom flags to toggle optional features
-    // of this build script using `b.option()`. All defined flags (including
-    // target and optimize options) will be listed when running `zig build --help`
-    // in this directory.
+    // Benchmark options
+    const bench_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "Optimization mode for benchmarks") orelse .Debug;
+    const bench_target = b.option([]const u8, "bench-target", "Run specific benchmark (e.g., big, stack, or bench/<file>)");
+
+    // ============================================================================
+    // Module Definition
+    // ============================================================================
 
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -52,6 +96,10 @@ pub fn build(b: *std.Build) !void {
         // which requires us to specify a target.
         .target = target,
     });
+
+    // ============================================================================
+    // Executable
+    // ============================================================================
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function.
@@ -106,6 +154,10 @@ pub fn build(b: *std.Build) !void {
         run_cmd.addArgs(args);
     }
 
+    // ============================================================================
+    // Tests
+    // ============================================================================
+
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
     // set the releative field.
@@ -119,23 +171,7 @@ pub fn build(b: *std.Build) !void {
 
     // A run step that will run the test executable.
     const run_mod_tests = b.addRunArtifact(mod_tests);
-
-    // Pass build options to test runner (e.g., -Dfilter=address)
-    if (test_filter) |filter| {
-        run_mod_tests.addArg("--filter");
-        run_mod_tests.addArg(filter);
-    }
-    if (test_timing) {
-        run_mod_tests.addArg("--timing");
-    }
-    if (test_fail_first) {
-        run_mod_tests.addArg("--fail-first");
-    }
-
-    // Also forward any direct command-line arguments (e.g., zig build test -- --filter address)
-    if (b.args) |args| {
-        run_mod_tests.addArgs(args);
-    }
+    configureTestRunner(run_mod_tests, test_filter, test_timing, test_fail_first, b.args);
 
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
@@ -150,23 +186,7 @@ pub fn build(b: *std.Build) !void {
 
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
-
-    // Pass build options to test runner
-    if (test_filter) |filter| {
-        run_exe_tests.addArg("--filter");
-        run_exe_tests.addArg(filter);
-    }
-    if (test_timing) {
-        run_exe_tests.addArg("--timing");
-    }
-    if (test_fail_first) {
-        run_exe_tests.addArg("--fail-first");
-    }
-
-    // Also forward any direct command-line arguments
-    if (b.args) |args| {
-        run_exe_tests.addArgs(args);
-    }
+    configureTestRunner(run_exe_tests, test_filter, test_timing, test_fail_first, b.args);
 
     // Integration tests (`tests/` directory) - auto-discover all .zig files
     const IntegrationTest = struct {
@@ -176,15 +196,7 @@ pub fn build(b: *std.Build) !void {
     var integration_test_runs = std.ArrayList(IntegrationTest){};
     defer integration_test_runs.deinit(b.allocator);
 
-    const tests_dir = std.fs.cwd().openDir("tests", .{
-        .iterate = true,
-    }) catch |err| blk: {
-        if (err == error.FileNotFound) {
-            // No tests directory, skip integration tests
-            break :blk null;
-        }
-        return err;
-    };
+    const tests_dir = try discoverZigFiles("tests");
 
     if (tests_dir) |dir| {
         var tests_dir_mut = dir;
@@ -213,23 +225,7 @@ pub fn build(b: *std.Build) !void {
             });
 
             const run_integration_tests = b.addRunArtifact(integration_tests);
-
-            // Pass build options to test runner
-            if (test_filter) |filter| {
-                run_integration_tests.addArg("--filter");
-                run_integration_tests.addArg(filter);
-            }
-            if (test_timing) {
-                run_integration_tests.addArg("--timing");
-            }
-            if (test_fail_first) {
-                run_integration_tests.addArg("--fail-first");
-            }
-
-            // Also forward any direct command-line arguments
-            if (b.args) |args| {
-                run_integration_tests.addArgs(args);
-            }
+            configureTestRunner(run_integration_tests, test_filter, test_timing, test_fail_first, b.args);
 
             try integration_test_runs.append(b.allocator, .{
                 .run = run_integration_tests,
@@ -283,11 +279,9 @@ pub fn build(b: *std.Build) !void {
         }
     }
 
-    // Benchmark optimization level
-    // Default to Debug to prevent over-optimization of benchmark loops
-    // Use -Dbench-optimize=ReleaseFast to test with full optimizations
-    const bench_optimize = b.option(std.builtin.OptimizeMode, "bench-optimize", "Optimization mode for benchmarks") orelse .Debug;
-    const bench_target = b.option([]const u8, "bench-target", "Run specific benchmark (e.g., big, stack, or bench/<file>)");
+    // ============================================================================
+    // Benchmarks
+    // ============================================================================
 
     // Auto-discover benchmark files in bench/ directory
     const Benchmark = struct {
@@ -297,15 +291,7 @@ pub fn build(b: *std.Build) !void {
     var benchmark_runs = std.ArrayList(Benchmark){};
     defer benchmark_runs.deinit(b.allocator);
 
-    const bench_dir = std.fs.cwd().openDir("bench", .{
-        .iterate = true,
-    }) catch |err| blk: {
-        if (err == error.FileNotFound) {
-            // No bench directory, skip benchmarks
-            break :blk null;
-        }
-        return err;
-    };
+    const bench_dir = try discoverZigFiles("bench");
 
     if (bench_dir) |dir| {
         var bench_dir_mut = dir;
