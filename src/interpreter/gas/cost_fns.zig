@@ -31,20 +31,6 @@ pub fn memoryCost(byte_size: usize) u64 {
     return (words *| words) / 512 +| Costs.MEMORY *| words;
 }
 
-/// Calculate incremental memory expansion cost.
-///
-/// Takes old and new memory sizes, returns only the incremental cost.
-/// Caller should track last_memory_cost and pass it here.
-///
-/// Returns 0 if new_size <= old_size (no expansion).
-pub fn memoryExpansionCost(old_size: usize, new_size: usize, last_cost: u64) u64 {
-    if (new_size <= old_size) {
-        return 0;
-    }
-
-    return memoryCost(new_size) - last_cost;
-}
-
 /// Get account access cost (BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH).
 ///
 /// Handles both pre-Berlin (flat cost, no cold/warm distinction) and post-Berlin (cold/warm) models.
@@ -184,28 +170,6 @@ test "memoryCost" {
 
     for (test_cases) |tc| {
         try expectEqual(tc.expected, memoryCost(tc.byte_size));
-    }
-}
-
-test "memoryExpansionCost" {
-    const test_cases = [_]struct {
-        old_size: usize,
-        new_size: usize,
-        last_cost: u64,
-        expected: u64,
-    }{
-        // First expansion
-        .{ .old_size = 0, .new_size = 32, .last_cost = 0, .expected = 3 },
-        // Expansion 32->64
-        .{ .old_size = 32, .new_size = 64, .last_cost = 3, .expected = 3 },
-        // No expansion (shrink)
-        .{ .old_size = 64, .new_size = 32, .last_cost = 6, .expected = 0 },
-        // No expansion (same)
-        .{ .old_size = 64, .new_size = 64, .last_cost = 6, .expected = 0 },
-    };
-
-    for (test_cases) |tc| {
-        try expectEqual(tc.expected, memoryExpansionCost(tc.old_size, tc.new_size, tc.last_cost));
     }
 }
 
@@ -375,10 +339,6 @@ test "overflow saturation" {
     const huge_size: usize = if (@sizeOf(usize) >= 8) (1 << 40) else (1 << 20);
     const memory_result = memoryCost(huge_size);
     try expect(memory_result > threshold);
-
-    // memoryExpansionCost: should produce huge cost for massive expansion
-    const expansion_result = memoryExpansionCost(0, huge_size, 0);
-    try expect(expansion_result > threshold);
 
     // copyCost: multiplication saturates
     // (max_u64 / 2) * 3 = 1.5 * max_u64, saturates to max_u64
