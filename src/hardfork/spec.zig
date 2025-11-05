@@ -62,7 +62,7 @@ pub const Hardfork = enum(u8) {
             .MERGE => "Paris/Merge",
             .SHANGHAI => "Shanghai",
             .CANCUN => "Cancun",
-            .PRAGUE => "Prague/Electra",
+            .PRAGUE => "Prague",
             .OSAKA => "Osaka",
         };
     }
@@ -108,10 +108,6 @@ pub const Spec = struct {
     /// EIP-170: Contract code size limit
     /// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
     max_code_size: usize,
-
-    /// EIP-2028: Calldata cost for non-zero bytes
-    /// Pre-Istanbul: 68 gas/byte, Post-Istanbul: 16 gas/byte
-    calldata_nonzero_cost: u64,
 
     /// EIP-3855: PUSH0 instruction
     /// Opcode availability
@@ -229,7 +225,6 @@ pub const FRONTIER = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -267,7 +262,6 @@ pub const HOMESTEAD = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -304,7 +298,6 @@ pub const TANGERINE = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -338,7 +331,6 @@ pub const SPURIOUS_DRAGON = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576, // EIP-170
-    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -400,7 +392,6 @@ pub const ISTANBUL = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 16, // EIP-2028: Reduced from 68
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -439,7 +430,6 @@ pub const BERLIN = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -474,7 +464,6 @@ pub const LONDON = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 16, // EIP-2028 (Istanbul)
     .has_push0 = false,
     .has_basefee = true, // EIP-3198
     .has_prevrandao = false,
@@ -516,7 +505,6 @@ pub const MERGE = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 16,
     .has_push0 = false,
     .has_basefee = true,
     .has_prevrandao = true, // EIP-4399: DIFFICULTY → PREVRANDAO
@@ -551,7 +539,6 @@ pub const SHANGHAI = Spec{
     .max_initcode_size = 49152, // EIP-3860: 2 * max_code_size
     .initcode_word_cost = 2, // EIP-3860
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 16,
     .has_push0 = true, // EIP-3855
     .has_basefee = true,
     .has_prevrandao = true,
@@ -587,7 +574,6 @@ pub const CANCUN = Spec{
     .max_initcode_size = 49152,
     .initcode_word_cost = 2,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 16,
     .has_push0 = true,
     .has_basefee = true,
     .has_prevrandao = true,
@@ -633,7 +619,6 @@ pub const PRAGUE = Spec{
     .max_initcode_size = 49152,
     .initcode_word_cost = 2,
     .max_code_size = 24576,
-    .calldata_nonzero_cost = 16,
     .has_push0 = true,
     .has_basefee = true,
     .has_prevrandao = true,
