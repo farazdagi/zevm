@@ -109,6 +109,10 @@ pub const Spec = struct {
     /// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
     max_code_size: usize,
 
+    /// EIP-2028: Calldata cost for non-zero bytes
+    /// Pre-Istanbul: 68 gas/byte, Post-Istanbul: 16 gas/byte
+    calldata_nonzero_cost: u64,
+
     /// EIP-3855: PUSH0 instruction
     /// Opcode availability
     has_push0: bool,
@@ -225,6 +229,7 @@ pub const FRONTIER = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -262,6 +267,7 @@ pub const HOMESTEAD = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -298,6 +304,7 @@ pub const TANGERINE = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -331,6 +338,7 @@ pub const SPURIOUS_DRAGON = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576, // EIP-170
+    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -381,12 +389,38 @@ pub const PETERSBURG = SPURIOUS_DRAGON;
 /// EIP-1884: optimising opcode gas prices based on consumption.
 /// EIP-2028: reduces the cost of CallData to allow more data in blocks - good for Layer 2 scaling.
 /// EIP-2200: other opcode gas price alterations.
-pub const ISTANBUL = SPURIOUS_DRAGON;
+pub const ISTANBUL = Spec{
+    .fork = .ISTANBUL,
+    .max_refund_quotient = 2,
+    .sstore_clears_schedule = 15000,
+    .selfdestruct_refund = 24000,
+    .cold_sload_cost = 200,
+    .cold_account_access_cost = 0,
+    .warm_storage_read_cost = 200,
+    .max_initcode_size = null,
+    .initcode_word_cost = 0,
+    .max_code_size = 24576,
+    .calldata_nonzero_cost = 16, // EIP-2028: Reduced from 68
+    .has_push0 = false,
+    .has_basefee = false,
+    .has_prevrandao = false,
+    .has_selfdestruct = true,
+    .has_blob_opcodes = false,
+    .has_tstore = false,
+    .has_mcopy = false,
+    .has_base_fee = false,
+    .has_blob_gas = false,
+    .target_blobs_per_block = 0,
+    .max_blobs_per_block = 0,
+    .has_eip7702 = false,
+    .has_bls_precompiles = false,
+    .has_historical_block_hashes = false,
+};
 
 /// Muir Glacier (January, 2020)
 ///
 /// EIP-2384: delays the difficulty bomb for another 4,000,000 blocks, or ~611 days.
-pub const MUIR_GLACIER = SPURIOUS_DRAGON;
+pub const MUIR_GLACIER = ISTANBUL;
 
 /// Berlin (April, 2021)
 ///
@@ -405,6 +439,7 @@ pub const BERLIN = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 68,
     .has_push0 = false,
     .has_basefee = false,
     .has_prevrandao = false,
@@ -439,6 +474,7 @@ pub const LONDON = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 16, // EIP-2028 (Istanbul)
     .has_push0 = false,
     .has_basefee = true, // EIP-3198
     .has_prevrandao = false,
@@ -480,6 +516,7 @@ pub const MERGE = Spec{
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 16,
     .has_push0 = false,
     .has_basefee = true,
     .has_prevrandao = true, // EIP-4399: DIFFICULTY → PREVRANDAO
@@ -514,6 +551,7 @@ pub const SHANGHAI = Spec{
     .max_initcode_size = 49152, // EIP-3860: 2 * max_code_size
     .initcode_word_cost = 2, // EIP-3860
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 16,
     .has_push0 = true, // EIP-3855
     .has_basefee = true,
     .has_prevrandao = true,
@@ -549,6 +587,7 @@ pub const CANCUN = Spec{
     .max_initcode_size = 49152,
     .initcode_word_cost = 2,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 16,
     .has_push0 = true,
     .has_basefee = true,
     .has_prevrandao = true,
@@ -594,6 +633,7 @@ pub const PRAGUE = Spec{
     .max_initcode_size = 49152,
     .initcode_word_cost = 2,
     .max_code_size = 24576,
+    .calldata_nonzero_cost = 16,
     .has_push0 = true,
     .has_basefee = true,
     .has_prevrandao = true,

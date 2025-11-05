@@ -14,10 +14,11 @@ pub const Costs = struct {
     pub const JUMPDEST: u64 = 1;
     pub const PUSH0: u64 = 2; // EIP-3855
 
-    // Memory Operations (base cost, expansion is separate)
+    // Memory Operations
     pub const MLOAD: u64 = VERYLOW;
     pub const MSTORE: u64 = VERYLOW;
     pub const MSTORE8: u64 = VERYLOW;
+    pub const MEMORY: u64 = VERYLOW; // Paid for every additional word when expanding memory.
 
     // Stack Operations
     pub const PUSH: u64 = VERYLOW;
@@ -69,6 +70,7 @@ pub const Costs = struct {
     pub const CALLDATASIZE: u64 = BASE;
     pub const CALLDATACOPY_BASE: u64 = VERYLOW;
     pub const CALLDATACOPY_WORD: u64 = VERYLOW; // Per word copied
+    pub const CALLDATA_ZERO_COST: u64 = 4; // Per zero byte in calldata
     pub const CODESIZE: u64 = BASE;
     pub const CODECOPY_BASE: u64 = VERYLOW;
     pub const CODECOPY_WORD: u64 = VERYLOW;
