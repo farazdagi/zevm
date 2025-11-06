@@ -4,7 +4,8 @@ EVM gas accounting and cost calculations.
 
 ## Overview
 
-This module provides a clean, layered architecture for managing EVM gas costs across all Ethereum hard forks. It handles everything from static opcode costs to complex fork-dependent calculations to runtime gas tracking.
+This module provides an architecture for managing EVM gas costs across all Ethereum hard forks. 
+It handles everything from static opcode costs to complex fork-dependent calculations to runtime gas tracking.
 
 ## Module Structure
 
