@@ -19,22 +19,22 @@ fn benchmarkMul() !void {
         b: U256,
     }{
         .{
-            .name = "small × small",
+            .name = "small * small",
             .a = U256.fromU64(12345),
             .b = U256.fromU64(67890),
         },
         .{
-            .name = "large × small",
+            .name = "large * small",
             .a = U256.MAX,
             .b = U256.fromU64(42),
         },
         .{
-            .name = "mid × mid",
+            .name = "mid * mid",
             .a = U256.fromU128(0x123456789ABCDEF0),
             .b = U256.fromU128(0xFEDCBA9876543210),
         },
         .{
-            .name = "large × large",
+            .name = "large * large",
             .a = U256{ .limbs = .{ 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0x1234567890ABCDEF, 0xFEDCBA0987654321 } },
             .b = U256{ .limbs = .{ 0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444 } },
         },

@@ -60,6 +60,6 @@ pub fn main() !void {
 
     std.debug.print("Memory usage:\n", .{});
     std.debug.print("  Stack struct:   ~40 bytes\n", .{});
-    std.debug.print("  Data array:     32,768 bytes (1024 × 32)\n", .{});
+    std.debug.print("  Data array:     32,768 bytes (1024 * 32)\n", .{});
     std.debug.print("  Total:          ~32.8 KB per stack\n\n", .{});
 }
