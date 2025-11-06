@@ -20,12 +20,12 @@ pub const U256 = struct {
     } };
 
     /// Create a U256 from a u64 value.
-    pub fn fromU64(value: u64) U256 {
+    pub inline fn fromU64(value: u64) U256 {
         return U256{ .limbs = .{ value, 0, 0, 0 } };
     }
 
     /// Create a U256 from a u128 value.
-    pub fn fromU128(value: u128) U256 {
+    pub inline fn fromU128(value: u128) U256 {
         return U256{
             .limbs = .{
                 @as(u64, @truncate(value)),
@@ -38,7 +38,7 @@ pub const U256 = struct {
 
     /// Create a U256 from little-endian bytes (32 bytes).
     /// The first byte is the least significant.
-    pub fn fromLeBytes(bytes: *const [32]u8) U256 {
+    pub inline fn fromLeBytes(bytes: *const [32]u8) U256 {
         var limbs: [4]u64 = undefined;
         for (0..4) |i| {
             const offset = i * 8;
@@ -49,7 +49,7 @@ pub const U256 = struct {
 
     /// Create a U256 from big-endian bytes (32 bytes).
     /// This is the standard format for EVM (most significant byte first).
-    pub fn fromBeBytes(bytes: *const [32]u8) U256 {
+    pub inline fn fromBeBytes(bytes: *const [32]u8) U256 {
         var limbs: [4]u64 = undefined;
         // Read in reverse order for big-endian
         for (0..4) |i| {
@@ -60,7 +60,7 @@ pub const U256 = struct {
     }
 
     /// Convert to u64 if the value fits, otherwise return null.
-    pub fn toU64(self: U256) ?u64 {
+    pub inline fn toU64(self: U256) ?u64 {
         if (self.limbs[1] != 0 or self.limbs[2] != 0 or self.limbs[3] != 0) {
             return null;
         }
@@ -68,7 +68,7 @@ pub const U256 = struct {
     }
 
     /// Convert to u128 if the value fits, otherwise return null.
-    pub fn toU128(self: U256) ?u128 {
+    pub inline fn toU128(self: U256) ?u128 {
         if (self.limbs[2] != 0 or self.limbs[3] != 0) {
             return null;
         }
@@ -76,7 +76,7 @@ pub const U256 = struct {
     }
 
     /// Write the U256 as little-endian bytes (32 bytes).
-    pub fn toLeBytes(self: U256) [32]u8 {
+    pub inline fn toLeBytes(self: U256) [32]u8 {
         var bytes: [32]u8 = undefined;
         for (0..4) |i| {
             const offset = i * 8;
@@ -87,7 +87,7 @@ pub const U256 = struct {
 
     /// Write the U256 as big-endian bytes (32 bytes).
     /// This is the standard format for EVM.
-    pub fn toBeBytes(self: U256) [32]u8 {
+    pub inline fn toBeBytes(self: U256) [32]u8 {
         var bytes: [32]u8 = undefined;
         for (0..4) |i| {
             const offset = (3 - i) * 8;
@@ -97,13 +97,13 @@ pub const U256 = struct {
     }
 
     /// Check if the value is zero.
-    pub fn isZero(self: U256) bool {
+    pub inline fn isZero(self: U256) bool {
         return self.limbs[0] == 0 and self.limbs[1] == 0 and self.limbs[2] == 0 and self.limbs[3] == 0;
     }
 
     /// Returns the number of bits required to represent this number.
     /// Returns 0 for zero.
-    pub fn bitLen(self: U256) u32 {
+    pub inline fn bitLen(self: U256) u32 {
         // Find the most significant non-zero limb
         for (0..4) |i| {
             const idx = 3 - i;
@@ -117,17 +117,17 @@ pub const U256 = struct {
     }
 
     /// Check if the value fits in a u64.
-    pub fn fitsInU64(self: U256) bool {
+    pub inline fn fitsInU64(self: U256) bool {
         return self.limbs[1] == 0 and self.limbs[2] == 0 and self.limbs[3] == 0;
     }
 
     /// Check if the value fits in a u128.
-    pub fn fitsInU128(self: U256) bool {
+    pub inline fn fitsInU128(self: U256) bool {
         return self.limbs[2] == 0 and self.limbs[3] == 0;
     }
 
     /// Compare equality (EVM: EQ).
-    pub fn eql(self: U256, other: U256) bool {
+    pub inline fn eql(self: U256, other: U256) bool {
         return self.limbs[0] == other.limbs[0] and
             self.limbs[1] == other.limbs[1] and
             self.limbs[2] == other.limbs[2] and
@@ -136,7 +136,7 @@ pub const U256 = struct {
 
     /// Less than comparison (EVM: LT).
     /// Returns true if self < other (unsigned comparison).
-    pub fn lt(self: U256, other: U256) bool {
+    pub inline fn lt(self: U256, other: U256) bool {
         // Compare from most significant to least significant
         if (self.limbs[3] != other.limbs[3]) return self.limbs[3] < other.limbs[3];
         if (self.limbs[2] != other.limbs[2]) return self.limbs[2] < other.limbs[2];
@@ -146,7 +146,7 @@ pub const U256 = struct {
 
     /// Greater than comparison (EVM: GT).
     /// Returns true if self > other (unsigned comparison).
-    pub fn gt(self: U256, other: U256) bool {
+    pub inline fn gt(self: U256, other: U256) bool {
         // Compare from most significant to least significant
         if (self.limbs[3] != other.limbs[3]) return self.limbs[3] > other.limbs[3];
         if (self.limbs[2] != other.limbs[2]) return self.limbs[2] > other.limbs[2];
@@ -155,18 +155,18 @@ pub const U256 = struct {
     }
 
     /// Less than or equal comparison.
-    pub fn lte(self: U256, other: U256) bool {
+    pub inline fn lte(self: U256, other: U256) bool {
         return !self.gt(other);
     }
 
     /// Greater than or equal comparison.
-    pub fn gte(self: U256, other: U256) bool {
+    pub inline fn gte(self: U256, other: U256) bool {
         return !self.lt(other);
     }
 
     /// Signed less than comparison (EVM: SLT).
     /// Interprets the values as two's complement signed integers.
-    pub fn slt(self: U256, other: U256) bool {
+    pub inline fn slt(self: U256, other: U256) bool {
         const self_sign = self.limbs[3] >> 63; // MSB of most significant limb
         const other_sign = other.limbs[3] >> 63;
 
@@ -181,7 +181,7 @@ pub const U256 = struct {
 
     /// Signed greater than comparison (EVM: SGT).
     /// Interprets the values as two's complement signed integers.
-    pub fn sgt(self: U256, other: U256) bool {
+    pub inline fn sgt(self: U256, other: U256) bool {
         const self_sign = self.limbs[3] >> 63;
         const other_sign = other.limbs[3] >> 63;
 
@@ -195,7 +195,7 @@ pub const U256 = struct {
     }
 
     /// Bitwise AND (EVM: AND).
-    pub fn bitAnd(self: U256, other: U256) U256 {
+    pub inline fn bitAnd(self: U256, other: U256) U256 {
         return U256{
             .limbs = .{
                 self.limbs[0] & other.limbs[0],
@@ -207,7 +207,7 @@ pub const U256 = struct {
     }
 
     /// Bitwise OR (EVM: OR).
-    pub fn bitOr(self: U256, other: U256) U256 {
+    pub inline fn bitOr(self: U256, other: U256) U256 {
         return U256{
             .limbs = .{
                 self.limbs[0] | other.limbs[0],
@@ -219,7 +219,7 @@ pub const U256 = struct {
     }
 
     /// Bitwise XOR (EVM: XOR).
-    pub fn bitXor(self: U256, other: U256) U256 {
+    pub inline fn bitXor(self: U256, other: U256) U256 {
         return U256{
             .limbs = .{
                 self.limbs[0] ^ other.limbs[0],
@@ -231,7 +231,7 @@ pub const U256 = struct {
     }
 
     /// Bitwise NOT (EVM: NOT).
-    pub fn bitNot(self: U256) U256 {
+    pub inline fn bitNot(self: U256) U256 {
         return U256{
             .limbs = .{
                 ~self.limbs[0],
@@ -245,7 +245,7 @@ pub const U256 = struct {
     /// Extract the nth byte (EVM: BYTE).
     /// Index 0 is the most significant byte.
     /// Returns 0 if index >= 32.
-    pub fn byte(self: U256, index: u8) u8 {
+    pub inline fn byte(self: U256, index: u8) u8 {
         if (index >= 32) return 0;
 
         // Convert to big-endian bytes to match EVM semantics
@@ -256,7 +256,7 @@ pub const U256 = struct {
     /// Left shift (EVM: SHL).
     /// Shifts the value left by `shift` bits.
     /// If shift >= 256, returns zero.
-    pub fn shl(self: U256, shift: u32) U256 {
+    pub inline fn shl(self: U256, shift: u32) U256 {
         if (shift >= 256) return U256.ZERO;
         if (shift == 0) return self;
 
@@ -291,7 +291,7 @@ pub const U256 = struct {
     /// Logical right shift (EVM: SHR).
     /// Shifts the value right by `shift` bits, filling with zeros.
     /// If shift >= 256, returns zero.
-    pub fn shr(self: U256, shift: u32) U256 {
+    pub inline fn shr(self: U256, shift: u32) U256 {
         if (shift >= 256) return U256.ZERO;
         if (shift == 0) return self;
 
@@ -326,7 +326,7 @@ pub const U256 = struct {
     /// Arithmetic right shift (EVM: SAR).
     /// Shifts right, preserving the sign bit (MSB).
     /// If shift >= 256, returns all 1s if negative, all 0s if positive.
-    pub fn sar(self: U256, shift: u32) U256 {
+    pub inline fn sar(self: U256, shift: u32) U256 {
         const sign_bit = (self.limbs[3] >> 63) & 1;
         const is_negative = sign_bit == 1;
 
@@ -365,7 +365,7 @@ pub const U256 = struct {
     /// Sign extend from byte position (EVM: SIGNEXTEND).
     /// Extends the sign bit from byte position `b` to fill all higher bytes.
     /// Byte 0 is the least significant byte.
-    pub fn signExtend(self: U256, byte_pos: u8) U256 {
+    pub inline fn signExtend(self: U256, byte_pos: u8) U256 {
         if (byte_pos >= 31) return self; // No extension needed for byte 31
 
         // Get the sign bit from the specified byte position
@@ -379,15 +379,18 @@ pub const U256 = struct {
         var result = self;
 
         // Update within the same limb
-        const bits_to_keep = (byte_in_limb + 1) * 8;
-        if (sign_bit == 0) {
-            // Clear bits in the same limb
-            const mask = (@as(u64, 1) << @intCast(bits_to_keep)) -% 1;
-            result.limbs[limb_index] &= mask;
-        } else {
-            // Set higher bits in the same limb
-            const mask = ~((@as(u64, 1) << @intCast(bits_to_keep)) -% 1);
-            result.limbs[limb_index] |= mask;
+        // When bits_to_keep == 0 (byte_in_limb == 7), entire limb is kept as-is
+        const bits_to_keep = ((byte_in_limb + 1) * 8) % 64;
+        if (bits_to_keep > 0) {
+            if (sign_bit == 0) {
+                // Clear higher bits in the same limb
+                const mask = (@as(u64, 1) << @intCast(bits_to_keep)) -% 1;
+                result.limbs[limb_index] &= mask;
+            } else {
+                // Set higher bits in the same limb
+                const mask = ~((@as(u64, 1) << @intCast(bits_to_keep)) -% 1);
+                result.limbs[limb_index] |= mask;
+            }
         }
 
         // Update all higher limbs
@@ -403,7 +406,7 @@ pub const U256 = struct {
 
     /// Addition with wrapping overflow (EVM: ADD).
     /// Computes (self + other) mod 2^256.
-    pub fn add(self: U256, other: U256) U256 {
+    pub inline fn add(self: U256, other: U256) U256 {
         var result: U256 = undefined;
         var carry: u64 = 0;
 
@@ -425,7 +428,7 @@ pub const U256 = struct {
 
     /// Subtraction with wrapping underflow (EVM: SUB).
     /// Computes (self - other) mod 2^256.
-    pub fn sub(self: U256, other: U256) U256 {
+    pub inline fn sub(self: U256, other: U256) U256 {
         var result: U256 = undefined;
         var borrow: u64 = 0;
 
@@ -447,7 +450,7 @@ pub const U256 = struct {
 
     /// Checked addition that detects overflow.
     /// Returns null if the operation would overflow.
-    pub fn checkedAdd(self: U256, other: U256) ?U256 {
+    pub inline fn checkedAdd(self: U256, other: U256) ?U256 {
         var result: U256 = undefined;
         var carry: u64 = 0;
 
@@ -465,7 +468,7 @@ pub const U256 = struct {
 
     /// Checked subtraction that detects underflow.
     /// Returns null if the operation would underflow (self < other).
-    pub fn checkedSub(self: U256, other: U256) ?U256 {
+    pub inline fn checkedSub(self: U256, other: U256) ?U256 {
         var result: U256 = undefined;
         var borrow: u64 = 0;
 
@@ -523,7 +526,7 @@ pub const U256 = struct {
 
     /// Unsigned division (EVM: DIV).
     /// Returns self / other, or 0 if other is zero (per EVM spec).
-    pub fn div(self: U256, other: U256) U256 {
+    pub inline fn div(self: U256, other: U256) U256 {
         if (self.isZero() or other.isZero() or self.lt(other)) return U256.ZERO;
         if (self.eql(other)) return U256.ONE;
         if (other.eql(U256.ONE)) return self;
@@ -539,7 +542,7 @@ pub const U256 = struct {
 
     /// Unsigned modulo (EVM: MOD).
     /// Returns self % other, or 0 if other is zero (per EVM spec).
-    pub fn rem(self: U256, other: U256) U256 {
+    pub inline fn rem(self: U256, other: U256) U256 {
         if (self.isZero() or other.isZero() or self.eql(other) or other.eql(U256.ONE)) return U256.ZERO;
         if (self.lt(other)) return self;
 
@@ -555,7 +558,7 @@ pub const U256 = struct {
     /// Signed division (EVM: SDIV).
     /// Interprets values as two's complement signed integers.
     /// Returns 0 if divisor is zero.
-    pub fn sdiv(self: U256, other: U256) U256 {
+    pub inline fn sdiv(self: U256, other: U256) U256 {
         if (other.isZero()) return U256.ZERO;
 
         const self_negative = (self.limbs[3] >> 63) == 1;
@@ -574,7 +577,7 @@ pub const U256 = struct {
 
     /// Signed modulo (EVM: SMOD).
     /// Result has the same sign as the dividend (self).
-    pub fn srem(self: U256, other: U256) U256 {
+    pub inline fn srem(self: U256, other: U256) U256 {
         if (other.isZero()) return U256.ZERO;
 
         const self_negative = (self.limbs[3] >> 63) == 1;
@@ -612,7 +615,7 @@ pub const U256 = struct {
 
     /// Long division for full U256 divisor.
     /// Returns [quotient, remainder].
-    pub fn divRem(self: U256, other: U256) [2]U256 {
+    pub inline fn divRem(self: U256, other: U256) [2]U256 {
         var quotient = U256.ZERO;
         var remainder = self;
 
@@ -653,7 +656,7 @@ pub const U256 = struct {
     /// Modular addition (EVM: ADDMOD).
     /// Computes (self + other) mod modulus.
     /// Returns 0 if modulus is zero.
-    pub fn addmod(self: U256, other: U256, modulus: U256) U256 {
+    pub inline fn addmod(self: U256, other: U256, modulus: U256) U256 {
         if (modulus.isZero() or modulus.eql(U256.ONE)) return U256.ZERO;
 
         // For addmod, we need to handle potential overflow in (a + b)
@@ -677,7 +680,7 @@ pub const U256 = struct {
     /// Modular multiplication (EVM: MULMOD).
     /// Computes (self * other) mod modulus.
     /// Returns 0 if modulus is zero.
-    pub fn mulmod(self: U256, other: U256, modulus: U256) U256 {
+    pub inline fn mulmod(self: U256, other: U256, modulus: U256) U256 {
         if (self.isZero() or other.isZero()) return U256.ZERO;
         if (modulus.isZero() or modulus.eql(U256.ONE)) return U256.ZERO;
 
@@ -712,7 +715,7 @@ pub const U256 = struct {
 
     /// Exponentiation (EVM: EXP).
     /// Computes self^exponent mod 2^256 (with wrapping).
-    pub fn exp(self: U256, exponent: U256) U256 {
+    pub inline fn exp(self: U256, exponent: U256) U256 {
         if (self.eql(U256.ONE) or exponent.isZero()) return U256.ONE;
         if (self.isZero()) return U256.ZERO;
         if (exponent.eql(U256.ONE)) return self;
