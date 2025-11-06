@@ -85,17 +85,19 @@ pub fn sloadCost(spec: Spec, is_cold: bool) u64 {
 // TODO: sstoreCost() deferred - requires full EIP-2200 state transition logic
 // Will be added when implementing SSTORE opcode
 
-/// Calculate EXP gas cost based on exponent byte length.
+/// Calculate EXP dynamic gas cost (per-byte portion only).
+///
+/// Returns ONLY the dynamic portion. The base cost (10 gas) is charged
+/// separately via opcode.baseCost().
 ///
 /// Handles EIP-160 change:
-/// - Pre-Spurious Dragon: 10 + (10 * bytes)
-/// - Post-Spurious Dragon: 10 + (50 * bytes)
+/// - Pre-Spurious Dragon: 10 * bytes
+/// - Post-Spurious Dragon: 50 * bytes
 ///
 /// EIPs: EIP-160 (Spurious Dragon)
 pub fn expCost(spec: Spec, exponent_byte_size: u8) u64 {
-    const base = Costs.EXP_BASE;
     const per_byte: u64 = if (spec.fork.isBefore(.SPURIOUS_DRAGON)) 10 else 50;
-    return base +| (per_byte *| @as(u64, exponent_byte_size));
+    return per_byte *| @as(u64, exponent_byte_size);
 }
 
 /// Calculate calldata gas cost for given data.
@@ -226,18 +228,18 @@ test "expCost" {
         exponent_byte_size: u8,
         expected: u64,
     }{
-        // Pre-Spurious Dragon: 0 bytes
-        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 0, .expected = 10 },
-        // Pre-Spurious Dragon: 2 bytes
-        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 2, .expected = 30 },
-        // Pre-Spurious Dragon: 32 bytes (max)
-        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 32, .expected = 330 },
-        // Post-Spurious Dragon: 0 bytes
-        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 0, .expected = 10 },
-        // Post-Spurious Dragon: 2 bytes
-        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 2, .expected = 110 },
-        // Post-Spurious Dragon: 32 bytes (max)
-        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 32, .expected = 1610 },
+        // Pre-Spurious Dragon: 0 bytes (dynamic only: 10 * 0)
+        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 0, .expected = 0 },
+        // Pre-Spurious Dragon: 2 bytes (dynamic only: 10 * 2)
+        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 2, .expected = 20 },
+        // Pre-Spurious Dragon: 32 bytes (dynamic only: 10 * 32)
+        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 32, .expected = 320 },
+        // Post-Spurious Dragon: 0 bytes (dynamic only: 50 * 0)
+        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 0, .expected = 0 },
+        // Post-Spurious Dragon: 2 bytes (dynamic only: 50 * 2)
+        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 2, .expected = 100 },
+        // Post-Spurious Dragon: 32 bytes (dynamic only: 50 * 32)
+        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 32, .expected = 1600 },
     };
 
     for (test_cases) |tc| {
