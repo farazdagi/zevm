@@ -9,8 +9,14 @@ const Costs = @import("gas/costs.zig").Costs;
 /// EVM Opcode.
 ///
 /// Each opcode is mapped to its exact byte value as defined in the EVM spec.
-/// Only valid opcodes are defined; invalid bytes will return null from fromByte().
+/// Only valid opcodes are defined; invalid bytes will return an error from fromByte().
 pub const Opcode = enum(u8) {
+    /// Opcode errors.
+    pub const Error = error{
+        /// The byte value does not correspond to a valid EVM opcode.
+        InvalidOpcode,
+    };
+
     // 0x0: Stop and Arithmetic Operations
     STOP = 0x00,
     ADD = 0x01,
@@ -183,10 +189,8 @@ pub const Opcode = enum(u8) {
     SELFDESTRUCT = 0xFF,
 
     /// Convert a byte to an Opcode.
-    ///
-    /// Returns null if the byte does not correspond to a valid opcode.
-    pub fn fromByte(byte: u8) ?Opcode {
-        return std.meta.intToEnum(Opcode, byte) catch null;
+    pub fn fromByte(byte: u8) Error!Opcode {
+        return std.enums.fromInt(Opcode, byte) orelse error.InvalidOpcode;
     }
 
     /// Get the string name of the opcode.
@@ -421,6 +425,7 @@ pub const Opcode = enum(u8) {
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
+const expectError = std.testing.expectError;
 
 test "Opcode: fromByte - valid opcodes" {
     const test_cases = [_]struct {
@@ -437,7 +442,7 @@ test "Opcode: fromByte - valid opcodes" {
     };
 
     for (test_cases) |tc| {
-        try expectEqual(tc.expected, Opcode.fromByte(tc.byte).?);
+        try expectEqual(tc.expected, try Opcode.fromByte(tc.byte));
     }
 }
 
@@ -452,7 +457,7 @@ test "Opcode: fromByte - invalid opcodes" {
     };
 
     for (invalid_bytes) |byte| {
-        try expect(Opcode.fromByte(byte) == null);
+        try expectError(error.InvalidOpcode, Opcode.fromByte(byte));
     }
 }
 

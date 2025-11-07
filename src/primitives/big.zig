@@ -61,6 +61,29 @@ pub const U256 = struct {
         return U256{ .limbs = limbs };
     }
 
+    /// Create a U256 from big-endian bytes, left-padding with zeros if needed.
+    ///
+    /// This is used for EVM PUSH operations where immediate values are 1-32 bytes.
+    /// If the slice is longer than 32 bytes, only the rightmost bytes are used.
+    /// If shorter, it's left-padded with zeros (EVM semantics).
+    ///
+    /// Example:
+    /// - [0x12, 0x34] becomes 0x0000...001234 (30 zero bytes, then 0x12, 0x34)
+    /// - [0x12, ...32 more bytes] takes rightmost 32 bytes
+    pub inline fn fromBeBytesPadded(value: []const u8) U256 {
+        var padded: [32]u8 = [_]u8{0} ** 32;
+
+        if (value.len >= 32) {
+            // Take rightmost 32 bytes
+            @memcpy(&padded, value[value.len - 32 ..]);
+        } else {
+            // Left-pad with zeros
+            @memcpy(padded[32 - value.len ..], value);
+        }
+
+        return U256.fromBeBytes(&padded);
+    }
+
     /// Convert to u64 if the value fits, otherwise return null.
     pub inline fn toU64(self: U256) ?u64 {
         if (self.limbs[1] != 0 or self.limbs[2] != 0 or self.limbs[3] != 0) {
@@ -891,6 +914,108 @@ test "U256: fromBeBytes and toBeBytes" {
     const result = value.toBeBytes();
 
     try expectEqualSlices(u8, &bytes, &result);
+}
+
+test "U256: fromBeBytesPadded - various input sizes" {
+    const test_cases = [_]struct {
+        input: []const u8,
+        expected_u64: ?u64,
+        should_be_zero: bool,
+    }{
+        // 1 byte
+        .{
+            .input = &[_]u8{0x42},
+            .expected_u64 = 0x42,
+            .should_be_zero = false,
+        },
+        // 2 bytes
+        .{
+            .input = &[_]u8{ 0x12, 0x34 },
+            .expected_u64 = 0x1234,
+            .should_be_zero = false,
+        },
+        // Max single byte
+        .{
+            .input = &[_]u8{0xFF},
+            .expected_u64 = 0xFF,
+            .should_be_zero = false,
+        },
+        // Empty slice
+        .{
+            .input = &[_]u8{},
+            .expected_u64 = null,
+            .should_be_zero = true,
+        },
+        // All zeros
+        .{
+            .input = &[_]u8{ 0x00, 0x00, 0x00 },
+            .expected_u64 = null,
+            .should_be_zero = true,
+        },
+        // Exactly 32 bytes
+        .{
+            .input = &[_]u8{
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x23,
+            },
+            .expected_u64 = 0x123,
+            .should_be_zero = false,
+        },
+    };
+
+    for (test_cases) |tc| {
+        const value = U256.fromBeBytesPadded(tc.input);
+
+        if (tc.should_be_zero) {
+            try expect(value.isZero());
+        } else {
+            if (tc.expected_u64) |expected| {
+                try expectEqual(expected, value.toU64().?);
+            }
+        }
+
+        // For 32-byte input, verify round-trip
+        if (tc.input.len == 32) {
+            const result_bytes = value.toBeBytes();
+            try expectEqualSlices(u8, tc.input, &result_bytes);
+        }
+    }
+}
+
+test "U256: fromBeBytesPadded - 16 bytes with padding" {
+    const bytes = [_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10 };
+    const value = U256.fromBeBytesPadded(&bytes);
+
+    // First 16 bytes should be zeros (left padding), then our 16 bytes
+    const result_bytes = value.toBeBytes();
+
+    // Check first 16 bytes are zero
+    for (0..16) |i| {
+        try expectEqual(@as(u8, 0), result_bytes[i]);
+    }
+
+    // Check last 16 bytes match input
+    for (0..16) |i| {
+        try expectEqual(bytes[i], result_bytes[16 + i]);
+    }
+}
+
+test "U256: fromBeBytesPadded - truncation (>32 bytes)" {
+    // 40 bytes - should take rightmost 32
+    const bytes = [_]u8{
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // These 8 bytes should be discarded
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x23,
+    };
+    const value = U256.fromBeBytesPadded(&bytes);
+
+    // Should only have the rightmost 32 bytes (the 0xFF bytes are discarded)
+    const result_bytes = value.toBeBytes();
+    try expectEqualSlices(u8, bytes[8..], &result_bytes);
 }
 
 test "U256: fromLeBytes and toLeBytes" {

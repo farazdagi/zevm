@@ -35,7 +35,6 @@ pub const Gas = struct {
     /// Gas operation errors
     pub const Error = error{
         OutOfGas,
-        GasLimitExceeded,
     };
 
     /// Initialize gas accounting with given limit and fork specification.
