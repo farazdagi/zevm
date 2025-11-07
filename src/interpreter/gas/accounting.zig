@@ -127,9 +127,9 @@ test "Gas: init" {
     for (test_cases) |tc| {
         const gas = Gas.init(tc.limit, tc.spec);
         try expectEqual(tc.limit, gas.limit);
-        try expectEqual(@as(u64, 0), gas.used);
-        try expectEqual(@as(u64, 0), gas.refunded);
-        try expectEqual(@as(u64, 0), gas.last_memory_cost);
+        try expectEqual(0, gas.used);
+        try expectEqual(0, gas.refunded);
+        try expectEqual(0, gas.last_memory_cost);
     }
 }
 

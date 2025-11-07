@@ -25,9 +25,9 @@ test "PUSH1 pushes 1 byte" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 1), interpreter.stack.len);
+    try expectEqual(1, interpreter.stack.len);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 0x42), value.toU64().?);
+    try expectEqual(0x42, value.toU64().?);
 }
 
 test "PUSH2 pushes 2 bytes" {
@@ -44,7 +44,7 @@ test "PUSH2 pushes 2 bytes" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 0x1234), value.toU64().?);
+    try expectEqual(0x1234, value.toU64().?);
 }
 
 test "PUSH32 pushes 32 bytes" {
@@ -94,7 +94,7 @@ test "PUSH32 pushes 32 bytes" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 0x123), value.toU64().?);
+    try expectEqual(0x123, value.toU64().?);
 }
 
 test "PUSH with insufficient bytes" {
@@ -157,15 +157,15 @@ test "multiple PUSH operations" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 3), interpreter.stack.len);
+    try expectEqual(3, interpreter.stack.len);
 
     // Stack: [1, 2, 3] (3 on top)
     const top = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 3), top.toU64().?);
+    try expectEqual(3, top.toU64().?);
     const second = try interpreter.stack.peek(1);
-    try expectEqual(@as(u64, 2), second.toU64().?);
+    try expectEqual(2, second.toU64().?);
     const third = try interpreter.stack.peek(2);
-    try expectEqual(@as(u64, 1), third.toU64().?);
+    try expectEqual(1, third.toU64().?);
 }
 
 test "PC advances correctly with PUSH" {
@@ -182,7 +182,7 @@ test "PC advances correctly with PUSH" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 5), interpreter.pc); // PC at STOP
+    try expectEqual(5, interpreter.pc); // PC at STOP
 }
 
 test "POP removes item from stack" {
@@ -200,9 +200,9 @@ test "POP removes item from stack" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 1), interpreter.stack.len);
+    try expectEqual(1, interpreter.stack.len);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 0x42), value.toU64().?);
+    try expectEqual(0x42, value.toU64().?);
 }
 
 test "POP on empty stack" {
@@ -234,12 +234,12 @@ test "DUP1 duplicates top of stack" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 2), interpreter.stack.len);
+    try expectEqual(2, interpreter.stack.len);
 
     const top = try interpreter.stack.peek(0);
     const second = try interpreter.stack.peek(1);
-    try expectEqual(@as(u64, 0x42), top.toU64().?);
-    try expectEqual(@as(u64, 0x42), second.toU64().?);
+    try expectEqual(0x42, top.toU64().?);
+    try expectEqual(0x42, second.toU64().?);
 }
 
 test "DUP2 duplicates second item" {
@@ -257,15 +257,15 @@ test "DUP2 duplicates second item" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 3), interpreter.stack.len);
+    try expectEqual(3, interpreter.stack.len);
 
     // Stack should be [0x11, 0x22, 0x11] (top to bottom)
     const top = try interpreter.stack.peek(0);
     const second = try interpreter.stack.peek(1);
     const third = try interpreter.stack.peek(2);
-    try expectEqual(@as(u64, 0x11), top.toU64().?);
-    try expectEqual(@as(u64, 0x22), second.toU64().?);
-    try expectEqual(@as(u64, 0x11), third.toU64().?);
+    try expectEqual(0x11, top.toU64().?);
+    try expectEqual(0x22, second.toU64().?);
+    try expectEqual(0x11, third.toU64().?);
 }
 
 test "DUP16 duplicates 16th item" {
@@ -290,11 +290,11 @@ test "DUP16 duplicates 16th item" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 17), interpreter.stack.len);
+    try expectEqual(17, interpreter.stack.len);
 
     // Top should be 1 (the 16th item from top, which is the first we pushed)
     const top = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 1), top.toU64().?);
+    try expectEqual(1, top.toU64().?);
 }
 
 test "DUP1 on empty stack fails" {
@@ -344,7 +344,7 @@ test "DUP gas consumption" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 6), result.gas_used);
+    try expectEqual(6, result.gas_used);
 }
 
 test "SWAP1 swaps top two items" {
@@ -362,13 +362,13 @@ test "SWAP1 swaps top two items" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 2), interpreter.stack.len);
+    try expectEqual(2, interpreter.stack.len);
 
     // Stack should be [0x22, 0x11] swapped to [0x11, 0x22]
     const top = try interpreter.stack.peek(0);
     const second = try interpreter.stack.peek(1);
-    try expectEqual(@as(u64, 0x11), top.toU64().?);
-    try expectEqual(@as(u64, 0x22), second.toU64().?);
+    try expectEqual(0x11, top.toU64().?);
+    try expectEqual(0x22, second.toU64().?);
 }
 
 test "SWAP2 swaps top with third item" {
@@ -387,15 +387,15 @@ test "SWAP2 swaps top with third item" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 3), interpreter.stack.len);
+    try expectEqual(3, interpreter.stack.len);
 
     // Stack was [0x11, 0x22, 0x33], after SWAP2: [0x33, 0x22, 0x11]
     const top = try interpreter.stack.peek(0);
     const second = try interpreter.stack.peek(1);
     const third = try interpreter.stack.peek(2);
-    try expectEqual(@as(u64, 0x11), top.toU64().?);
-    try expectEqual(@as(u64, 0x22), second.toU64().?);
-    try expectEqual(@as(u64, 0x33), third.toU64().?);
+    try expectEqual(0x11, top.toU64().?);
+    try expectEqual(0x22, second.toU64().?);
+    try expectEqual(0x33, third.toU64().?);
 }
 
 test "SWAP16 swaps top with 17th item" {
@@ -420,15 +420,15 @@ test "SWAP16 swaps top with 17th item" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 17), interpreter.stack.len);
+    try expectEqual(17, interpreter.stack.len);
 
     // Top should be 1 (swapped from 17th position)
     const top = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 1), top.toU64().?);
+    try expectEqual(1, top.toU64().?);
 
     // 17th item (index 16) should now be 17
     const seventeenth = try interpreter.stack.peek(16);
-    try expectEqual(@as(u64, 17), seventeenth.toU64().?);
+    try expectEqual(17, seventeenth.toU64().?);
 }
 
 test "SWAP1 with only one item fails" {
@@ -481,5 +481,5 @@ test "SWAP gas consumption" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 9), result.gas_used);
+    try expectEqual(9, result.gas_used);
 }

@@ -858,35 +858,35 @@ const expectEqualSlices = std.testing.expectEqualSlices;
 test "U256: constants" {
     try expect(U256.ZERO.isZero());
     try expect(!U256.ONE.isZero());
-    try expectEqual(@as(u64, 1), U256.ONE.limbs[0]);
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), U256.MAX.limbs[0]);
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), U256.MAX.limbs[3]);
+    try expectEqual(1, U256.ONE.limbs[0]);
+    try expectEqual(0xFFFFFFFFFFFFFFFF, U256.MAX.limbs[0]);
+    try expectEqual(0xFFFFFFFFFFFFFFFF, U256.MAX.limbs[3]);
 }
 
 test "U256: fromU64" {
     const a = U256.fromU64(42);
-    try expectEqual(@as(u64, 42), a.limbs[0]);
-    try expectEqual(@as(u64, 0), a.limbs[1]);
-    try expectEqual(@as(u64, 0), a.limbs[2]);
-    try expectEqual(@as(u64, 0), a.limbs[3]);
+    try expectEqual(42, a.limbs[0]);
+    try expectEqual(0, a.limbs[1]);
+    try expectEqual(0, a.limbs[2]);
+    try expectEqual(0, a.limbs[3]);
 
     const max_u64 = U256.fromU64(0xFFFFFFFFFFFFFFFF);
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), max_u64.limbs[0]);
+    try expectEqual(0xFFFFFFFFFFFFFFFF, max_u64.limbs[0]);
     try expect(max_u64.fitsInU64());
 }
 
 test "U256: fromU128" {
     const a = U256.fromU128(0x0123456789ABCDEF0123456789ABCDEF);
-    try expectEqual(@as(u64, 0x0123456789ABCDEF), a.limbs[0]);
-    try expectEqual(@as(u64, 0x0123456789ABCDEF), a.limbs[1]);
-    try expectEqual(@as(u64, 0), a.limbs[2]);
-    try expectEqual(@as(u64, 0), a.limbs[3]);
+    try expectEqual(0x0123456789ABCDEF, a.limbs[0]);
+    try expectEqual(0x0123456789ABCDEF, a.limbs[1]);
+    try expectEqual(0, a.limbs[2]);
+    try expectEqual(0, a.limbs[3]);
     try expect(a.fitsInU128());
 }
 
 test "U256: toU64" {
     const a = U256.fromU64(123);
-    try expectEqual(@as(u64, 123), a.toU64().?);
+    try expectEqual(123, a.toU64().?);
 
     const b = U256.fromU128(0x10000000000000000);
     try expect(b.toU64() == null);
@@ -894,7 +894,7 @@ test "U256: toU64" {
 
 test "U256: toU128" {
     const a = U256.fromU128(0x123456789ABCDEF0);
-    try expectEqual(@as(u128, 0x123456789ABCDEF0), a.toU128().?);
+    try expectEqual(0x123456789ABCDEF0, a.toU128().?);
 
     const b = U256{ .limbs = .{ 0, 0, 1, 0 } };
     try expect(b.toU128() == null);
@@ -993,7 +993,7 @@ test "U256: fromBeBytesPadded - 16 bytes with padding" {
 
     // Check first 16 bytes are zero
     for (0..16) |i| {
-        try expectEqual(@as(u8, 0), result_bytes[i]);
+        try expectEqual(0, result_bytes[i]);
     }
 
     // Check last 16 bytes match input
@@ -1040,15 +1040,15 @@ test "U256: isZero" {
 }
 
 test "U256: bitLen" {
-    try expectEqual(@as(u32, 0), U256.ZERO.bitLen());
-    try expectEqual(@as(u32, 1), U256.ONE.bitLen());
-    try expectEqual(@as(u32, 8), U256.fromU64(0xFF).bitLen());
-    try expectEqual(@as(u32, 64), U256.fromU64(0xFFFFFFFFFFFFFFFF).bitLen());
-    try expectEqual(@as(u32, 256), U256.MAX.bitLen());
+    try expectEqual(0, U256.ZERO.bitLen());
+    try expectEqual(1, U256.ONE.bitLen());
+    try expectEqual(8, U256.fromU64(0xFF).bitLen());
+    try expectEqual(64, U256.fromU64(0xFFFFFFFFFFFFFFFF).bitLen());
+    try expectEqual(256, U256.MAX.bitLen());
 
     // Test value with high bit set in limb[2]
     const val = U256{ .limbs = .{ 0, 0, 0x8000000000000000, 0 } };
-    try expectEqual(@as(u32, 192), val.bitLen());
+    try expectEqual(192, val.bitLen());
 }
 
 test "U256: byteLen" {
@@ -1220,7 +1220,7 @@ test "U256: bitAnd" {
     const b = U256.fromU64(0b1010_1010);
     const result = a.bitAnd(b);
 
-    try expectEqual(@as(u64, 0b1010_0000), result.toU64().?);
+    try expectEqual(0b1010_0000, result.toU64().?);
 
     // Test with all ones and zeros
     try expect(U256.MAX.bitAnd(U256.ZERO).eql(U256.ZERO));
@@ -1232,7 +1232,7 @@ test "U256: bitOr" {
     const b = U256.fromU64(0b1010_1010);
     const result = a.bitOr(b);
 
-    try expectEqual(@as(u64, 0b1111_1010), result.toU64().?);
+    try expectEqual(0b1111_1010, result.toU64().?);
 
     // Test with all ones and zeros
     try expect(U256.ZERO.bitOr(U256.ZERO).eql(U256.ZERO));
@@ -1244,7 +1244,7 @@ test "U256: bitXor" {
     const b = U256.fromU64(0b1010_1010);
     const result = a.bitXor(b);
 
-    try expectEqual(@as(u64, 0b0101_1010), result.toU64().?);
+    try expectEqual(0b0101_1010, result.toU64().?);
 
     // Test XOR properties
     const val = U256.fromU64(12345);
@@ -1262,8 +1262,8 @@ test "U256: bitNot" {
     const val = U256.fromU64(0xFF);
     const not_val = val.bitNot();
     // NOT 0xFF = 0xFFFF...FF00
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFF00), not_val.limbs[0]);
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), not_val.limbs[1]);
+    try expectEqual(0xFFFFFFFFFFFFFF00, not_val.limbs[0]);
+    try expectEqual(0xFFFFFFFFFFFFFFFF, not_val.limbs[1]);
 }
 
 test "U256: byte extraction" {
@@ -1279,15 +1279,15 @@ test "U256: byte extraction" {
     };
 
     // EVM BYTE opcode: index 0 is MSB (big-endian indexing)
-    try expectEqual(@as(u8, 0x07), val.byte(0)); // Most significant byte
-    try expectEqual(@as(u8, 0x06), val.byte(1));
-    try expectEqual(@as(u8, 0x00), val.byte(7));
-    try expectEqual(@as(u8, 0x0F), val.byte(8));
-    try expectEqual(@as(u8, 0x18), val.byte(31)); // Least significant byte
+    try expectEqual(0x07, val.byte(0)); // Most significant byte
+    try expectEqual(0x06, val.byte(1));
+    try expectEqual(0x00, val.byte(7));
+    try expectEqual(0x0F, val.byte(8));
+    try expectEqual(0x18, val.byte(31)); // Least significant byte
 
     // Out of bounds
-    try expectEqual(@as(u8, 0), val.byte(32));
-    try expectEqual(@as(u8, 0), val.byte(255));
+    try expectEqual(0, val.byte(32));
+    try expectEqual(0, val.byte(255));
 }
 
 test "U256: shl - left shift" {
@@ -1299,21 +1299,21 @@ test "U256: shl - left shift" {
     // Shift by small amount: 0x1 << 8 = 0x100 (256 in decimal)
     const a = U256.fromU64(1);
     const shifted = a.shl(8);
-    try expectEqual(@as(u64, 256), shifted.toU64().?);
+    try expectEqual(256, shifted.toU64().?);
 
     // Shift across limb boundary: 0x1 << 64 moves to limb[1]
     // Result: limbs = [0x0, 0x1, 0x0, 0x0] = 0x10000000000000000
     const b = U256.fromU64(1);
     const shifted_limb = b.shl(64);
-    try expectEqual(@as(u64, 0), shifted_limb.limbs[0]);
-    try expectEqual(@as(u64, 1), shifted_limb.limbs[1]);
+    try expectEqual(0, shifted_limb.limbs[0]);
+    try expectEqual(1, shifted_limb.limbs[1]);
 
     // Shift across limb and bit boundary within limb: 0x1 << 65 moves to limb[1] and w/i the limb
     // Result: limbs = [0x0, 0x10, 0x0, 0x0] = 0x10_0000000000000000
     const c = U256.fromU64(1);
     const shifted_limb1 = c.shl(65);
-    try expectEqual(@as(u64, 0), shifted_limb1.limbs[0]);
-    try expectEqual(@as(u64, 2), shifted_limb1.limbs[1]);
+    try expectEqual(0, shifted_limb1.limbs[0]);
+    try expectEqual(2, shifted_limb1.limbs[1]);
 
     // Shift by 256 or more = zero
     try expect(val.shl(256).eql(U256.ZERO));
@@ -1328,14 +1328,14 @@ test "U256: shr - logical right shift" {
 
     // Shift by small amount: 0xFF00 >> 8 = 0xFF
     const shifted = val.shr(8);
-    try expectEqual(@as(u64, 0xFF), shifted.toU64().?);
+    try expectEqual(0xFF, shifted.toU64().?);
 
     // Shift across limb boundary: 0x10000000000000000 >> 64 = 0x1
     // Before: limbs = [0x0, 0x1, 0x0, 0x0], After: limbs = [0x1, 0x0, 0x0, 0x0]
     const b = U256{ .limbs = .{ 0, 1, 0, 0 } }; // 2^64
     const shifted_limb = b.shr(64);
-    try expectEqual(@as(u64, 1), shifted_limb.limbs[0]);
-    try expectEqual(@as(u64, 0), shifted_limb.limbs[1]);
+    try expectEqual(1, shifted_limb.limbs[0]);
+    try expectEqual(0, shifted_limb.limbs[1]);
 
     // Shift by 256 or more = zero
     try expect(val.shr(256).eql(U256.ZERO));
@@ -1346,7 +1346,7 @@ test "U256: sar - arithmetic right shift" {
     // Positive number: behaves like logical shift
     const pos = U256.fromU64(0xFF00);
     const pos_shifted = pos.sar(8);
-    try expectEqual(@as(u64, 0xFF), pos_shifted.toU64().?);
+    try expectEqual(0xFF, pos_shifted.toU64().?);
 
     // Negative number: fills with 1s
     // Before: limbs[3] = 0x8000000000000000 (MSB set, negative in 2's complement)
@@ -1354,7 +1354,7 @@ test "U256: sar - arithmetic right shift" {
     const neg = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }; // MSB set
     const neg_shifted = neg.sar(8);
     // High byte should be filled with 1s
-    try expectEqual(@as(u64, 0xFF80000000000000), neg_shifted.limbs[3]);
+    try expectEqual(0xFF80000000000000, neg_shifted.limbs[3]);
 
     // Shift negative by >= 256: returns all 1s
     const neg_all = U256.MAX;
@@ -1372,7 +1372,7 @@ test "U256: signExtend" {
     // Extend a positive value (MSB of byte 0 is 0)
     const pos = U256.fromU64(0x7F); // 0b0111_1111
     const extended_pos = pos.signExtend(0);
-    try expectEqual(@as(u64, 0x7F), extended_pos.toU64().?);
+    try expectEqual(0x7F, extended_pos.toU64().?);
 
     // Extend a negative value (MSB of byte 0 is 1)
     const neg = U256.fromU64(0xFF); // 0b1111_1111 (negative in signed byte)
@@ -1383,7 +1383,7 @@ test "U256: signExtend" {
     // Extend from byte 1
     const val = U256.fromU64(0x7FFF); // Positive 16-bit value
     const ext1 = val.signExtend(1);
-    try expectEqual(@as(u64, 0x7FFF), ext1.toU64().?);
+    try expectEqual(0x7FFF, ext1.toU64().?);
 
     const val2 = U256.fromU64(0xFFFF); // Negative 16-bit value
     const ext2 = val2.signExtend(1);
@@ -1400,7 +1400,7 @@ test "U256: add - basic" {
     const a = U256.fromU64(10);
     const b = U256.fromU64(20);
     const sum = a.add(b);
-    try expectEqual(@as(u64, 30), sum.toU64().?);
+    try expectEqual(30, sum.toU64().?);
 
     // Add zero
     const val = U256.fromU64(42);
@@ -1418,10 +1418,10 @@ test "U256: add - carry across limbs" {
     const b = U256.fromU64(1);
     const sum = a.add(b);
 
-    try expectEqual(@as(u64, 0), sum.limbs[0]);
-    try expectEqual(@as(u64, 1), sum.limbs[1]);
-    try expectEqual(@as(u64, 0), sum.limbs[2]);
-    try expectEqual(@as(u64, 0), sum.limbs[3]);
+    try expectEqual(0, sum.limbs[0]);
+    try expectEqual(1, sum.limbs[1]);
+    try expectEqual(0, sum.limbs[2]);
+    try expectEqual(0, sum.limbs[3]);
 }
 
 test "U256: add - wrapping overflow" {
@@ -1446,7 +1446,7 @@ test "U256: sub - basic" {
     const a = U256.fromU64(30);
     const b = U256.fromU64(10);
     const diff = a.sub(b);
-    try expectEqual(@as(u64, 20), diff.toU64().?);
+    try expectEqual(20, diff.toU64().?);
 
     // Subtract zero
     const val = U256.fromU64(42);
@@ -1463,9 +1463,9 @@ test "U256: sub - borrow across limbs" {
     const b = U256.fromU64(1);
     const diff = a.sub(b);
 
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFF), diff.limbs[0]);
-    try expectEqual(@as(u64, 0), diff.limbs[1]);
-    try expectEqual(@as(u64, 0), diff.limbs[2]);
+    try expectEqual(0xFFFFFFFFFFFFFFFF, diff.limbs[0]);
+    try expectEqual(0, diff.limbs[1]);
+    try expectEqual(0, diff.limbs[2]);
 }
 
 test "U256: sub - wrapping underflow" {
@@ -1493,7 +1493,7 @@ test "U256: checkedAdd - no overflow" {
 
     const sum = a.checkedAdd(b);
     try expect(sum != null);
-    try expectEqual(@as(u64, 30), sum.?.toU64().?);
+    try expectEqual(30, sum.?.toU64().?);
 }
 
 test "U256: checkedAdd - overflow detection" {
@@ -1519,7 +1519,7 @@ test "U256: checkedSub - no underflow" {
 
     const diff = a.checkedSub(b);
     try expect(diff != null);
-    try expectEqual(@as(u64, 20), diff.?.toU64().?);
+    try expectEqual(20, diff.?.toU64().?);
 }
 
 test "U256: checkedSub - underflow detection" {
@@ -1563,7 +1563,7 @@ test "U256: mul - basic" {
     const a = U256.fromU64(10);
     const b = U256.fromU64(20);
     const product = a.mul(b);
-    try expectEqual(@as(u64, 200), product.toU64().?);
+    try expectEqual(200, product.toU64().?);
 
     // Multiply by zero
     try expect(a.mul(U256.ZERO).eql(U256.ZERO));
@@ -1584,8 +1584,8 @@ test "U256: mul - large values" {
     const product = a.mul(b);
 
     // 2^64 - 1 * 2 = 2^65 - 2
-    try expectEqual(@as(u64, 0xFFFFFFFFFFFFFFFE), product.limbs[0]);
-    try expectEqual(@as(u64, 1), product.limbs[1]);
+    try expectEqual(0xFFFFFFFFFFFFFFFE, product.limbs[0]);
+    try expectEqual(1, product.limbs[1]);
 }
 
 test "U256: mul - wrapping overflow" {
@@ -1602,7 +1602,7 @@ test "U256: div - basic" {
     const a = U256.fromU64(100);
     const b = U256.fromU64(10);
     const quotient = a.div(b);
-    try expectEqual(@as(u64, 10), quotient.toU64().?);
+    try expectEqual(10, quotient.toU64().?);
 
     // Divide by one
     try expect(a.div(U256.ONE).eql(a));
@@ -1626,7 +1626,7 @@ test "U256: rem - basic" {
     const a = U256.fromU64(100);
     const b = U256.fromU64(30);
     const remainder = a.rem(b);
-    try expectEqual(@as(u64, 10), remainder.toU64().?);
+    try expectEqual(10, remainder.toU64().?);
 
     // Modulo by larger number = self
     const c = U256.fromU64(20);
@@ -1662,7 +1662,7 @@ test "U256: sdiv - signed division" {
     // Positive / positive
     const pos1 = U256.fromU64(20);
     const pos2 = U256.fromU64(4);
-    try expectEqual(@as(u64, 5), pos1.sdiv(pos2).toU64().?);
+    try expectEqual(5, pos1.sdiv(pos2).toU64().?);
 
     // Negative / positive (represented as two's complement)
     const neg = U256.MAX; // -1 in two's complement
@@ -1692,7 +1692,7 @@ test "U256: srem - signed modulo" {
     // Positive % positive
     const pos1 = U256.fromU64(22);
     const pos2 = U256.fromU64(5);
-    try expectEqual(@as(u64, 2), pos1.srem(pos2).toU64().?);
+    try expectEqual(2, pos1.srem(pos2).toU64().?);
 
     // Modulo by zero
     try expect(pos1.srem(U256.ZERO).eql(U256.ZERO));
@@ -1715,7 +1715,7 @@ test "U256: addmod - basic" {
 
     // (10 + 15) % 7 = 25 % 7 = 4
     const result = a.addmod(b, m);
-    try expectEqual(@as(u64, 4), result.toU64().?);
+    try expectEqual(4, result.toU64().?);
 
     // Modulus of zero returns zero
     try expect(a.addmod(b, U256.ZERO).eql(U256.ZERO));
@@ -1743,7 +1743,7 @@ test "U256: mulmod - basic" {
 
     // (10 * 15) % 7 = 150 % 7 = 3
     const result = a.mulmod(b, m);
-    try expectEqual(@as(u64, 3), result.toU64().?);
+    try expectEqual(3, result.toU64().?);
 
     // Modulus of zero returns zero
     try expect(a.mulmod(b, U256.ZERO).eql(U256.ZERO));
@@ -1770,7 +1770,7 @@ test "U256: exp - basic" {
     const base = U256.fromU64(2);
     const exponent = U256.fromU64(8);
     const result = base.exp(exponent);
-    try expectEqual(@as(u64, 256), result.toU64().?);
+    try expectEqual(256, result.toU64().?);
 
     // 0^n = 0 (for n > 0)
     try expect(U256.ZERO.exp(U256.fromU64(5)).eql(U256.ZERO));
@@ -1791,13 +1791,13 @@ test "U256: exp - larger exponents" {
     const base = U256.fromU64(3);
     const exponent = U256.fromU64(4);
     const result = base.exp(exponent);
-    try expectEqual(@as(u64, 81), result.toU64().?);
+    try expectEqual(81, result.toU64().?);
 
     // 10^3 = 1000
     const base2 = U256.fromU64(10);
     const exp2 = U256.fromU64(3);
     const result2 = base2.exp(exp2);
-    try expectEqual(@as(u64, 1000), result2.toU64().?);
+    try expectEqual(1000, result2.toU64().?);
 }
 
 test "U256: exp - wrapping overflow" {

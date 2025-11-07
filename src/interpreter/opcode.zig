@@ -559,36 +559,36 @@ test "Opcode: baseCost" {
     const spec_berlin = Spec.forFork(.BERLIN);
 
     // Zero tier
-    try expectEqual(@as(u64, 0), Opcode.STOP.baseCost(spec_frontier));
-    try expectEqual(@as(u64, 0), Opcode.RETURN.baseCost(spec_frontier));
+    try expectEqual(0, Opcode.STOP.baseCost(spec_frontier));
+    try expectEqual(0, Opcode.RETURN.baseCost(spec_frontier));
 
     // Base tier
-    try expectEqual(@as(u64, 2), Opcode.ADDRESS.baseCost(spec_frontier));
-    try expectEqual(@as(u64, 2), Opcode.POP.baseCost(spec_frontier));
+    try expectEqual(2, Opcode.ADDRESS.baseCost(spec_frontier));
+    try expectEqual(2, Opcode.POP.baseCost(spec_frontier));
 
     // Verylow tier
-    try expectEqual(@as(u64, 3), Opcode.ADD.baseCost(spec_frontier));
-    try expectEqual(@as(u8, 3), Opcode.PUSH1.baseCost(spec_frontier));
-    try expectEqual(@as(u64, 3), Opcode.PUSH32.baseCost(spec_frontier));
+    try expectEqual(3, Opcode.ADD.baseCost(spec_frontier));
+    try expectEqual(3, Opcode.PUSH1.baseCost(spec_frontier));
+    try expectEqual(3, Opcode.PUSH32.baseCost(spec_frontier));
 
     // Low tier
-    try expectEqual(@as(u64, 5), Opcode.MUL.baseCost(spec_frontier));
-    try expectEqual(@as(u64, 5), Opcode.DIV.baseCost(spec_frontier));
+    try expectEqual(5, Opcode.MUL.baseCost(spec_frontier));
+    try expectEqual(5, Opcode.DIV.baseCost(spec_frontier));
 
     // Mid tier
-    try expectEqual(@as(u64, 8), Opcode.ADDMOD.baseCost(spec_frontier));
+    try expectEqual(8, Opcode.ADDMOD.baseCost(spec_frontier));
 
     // High tier
-    try expectEqual(@as(u64, 10), Opcode.JUMPI.baseCost(spec_frontier));
+    try expectEqual(10, Opcode.JUMPI.baseCost(spec_frontier));
 
     // EXP base
-    try expectEqual(@as(u64, 10), Opcode.EXP.baseCost(spec_frontier));
+    try expectEqual(10, Opcode.EXP.baseCost(spec_frontier));
 
     // Fork-specific: BALANCE changed in Tangerine and Berlin
-    try expectEqual(@as(u64, 20), Opcode.BALANCE.baseCost(spec_frontier));
-    try expectEqual(@as(u64, 100), Opcode.BALANCE.baseCost(spec_berlin)); // Warm cost
+    try expectEqual(20, Opcode.BALANCE.baseCost(spec_frontier));
+    try expectEqual(100, Opcode.BALANCE.baseCost(spec_berlin)); // Warm cost
 
     // Fork-specific: SLOAD changed in Tangerine and Berlin
-    try expectEqual(@as(u64, 50), Opcode.SLOAD.baseCost(spec_frontier));
-    try expectEqual(@as(u64, 100), Opcode.SLOAD.baseCost(spec_berlin)); // Warm cost
+    try expectEqual(50, Opcode.SLOAD.baseCost(spec_frontier));
+    try expectEqual(100, Opcode.SLOAD.baseCost(spec_berlin)); // Warm cost
 }

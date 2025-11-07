@@ -21,8 +21,8 @@ test "Hardfork: pre-EIP-3529 refund cap (used/2)" {
 
     // Try to refund 3000, cap is used/2 = 2500
     gas.refund(3000);
-    try expectEqual(@as(u64, 3000), gas.refunded); // Tracks full amount
-    try expectEqual(@as(u64, 2500), gas.finalRefund()); // But capped at 2500
+    try expectEqual(3000, gas.refunded); // Tracks full amount
+    try expectEqual(2500, gas.finalRefund()); // But capped at 2500
 }
 
 test "Hardfork: post-EIP-3529 refund cap (used/5)" {
@@ -33,8 +33,8 @@ test "Hardfork: post-EIP-3529 refund cap (used/5)" {
 
     // Try to refund 3000, cap is used/5 = 1000
     gas.refund(3000);
-    try expectEqual(@as(u64, 3000), gas.refunded); // Tracks full amount
-    try expectEqual(@as(u64, 1000), gas.finalRefund()); // But capped at 1000
+    try expectEqual(3000, gas.refunded); // Tracks full amount
+    try expectEqual(1000, gas.finalRefund()); // But capped at 1000
 }
 
 test "Hardfork: refund evolution across forks" {
@@ -73,7 +73,7 @@ test "Hardfork: SLOAD costs pre-EIP-2929" {
     const gas = Gas.init(100000, spec);
 
     // Pre-EIP-2929: cold_sload_cost is same as old cost (200 for Homestead)
-    try expectEqual(@as(u64, 200), gas.spec.cold_sload_cost);
+    try expectEqual(200, gas.spec.cold_sload_cost);
 }
 
 test "Hardfork: SLOAD costs post-EIP-2929" {
@@ -81,8 +81,8 @@ test "Hardfork: SLOAD costs post-EIP-2929" {
     const spec = Spec.forFork(.BERLIN);
     const gas = Gas.init(100000, spec);
 
-    try expectEqual(@as(u64, 2100), gas.spec.cold_sload_cost);
-    try expectEqual(@as(u64, 100), gas.spec.warm_storage_read_cost);
+    try expectEqual(2100, gas.spec.cold_sload_cost);
+    try expectEqual(100, gas.spec.warm_storage_read_cost);
 }
 
 test "Hardfork: cold account access costs" {
@@ -93,10 +93,10 @@ test "Hardfork: cold account access costs" {
     const gas_post = Gas.init(100000, post_berlin);
 
     // Pre-Berlin: lower cost
-    try expectEqual(@as(u64, 700), gas_pre.spec.cold_account_access_cost);
+    try expectEqual(700, gas_pre.spec.cold_account_access_cost);
 
     // Post-Berlin (EIP-2929): higher cold access cost
-    try expectEqual(@as(u64, 2600), gas_post.spec.cold_account_access_cost);
+    try expectEqual(2600, gas_post.spec.cold_account_access_cost);
 }
 
 // ============================================================================
@@ -126,12 +126,12 @@ test "Hardfork: SELFDESTRUCT refund removal" {
     // Pre-EIP-3529: 24000 gas refund
     const berlin = Spec.forFork(.BERLIN);
     const gas_berlin = Gas.init(100000, berlin);
-    try expectEqual(@as(u64, 24000), gas_berlin.spec.selfdestruct_refund);
+    try expectEqual(24000, gas_berlin.spec.selfdestruct_refund);
 
     // Post-EIP-3529: no refund
     const london = Spec.forFork(.LONDON);
     const gas_london = Gas.init(100000, london);
-    try expectEqual(@as(u64, 0), gas_london.spec.selfdestruct_refund);
+    try expectEqual(0, gas_london.spec.selfdestruct_refund);
 }
 
 // ============================================================================
@@ -191,9 +191,9 @@ test "Hardfork: max code size (EIP-170)" {
     const cancun = Spec.forFork(.CANCUN);
 
     // All forks have the limit (introduced early)
-    try expectEqual(@as(usize, 24576), frontier.max_code_size);
-    try expectEqual(@as(usize, 24576), homestead.max_code_size);
-    try expectEqual(@as(usize, 24576), cancun.max_code_size);
+    try expectEqual(24576, frontier.max_code_size);
+    try expectEqual(24576, homestead.max_code_size);
+    try expectEqual(24576, cancun.max_code_size);
 }
 
 test "Hardfork: max initcode size (EIP-3860)" {
@@ -202,7 +202,7 @@ test "Hardfork: max initcode size (EIP-3860)" {
     const shanghai = Spec.forFork(.SHANGHAI);
 
     try expect(london.max_initcode_size == null);
-    try expectEqual(@as(usize, 49152), shanghai.max_initcode_size.?);
+    try expectEqual(49152, shanghai.max_initcode_size.?);
 }
 
 // ============================================================================
@@ -221,8 +221,8 @@ test "Hardfork: integration - same code, different fork costs" {
         gas.refund(refund_amount);
 
         // Berlin: 15000 refund, capped at used/2 = 2500
-        try expectEqual(@as(u64, 15000), gas.refunded);
-        try expectEqual(@as(u64, 2500), gas.finalRefund());
+        try expectEqual(15000, gas.refunded);
+        try expectEqual(2500, gas.finalRefund());
     }
 
     // London: lower refund
@@ -234,8 +234,8 @@ test "Hardfork: integration - same code, different fork costs" {
         gas.refund(refund_amount);
 
         // London: 4800 refund, capped at used/5 = 1000
-        try expectEqual(@as(u64, 4800), gas.refunded);
-        try expectEqual(@as(u64, 1000), gas.finalRefund());
+        try expectEqual(4800, gas.refunded);
+        try expectEqual(1000, gas.finalRefund());
     }
 }
 
@@ -293,8 +293,8 @@ test "Hardfork: zero gas used with refunds" {
 
     // No gas used, try to refund
     gas.refund(1000);
-    try expectEqual(@as(u64, 1000), gas.refunded);
-    try expectEqual(@as(u64, 0), gas.finalRefund()); // Cap is 0/5 = 0
+    try expectEqual(1000, gas.refunded);
+    try expectEqual(0, gas.finalRefund()); // Cap is 0/5 = 0
 }
 
 test "Hardfork: refund within cap" {
@@ -304,7 +304,7 @@ test "Hardfork: refund within cap" {
 
     // Refund amount within cap
     gas.refund(500); // Cap is 5000/5 = 1000
-    try expectEqual(@as(u64, 500), gas.finalRefund()); // Not capped
+    try expectEqual(500, gas.finalRefund()); // Not capped
 }
 
 // ============================================================================
@@ -316,12 +316,12 @@ test "Hardfork: Prague - blob capacity doubled (EIP-7691)" {
     const prague = Spec.forFork(.PRAGUE);
 
     // Cancun: target 3, max 6
-    try expectEqual(@as(u8, 3), cancun.target_blobs_per_block);
-    try expectEqual(@as(u8, 6), cancun.max_blobs_per_block);
+    try expectEqual(3, cancun.target_blobs_per_block);
+    try expectEqual(6, cancun.max_blobs_per_block);
 
     // Prague: target 6, max 9 (doubled)
-    try expectEqual(@as(u8, 6), prague.target_blobs_per_block);
-    try expectEqual(@as(u8, 9), prague.max_blobs_per_block);
+    try expectEqual(6, prague.target_blobs_per_block);
+    try expectEqual(9, prague.max_blobs_per_block);
 }
 
 test "Hardfork: Prague - EIP-7702 availability" {

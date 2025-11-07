@@ -179,16 +179,16 @@ test "accountAccessCost - pre-Berlin" {
     const homestead_spec = Spec.forFork(.HOMESTEAD);
 
     // Pre-Berlin: always returns cold_account_access_cost
-    try expectEqual(@as(u64, 700), accountAccessCost(homestead_spec, true));
-    try expectEqual(@as(u64, 700), accountAccessCost(homestead_spec, false));
+    try expectEqual(700, accountAccessCost(homestead_spec, true));
+    try expectEqual(700, accountAccessCost(homestead_spec, false));
 }
 
 test "accountAccessCost - Berlin+" {
     const berlin_spec = Spec.forFork(.BERLIN);
 
     // Berlin+: cold = 2600, warm = 100
-    try expectEqual(@as(u64, 2600), accountAccessCost(berlin_spec, true));
-    try expectEqual(@as(u64, 100), accountAccessCost(berlin_spec, false));
+    try expectEqual(2600, accountAccessCost(berlin_spec, true));
+    try expectEqual(100, accountAccessCost(berlin_spec, false));
 }
 
 test "callBaseCost - evolution" {
@@ -197,16 +197,16 @@ test "callBaseCost - evolution" {
     const berlin_spec = Spec.forFork(.BERLIN);
 
     // Pre-Tangerine: 40
-    try expectEqual(@as(u64, 40), callBaseCost(frontier_spec, true));
-    try expectEqual(@as(u64, 40), callBaseCost(frontier_spec, false));
+    try expectEqual(40, callBaseCost(frontier_spec, true));
+    try expectEqual(40, callBaseCost(frontier_spec, false));
 
     // Tangerine-Berlin: 700
-    try expectEqual(@as(u64, 700), callBaseCost(tangerine_spec, true));
-    try expectEqual(@as(u64, 700), callBaseCost(tangerine_spec, false));
+    try expectEqual(700, callBaseCost(tangerine_spec, true));
+    try expectEqual(700, callBaseCost(tangerine_spec, false));
 
     // Berlin+: 2600 (cold) or 100 (warm)
-    try expectEqual(@as(u64, 2600), callBaseCost(berlin_spec, true));
-    try expectEqual(@as(u64, 100), callBaseCost(berlin_spec, false));
+    try expectEqual(2600, callBaseCost(berlin_spec, true));
+    try expectEqual(100, callBaseCost(berlin_spec, false));
 }
 
 test "sloadCost - evolution" {
@@ -214,12 +214,12 @@ test "sloadCost - evolution" {
     const berlin_spec = Spec.forFork(.BERLIN);
 
     // Pre-Berlin: no cold/warm distinction
-    try expectEqual(@as(u64, 200), sloadCost(homestead_spec, true));
-    try expectEqual(@as(u64, 200), sloadCost(homestead_spec, false));
+    try expectEqual(200, sloadCost(homestead_spec, true));
+    try expectEqual(200, sloadCost(homestead_spec, false));
 
     // Berlin+: 2100 (cold) or 100 (warm)
-    try expectEqual(@as(u64, 2100), sloadCost(berlin_spec, true));
-    try expectEqual(@as(u64, 100), sloadCost(berlin_spec, false));
+    try expectEqual(2100, sloadCost(berlin_spec, true));
+    try expectEqual(100, sloadCost(berlin_spec, false));
 }
 
 test "expCost" {
@@ -257,19 +257,19 @@ test "calldataCost" {
     const data3 = [_]u8{ 0, 0, 0, 0 }; // All zeros
 
     // Pre-Istanbul: 4/zero, 68/non-zero
-    try expectEqual(@as(u64, 3 * 4 + 1 * 68), calldataCost(byzantium_spec, &data1));
-    try expectEqual(@as(u64, 4 * 68), calldataCost(byzantium_spec, &data2));
-    try expectEqual(@as(u64, 4 * 4), calldataCost(byzantium_spec, &data3));
+    try expectEqual(3 * 4 + 1 * 68, calldataCost(byzantium_spec, &data1));
+    try expectEqual(4 * 68, calldataCost(byzantium_spec, &data2));
+    try expectEqual(4 * 4, calldataCost(byzantium_spec, &data3));
 
     // Istanbul+: 4/zero, 16/non-zero
-    try expectEqual(@as(u64, 3 * 4 + 1 * 16), calldataCost(istanbul_spec, &data1));
-    try expectEqual(@as(u64, 4 * 16), calldataCost(istanbul_spec, &data2));
-    try expectEqual(@as(u64, 4 * 4), calldataCost(istanbul_spec, &data3));
+    try expectEqual(3 * 4 + 1 * 16, calldataCost(istanbul_spec, &data1));
+    try expectEqual(4 * 16, calldataCost(istanbul_spec, &data2));
+    try expectEqual(4 * 4, calldataCost(istanbul_spec, &data3));
 
     // Istanbul+: 4/zero, 16/non-zero
-    try expectEqual(@as(u64, 3 * 4 + 1 * 16), calldataCost(berlin_spec, &data1));
-    try expectEqual(@as(u64, 4 * 16), calldataCost(berlin_spec, &data2));
-    try expectEqual(@as(u64, 4 * 4), calldataCost(berlin_spec, &data3));
+    try expectEqual(3 * 4 + 1 * 16, calldataCost(berlin_spec, &data1));
+    try expectEqual(4 * 16, calldataCost(berlin_spec, &data2));
+    try expectEqual(4 * 4, calldataCost(berlin_spec, &data3));
 }
 
 test "copyCost" {

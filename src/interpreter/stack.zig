@@ -127,11 +127,11 @@ test "Stack: push and pop single value" {
     const value = U256.fromU64(42);
 
     try stack.push(value);
-    try expectEqual(@as(usize, 1), stack.len);
+    try expectEqual(1, stack.len);
 
     const popped = try stack.pop();
     try expectEqual(value, popped);
-    try expectEqual(@as(usize, 0), stack.len);
+    try expectEqual(0, stack.len);
 }
 
 test "Stack: push and pop multiple values (LIFO order)" {
@@ -175,7 +175,7 @@ test "Stack: peek with invalid index returns StackUnderflow" {
     try stack.push(U256.fromU64(42));
     try stack.push(U256.fromU64(43));
 
-    try expectEqual(U256.fromU64(42), stack.peek(1));
+    try expectEqual(U256.fromU64(42), try stack.peek(1));
     try expectError(error.StackUnderflow, stack.peek(2));
     try expectError(error.StackUnderflow, stack.peek(100));
 }
@@ -191,7 +191,7 @@ test "Stack: peek does not modify stack" {
     try expectEqual(U256.fromU64(3), try stack.peek(0));
     try expectEqual(U256.fromU64(2), try stack.peek(1));
     try expectEqual(U256.fromU64(1), try stack.peek(2));
-    try expectEqual(@as(usize, 3), stack.len);
+    try expectEqual(3, stack.len);
 }
 
 test "Stack: dup1 duplicates top item" {
@@ -203,7 +203,7 @@ test "Stack: dup1 duplicates top item" {
 
     try stack.dup(1); // DUP1
 
-    try expectEqual(@as(usize, 3), stack.len);
+    try expectEqual(3, stack.len);
     try expectEqual(U256.fromU64(2), try stack.pop());
     try expectEqual(U256.fromU64(2), try stack.pop());
     try expectEqual(U256.fromU64(1), try stack.pop());
@@ -221,7 +221,7 @@ test "Stack: dup16 duplicates 16th item" {
 
     try stack.dup(16); // DUP16 - duplicates the 16th item (1)
 
-    try expectEqual(@as(usize, 17), stack.len);
+    try expectEqual(17, stack.len);
     try expectEqual(U256.fromU64(1), try stack.pop());
 }
 
@@ -296,7 +296,7 @@ test "Stack: operations on empty stack" {
     defer stack.deinit();
 
     try expect(stack.isEmpty());
-    try expectEqual(@as(usize, 0), stack.len);
+    try expectEqual(0, stack.len);
 }
 
 test "Stack: push maximum 256-bit value" {
@@ -320,7 +320,7 @@ test "Stack: exactly 1024 items" {
     }
 
     try expect(stack.isFull());
-    try expectEqual(@as(usize, Stack.CAPACITY), stack.len);
+    try expectEqual(Stack.CAPACITY, stack.len);
 
     // Can still pop
     _ = try stack.pop();

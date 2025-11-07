@@ -669,11 +669,11 @@ test "Spec: hasEIP - EIP-3529" {
 
     // EIP-3529 not in Berlin
     try expect(!berlin.hasEIP(3529));
-    try expectEqual(@as(u64, 2), berlin.max_refund_quotient);
+    try expectEqual(2, berlin.max_refund_quotient);
 
     // EIP-3529 in London
     try expect(london.hasEIP(3529));
-    try expectEqual(@as(u64, 5), london.max_refund_quotient);
+    try expectEqual(5, london.max_refund_quotient);
 }
 
 test "Spec: hasEIP - EIP-3855 PUSH0" {
@@ -694,23 +694,23 @@ test "Spec: hasEIP - EIP-2929" {
 
 test "Spec: refund changes across forks" {
     // Berlin: refund cap = used/2
-    try expectEqual(@as(u64, 2), BERLIN.max_refund_quotient);
-    try expectEqual(@as(u64, 15000), BERLIN.sstore_clears_schedule);
-    try expectEqual(@as(u64, 24000), BERLIN.selfdestruct_refund);
+    try expectEqual(2, BERLIN.max_refund_quotient);
+    try expectEqual(15000, BERLIN.sstore_clears_schedule);
+    try expectEqual(24000, BERLIN.selfdestruct_refund);
 
     // London: refund cap = used/5, reduced refunds
-    try expectEqual(@as(u64, 5), LONDON.max_refund_quotient);
-    try expectEqual(@as(u64, 4800), LONDON.sstore_clears_schedule);
-    try expectEqual(@as(u64, 0), LONDON.selfdestruct_refund);
+    try expectEqual(5, LONDON.max_refund_quotient);
+    try expectEqual(4800, LONDON.sstore_clears_schedule);
+    try expectEqual(0, LONDON.selfdestruct_refund);
 }
 
 test "Spec: SLOAD cost changes" {
     // Homestead: flat 200
-    try expectEqual(@as(u64, 200), HOMESTEAD.cold_sload_cost);
+    try expectEqual(200, HOMESTEAD.cold_sload_cost);
 
     // Berlin: 2100 cold, 100 warm
-    try expectEqual(@as(u64, 2100), BERLIN.cold_sload_cost);
-    try expectEqual(@as(u64, 100), BERLIN.warm_storage_read_cost);
+    try expectEqual(2100, BERLIN.cold_sload_cost);
+    try expectEqual(100, BERLIN.warm_storage_read_cost);
 }
 
 test "Spec: opcode availability" {

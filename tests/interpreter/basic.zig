@@ -20,10 +20,10 @@ test "init and deinit" {
     var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000);
     defer interpreter.deinit();
 
-    try expectEqual(@as(usize, 0), interpreter.pc);
+    try expectEqual(0, interpreter.pc);
     try expect(!interpreter.is_halted);
-    try expectEqual(@as(u64, 1000), interpreter.gas.limit);
-    try expectEqual(@as(u64, 0), interpreter.gas.used);
+    try expectEqual(1000, interpreter.gas.limit);
+    try expectEqual(0, interpreter.gas.used);
 }
 
 test "empty bytecode" {
@@ -48,7 +48,7 @@ test "STOP halts execution" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 0), result.gas_used); // STOP costs 0 gas
+    try expectEqual(0, result.gas_used); // STOP costs 0 gas
     try expect(interpreter.is_halted);
 }
 
@@ -62,8 +62,8 @@ test "multiple STOP opcodes (only first executed)" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 0), interpreter.pc); // PC stays at 0 (STOP is control flow)
-    try expectEqual(@as(u64, 0), result.gas_used);
+    try expectEqual(0, interpreter.pc); // PC stays at 0 (STOP is control flow)
+    try expectEqual(0, result.gas_used);
 }
 
 test "invalid opcode" {
@@ -165,7 +165,7 @@ test "Complex calculation - Fibonacci-like" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const top = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 6), top.toU64().?);
+    try expectEqual(6, top.toU64().?);
 }
 
 test "Chained operations with mixed ops" {
@@ -189,5 +189,5 @@ test "Chained operations with mixed ops" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 17), value.toU64().?);
+    try expectEqual(17, value.toU64().?);
 }

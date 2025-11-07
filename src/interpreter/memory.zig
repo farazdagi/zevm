@@ -214,7 +214,7 @@ test "Memory: init and deinit" {
     var memory = try Memory.init(std.testing.allocator);
     defer memory.deinit();
 
-    try expectEqual(@as(usize, 0), memory.len());
+    try expectEqual(0, memory.len());
 }
 
 test "Memory: mstore and mload single word" {
@@ -224,7 +224,7 @@ test "Memory: mstore and mload single word" {
     const value = U256.fromU64(0x123456789abcdef0);
     try memory.mstore(0, value);
 
-    try expectEqual(@as(usize, 32), memory.len());
+    try expectEqual(32, memory.len());
 
     const loaded = try memory.mload(0);
     try expect(value.eql(loaded));
@@ -235,10 +235,10 @@ test "Memory: mstore8 single byte" {
     defer memory.deinit();
 
     try memory.mstore8(0, 0x42);
-    try expectEqual(@as(usize, 32), memory.len()); // Aligned to word
+    try expectEqual(32, memory.len()); // Aligned to word
 
     const slice = try memory.getSlice(0, 1);
-    try expectEqual(@as(u8, 0x42), slice[0]);
+    try expectEqual(0x42, slice[0]);
 }
 
 test "Memory: automatic expansion" {
@@ -249,7 +249,7 @@ test "Memory: automatic expansion" {
 
     // Should expand to at least 132 bytes (100 + 32)
     // Aligned to 32: ceil(132/32) * 32 = 160 bytes
-    try expectEqual(@as(usize, 160), memory.len());
+    try expectEqual(160, memory.len());
 }
 
 test "Memory: zero-initialization" {
@@ -257,7 +257,7 @@ test "Memory: zero-initialization" {
     defer memory.deinit();
 
     try memory.mstore(32, U256.fromU64(1));
-    try expectEqual(@as(usize, 64), memory.len());
+    try expectEqual(64, memory.len());
 
     // First word should be zero (never written)
     const first = try memory.mload(0);
@@ -270,11 +270,11 @@ test "Memory: word alignment on resize" {
 
     // Request 33 bytes (should round to 64)
     try memory.resize(33);
-    try expectEqual(@as(usize, 64), memory.len());
+    try expectEqual(64, memory.len());
 
     // Request 65 bytes (should round to 96)
     try memory.resize(65);
-    try expectEqual(@as(usize, 96), memory.len());
+    try expectEqual(96, memory.len());
 }
 
 test "Memory: non-aligned access (mload)" {
@@ -300,14 +300,14 @@ test "Memory: mstore8 at any offset" {
     try memory.mstore8(31, 0xCC);
 
     const slice = try memory.getSlice(0, 32);
-    try expectEqual(@as(u8, 0xAA), slice[7]);
-    try expectEqual(@as(u8, 0xBB), slice[15]);
-    try expectEqual(@as(u8, 0xCC), slice[31]);
+    try expectEqual(0xAA, slice[7]);
+    try expectEqual(0xBB, slice[15]);
+    try expectEqual(0xCC, slice[31]);
 
     // Other bytes should be zero
-    try expectEqual(@as(u8, 0), slice[0]);
-    try expectEqual(@as(u8, 0), slice[6]);
-    try expectEqual(@as(u8, 0), slice[8]);
+    try expectEqual(0, slice[0]);
+    try expectEqual(0, slice[6]);
+    try expectEqual(0, slice[8]);
 }
 
 test "Memory: set and getSlice" {
@@ -318,12 +318,12 @@ test "Memory: set and getSlice" {
     try memory.set(10, &data);
 
     // Memory should be at least 15 bytes, aligned to 32
-    try expectEqual(@as(usize, 32), memory.len());
+    try expectEqual(32, memory.len());
 
     const slice = try memory.getSlice(10, 5);
-    try expectEqual(@as(usize, 5), slice.len);
-    try expectEqual(@as(u8, 1), slice[0]);
-    try expectEqual(@as(u8, 5), slice[4]);
+    try expectEqual(5, slice.len);
+    try expectEqual(1, slice[0]);
+    try expectEqual(5, slice[4]);
 }
 
 test "Memory: getSlice out of bounds" {
@@ -346,9 +346,9 @@ test "Memory: copy data out" {
     try memory.copy(0, &buffer);
 
     // Verify the value was copied correctly (big-endian, U64 in U256 is right-aligned)
-    try expectEqual(@as(u8, 0xf0), buffer[31]); // LSB at end
-    try expectEqual(@as(u8, 0xde), buffer[30]);
-    try expectEqual(@as(u8, 0xbc), buffer[29]);
+    try expectEqual(0xf0, buffer[31]); // LSB at end
+    try expectEqual(0xde, buffer[30]);
+    try expectEqual(0xbc, buffer[29]);
 }
 
 test "Memory: zero-size operations" {
@@ -357,10 +357,10 @@ test "Memory: zero-size operations" {
 
     // Zero-size operations should be no-ops
     try memory.set(100, &[_]u8{});
-    try expectEqual(@as(usize, 0), memory.len());
+    try expectEqual(0, memory.len());
 
     try memory.ensureCapacity(100, 0);
-    try expectEqual(@as(usize, 0), memory.len());
+    try expectEqual(0, memory.len());
 }
 
 test "Memory: large offset" {
@@ -372,7 +372,7 @@ test "Memory: large offset" {
     try memory.mstore8(large_offset, 0xFF);
 
     const slice = try memory.getSlice(large_offset, 1);
-    try expectEqual(@as(u8, 0xFF), slice[0]);
+    try expectEqual(0xFF, slice[0]);
 }
 
 test "Memory: overlapping operations" {
@@ -389,10 +389,10 @@ test "Memory: overlapping operations" {
 
     // Check results
     const slice = try memory.getSlice(0, 20);
-    try expectEqual(@as(u8, 1), slice[0]); // Original
-    try expectEqual(@as(u8, 5), slice[4]); // Original
-    try expectEqual(@as(u8, 11), slice[5]); // Overwritten
-    try expectEqual(@as(u8, 20), slice[14]); // New
+    try expectEqual(1, slice[0]); // Original
+    try expectEqual(5, slice[4]); // Original
+    try expectEqual(11, slice[5]); // Overwritten
+    try expectEqual(20, slice[14]); // New
 }
 
 test "Memory: getSliceMut allows modification" {
@@ -409,8 +409,8 @@ test "Memory: getSliceMut allows modification" {
 
     // Verify modifications
     const read_slice = try memory.getSlice(0, 32);
-    try expectEqual(@as(u8, 0xAA), read_slice[0]);
-    try expectEqual(@as(u8, 0xBB), read_slice[31]);
+    try expectEqual(0xAA, read_slice[0]);
+    try expectEqual(0xBB, read_slice[31]);
 }
 
 test "Memory: U256 big-endian serialization" {
@@ -424,7 +424,7 @@ test "Memory: U256 big-endian serialization" {
     // All bytes should be 0xFF
     const slice = try memory.getSlice(0, 32);
     for (slice) |byte| {
-        try expectEqual(@as(u8, 0xFF), byte);
+        try expectEqual(0xFF, byte);
     }
 
     // Load back
@@ -443,9 +443,9 @@ test "Memory: U256 zero padding" {
     // Most significant bytes should be zero (big-endian)
     const slice = try memory.getSlice(0, 32);
     for (slice[0..31]) |byte| {
-        try expectEqual(@as(u8, 0), byte);
+        try expectEqual(0, byte);
     }
-    try expectEqual(@as(u8, 0x42), slice[31]);
+    try expectEqual(0x42, slice[31]);
 }
 
 test "Memory: ensureCapacity overflow protection" {
@@ -544,7 +544,7 @@ test "Memory: legitimate large operations still work" {
 
     // Should succeed - well below MAX_MEMORY_SIZE
     try memory.ensureCapacity(large_valid_offset, 32);
-    try expectEqual(@as(usize, 1024 * 1024 + 32), memory.len());
+    try expectEqual(1024 * 1024 + 32, memory.len());
 
     // Should be able to write and read
     try memory.mstore(large_valid_offset, U256.fromU64(0xDEADBEEF));
@@ -563,7 +563,7 @@ test "Memory: edge case - zero size with huge offset" {
     try memory.ensureCapacity(huge_offset, 0);
 
     // Memory should remain empty
-    try expectEqual(@as(usize, 0), memory.len());
+    try expectEqual(0, memory.len());
 }
 
 test "Memory: set overflow protection via ensureCapacity" {

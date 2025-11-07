@@ -28,7 +28,7 @@ test "ADD - 2 + 3 = 5" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 5), value.toU64().?);
+    try expectEqual(5, value.toU64().?);
 }
 
 test "ADD - wrapping overflow" {
@@ -98,7 +98,7 @@ test "MUL - 10 * 3 = 30" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 30), value.toU64().?);
+    try expectEqual(30, value.toU64().?);
 }
 
 test "SUB - 10 - 3 = 7" {
@@ -117,7 +117,7 @@ test "SUB - 10 - 3 = 7" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 7), value.toU64().?);
+    try expectEqual(7, value.toU64().?);
 }
 
 test "SUB - wrapping underflow" {
@@ -155,7 +155,7 @@ test "DIV - 10 / 3 = 3" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 3), value.toU64().?);
+    try expectEqual(3, value.toU64().?);
 }
 
 test "DIV by zero returns 0" {
@@ -193,7 +193,7 @@ test "MOD - 10 % 3 = 1" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 1), value.toU64().?);
+    try expectEqual(1, value.toU64().?);
 }
 
 test "MOD by zero returns 0" {
@@ -233,7 +233,7 @@ test "Complex arithmetic - (2 + 3) * 4 = 20" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 20), value.toU64().?);
+    try expectEqual(20, value.toU64().?);
 }
 
 test "SDIV - signed division" {
@@ -252,7 +252,7 @@ test "SDIV - signed division" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 3), value.toU64().?);
+    try expectEqual(3, value.toU64().?);
 }
 
 test "SMOD - signed modulo" {
@@ -271,7 +271,7 @@ test "SMOD - signed modulo" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 1), value.toU64().?);
+    try expectEqual(1, value.toU64().?);
 }
 
 test "ADDMOD - (5 + 7) % 10 = 2" {
@@ -291,7 +291,7 @@ test "ADDMOD - (5 + 7) % 10 = 2" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 2), value.toU64().?);
+    try expectEqual(2, value.toU64().?);
 }
 
 test "MULMOD - (5 * 7) % 10 = 5" {
@@ -311,7 +311,7 @@ test "MULMOD - (5 * 7) % 10 = 5" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 5), value.toU64().?);
+    try expectEqual(5, value.toU64().?);
 }
 
 test "EXP - 2^8 = 256" {
@@ -330,7 +330,7 @@ test "EXP - 2^8 = 256" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.stack.peek(0);
-    try expectEqual(@as(u64, 256), value.toU64().?);
+    try expectEqual(256, value.toU64().?);
 }
 
 test "Gas consumption - simple arithmetic" {
@@ -350,7 +350,7 @@ test "Gas consumption - simple arithmetic" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 9), result.gas_used);
+    try expectEqual(9, result.gas_used);
 }
 
 test "Gas consumption - EXP with dynamic gas" {
@@ -370,7 +370,7 @@ test "Gas consumption - EXP with dynamic gas" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 66), result.gas_used);
+    try expectEqual(66, result.gas_used);
 }
 
 test "Gas consumption - MUL costs 5 gas" {
@@ -390,7 +390,7 @@ test "Gas consumption - MUL costs 5 gas" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 11), result.gas_used);
+    try expectEqual(11, result.gas_used);
 }
 
 test "Gas consumption - ADDMOD costs 8 gas" {
@@ -411,5 +411,5 @@ test "Gas consumption - ADDMOD costs 8 gas" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(u64, 17), result.gas_used);
+    try expectEqual(17, result.gas_used);
 }
