@@ -98,7 +98,7 @@ pub const AggregateTestStep = struct {
             // Run the test executable
             var child = std.process.Child.init(args.items, allocator);
             child.stdout_behavior = .Pipe;
-            child.stderr_behavior = .Inherit;
+            child.stderr_behavior = .Ignore;
 
             try child.spawn();
 
