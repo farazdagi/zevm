@@ -56,7 +56,7 @@ pub fn main() !void {
         const friendly_name = getFriendlyName(t.name);
         // Format to apply filter on the display format (with ::)
         var name_buf: [512]u8 = undefined;
-        const formatted_name = formatTestName(&name_buf, friendly_name);
+        const formatted_name = formatTestName(&name_buf, friendly_name, config.test_name);
 
         if (config.filter) |f| {
             if (std.mem.indexOf(u8, formatted_name, f) == null) {
@@ -67,8 +67,15 @@ pub fn main() !void {
         test_count += 1;
     }
 
-    // If no tests to run, exit silently
+    // If no tests to run, print JSON (if requested) and exit silently
     if (test_count == 0) {
+        if (config.json_output) {
+            const suite_name_str = config.test_name orelse "unknown";
+            Printer.normal("{{\"suite\":\"{s}\",\"passed\":0,\"failed\":0,\"ignored\":0,\"leaked\":0,\"filtered\":{d},\"success\":true}}\n", .{
+                suite_name_str,
+                filtered_count,
+            });
+        }
         std.posix.exit(0);
     }
 
@@ -94,12 +101,14 @@ pub fn main() !void {
         break :blk null;
     };
 
-    Printer.normal("\n", .{});
-    if (suite_name) |name| {
-        Printer.normal("running {d} test{s} ", .{ test_count, if (test_count != 1) "s" else "" });
-        Printer.pass("({s})\n", .{name});
-    } else {
-        Printer.normal("running {d} test{s}\n", .{ test_count, if (test_count != 1) "s" else "" });
+    if (!config.json_output) {
+        Printer.normal("\n", .{});
+        if (suite_name) |name| {
+            Printer.normal("running {d} test{s} ", .{ test_count, if (test_count != 1) "s" else "" });
+            Printer.pass("({s})\n", .{name});
+        } else {
+            Printer.normal("running {d} test{s}\n", .{ test_count, if (test_count != 1) "s" else "" });
+        }
     }
 
     // Run tests
@@ -114,7 +123,7 @@ pub fn main() !void {
 
         // Format name with :: separator for display and filtering
         var formatted_name_buf: [512]u8 = undefined;
-        const formatted_name = formatTestName(&formatted_name_buf, friendly_name);
+        const formatted_name = formatTestName(&formatted_name_buf, friendly_name, config.test_name);
 
         // Apply filter to formatted name (with ::) so users can filter as they see it
         if (config.filter) |f| {
@@ -125,8 +134,10 @@ pub fn main() !void {
 
         current_test = formatted_name;
 
-        // Print test name
-        Printer.normal("test {s} ... ", .{formatted_name});
+        // Print test name (unless JSON output)
+        if (!config.json_output) {
+            Printer.normal("test {s} ... ", .{formatted_name});
+        }
 
         // Run the test
         std.testing.allocator_instance = .{};
@@ -138,7 +149,9 @@ pub fn main() !void {
         // Check for memory leaks
         if (std.testing.allocator_instance.deinit() == .leak) {
             leak += 1;
-            Printer.leak("LEAK\n", .{});
+            if (!config.json_output) {
+                Printer.leak("LEAK\n", .{});
+            }
             if (failed_test_count < failed_tests_buffer.len) {
                 const err_msg = try std.fmt.allocPrint(allocator, "Memory leak detected", .{});
                 failed_tests_buffer[failed_test_count] = .{
@@ -151,21 +164,27 @@ pub fn main() !void {
         } else if (result) |_| {
             // Test passed
             pass += 1;
-            if (config.show_timing) {
-                const ms = @as(f64, @floatFromInt(ns_taken)) / 1_000_000.0;
-                Printer.pass("ok", .{});
-                Printer.normal(" ({d:.2}ms)\n", .{ms});
-            } else {
-                Printer.pass("ok\n", .{});
+            if (!config.json_output) {
+                if (config.show_timing) {
+                    const ms = @as(f64, @floatFromInt(ns_taken)) / 1_000_000.0;
+                    Printer.pass("ok", .{});
+                    Printer.normal(" ({d:.2}ms)\n", .{ms});
+                } else {
+                    Printer.pass("ok\n", .{});
+                }
             }
         } else |err| switch (err) {
             error.SkipZigTest => {
                 skip += 1;
-                Printer.skip("ignored\n", .{});
+                if (!config.json_output) {
+                    Printer.skip("ignored\n", .{});
+                }
             },
             else => {
                 fail += 1;
-                Printer.fail("FAILED\n", .{});
+                if (!config.json_output) {
+                    Printer.fail("FAILED\n", .{});
+                }
 
                 // Store failure information
                 if (failed_test_count < failed_tests_buffer.len) {
@@ -194,41 +213,56 @@ pub fn main() !void {
         }
     }
 
-    // Print failures section
-    if (failed_test_count > 0) {
-        Printer.normal("\n", .{});
-        Printer.fail("failures:\n\n", .{});
-        for (failed_tests_buffer[0..failed_test_count]) |ft| {
-            Printer.normal("---- {s} ----\n", .{ft.name});
-            Printer.err("{s}\n\n", .{ft.error_msg});
+    // Print failures section (unless JSON output)
+    if (!config.json_output) {
+        if (failed_test_count > 0) {
+            Printer.normal("\n", .{});
+            Printer.fail("failures:\n\n", .{});
+            for (failed_tests_buffer[0..failed_test_count]) |ft| {
+                Printer.normal("---- {s} ----\n", .{ft.name});
+                Printer.err("{s}\n\n", .{ft.error_msg});
+            }
         }
-    }
 
-    // Print slowest tests
-    if (pass + fail > 0) {
-        Printer.normal("\n", .{});
-        try slowest.display();
-    }
+        // Print slowest tests
+        if (pass + fail > 0) {
+            Printer.normal("\n", .{});
+            try slowest.display();
+        }
 
-    // Print summary
-    Printer.normal("\ntest result: ", .{});
-    if (fail == 0 and leak == 0) {
-        Printer.pass("ok", .{});
+        // Print summary
+        Printer.normal("\ntest result: ", .{});
+        if (fail == 0 and leak == 0) {
+            Printer.pass("ok", .{});
+        } else {
+            Printer.fail("FAILED", .{});
+        }
+
+        Printer.normal(". {d} passed; {d} failed", .{ pass, fail });
+        if (skip > 0) {
+            Printer.normal("; {d} ignored", .{skip});
+        }
+        if (leak > 0) {
+            Printer.normal("; {d} leaked", .{leak});
+        }
+        if (filtered_count > 0) {
+            Printer.normal("; {d} filtered out", .{filtered_count});
+        }
+        Printer.normal("\n\n", .{});
     } else {
-        Printer.fail("FAILED", .{});
+        // Print JSON summary
+        const success = fail == 0 and leak == 0;
+        const suite_name_str = suite_name orelse "unknown";
+        Printer.normal("{{\"suite\":\"{s}\",\"passed\":{d},\"failed\":{d},\"ignored\":{d},\"leaked\":{d},\"filtered\":{d},\"success\":{s}}}\n", .{
+            suite_name_str,
+            pass,
+            fail,
+            skip,
+            leak,
+            filtered_count,
+            if (success) "true" else "false",
+        });
     }
-
-    Printer.normal(". {d} passed; {d} failed", .{ pass, fail });
-    if (skip > 0) {
-        Printer.normal("; {d} ignored", .{skip});
-    }
-    if (leak > 0) {
-        Printer.normal("; {d} leaked", .{leak});
-    }
-    if (filtered_count > 0) {
-        Printer.normal("; {d} filtered out", .{filtered_count});
-    }
-    Printer.normal("\n\n", .{});
 
     // Clean up failed test data
     for (failed_tests_buffer[0..failed_test_count]) |ft| {
@@ -404,6 +438,7 @@ const Config = struct {
     fail_first: bool,
     show_timing: bool,
     test_name: ?[]const u8,
+    json_output: bool,
     owns_filter: bool, // Track if we need to free filter
     owns_test_name: bool,
 
@@ -419,6 +454,7 @@ const Config = struct {
         var fail_first: ?bool = null;
         var show_timing: ?bool = null;
         var test_name: ?[]const u8 = null;
+        var json_output: ?bool = null;
         var owns_filter = false;
         var owns_test_name = false;
 
@@ -427,6 +463,8 @@ const Config = struct {
                 fail_first = true;
             } else if (std.mem.eql(u8, arg, "--timing")) {
                 show_timing = true;
+            } else if (std.mem.eql(u8, arg, "--json")) {
+                json_output = true;
             } else if (std.mem.startsWith(u8, arg, "--filter=")) {
                 if (filter == null) {
                     filter = try allocator.dupe(u8, arg["--filter=".len..]);
@@ -472,6 +510,7 @@ const Config = struct {
             .fail_first = fail_first orelse false,
             .show_timing = show_timing orelse false,
             .test_name = test_name,
+            .json_output = json_output orelse false,
             .owns_filter = owns_filter,
             .owns_test_name = owns_test_name,
         };
@@ -542,24 +581,68 @@ fn getFriendlyName(full_name: []const u8) []const u8 {
     return name;
 }
 
-fn formatTestName(buf: []u8, name: []const u8) []const u8 {
+fn formatTestName(buf: []u8, name: []const u8, test_name: ?[]const u8) []const u8 {
+    // Extract module prefix from test_name if provided (for integration tests)
+    // This enables hierarchical test names like "interpreter.stack_ops::test_name"
+    // e.g., "tests/interpreter/stack_ops.zig" -> "interpreter.stack_ops"
+    // e.g., "tests/big.zig" -> "big"
+    var module_prefix_buf: [256]u8 = undefined;
+    const module_prefix: ?[]const u8 = if (test_name) |tn| blk: {
+        var path = tn;
+
+        // Strip "tests/" prefix
+        if (std.mem.startsWith(u8, path, "tests/")) {
+            path = path[6..];
+        }
+
+        // Strip ".zig" suffix
+        if (std.mem.endsWith(u8, path, ".zig")) {
+            path = path[0 .. path.len - 4];
+        }
+
+        // Replace slashes with dots for hierarchical naming
+        var i: usize = 0;
+        for (path) |c| {
+            if (i >= module_prefix_buf.len) break;
+            module_prefix_buf[i] = if (c == '/') '.' else c;
+            i += 1;
+        }
+
+        break :blk module_prefix_buf[0..i];
+    } else null;
+
     // Replace ".test." with "::" and ".test_" with "::"
     // e.g., "lib.test.my_test" -> "lib::my_test"
-    // e.g., "primitives.address.test.my_test" -> "primitives.address::my_test"
-    // e.g., "lib.test_0" -> "lib::test_0"
+    // e.g., "stack_ops.test.my_test" -> "interpreter.stack_ops::my_test" (with module_prefix)
 
     if (std.mem.indexOf(u8, name, ".test.")) |idx| {
         // Found ".test." - replace with "::"
-        const module_path = name[0..idx];
-        const test_name = name[idx + 6 ..]; // Skip ".test."
-        const formatted = std.fmt.bufPrint(buf, "{s}::{s}", .{ module_path, test_name }) catch name;
-        return formatted;
+        const test_name_part = name[idx + 6 ..]; // Skip ".test."
+
+        if (module_prefix) |prefix| {
+            // Use hierarchical module prefix from test file path
+            const formatted = std.fmt.bufPrint(buf, "{s}::{s}", .{ prefix, test_name_part }) catch name;
+            return formatted;
+        } else {
+            // Fallback to original behavior (for lib/main tests)
+            const module_path = name[0..idx];
+            const formatted = std.fmt.bufPrint(buf, "{s}::{s}", .{ module_path, test_name_part }) catch name;
+            return formatted;
+        }
     } else if (std.mem.indexOf(u8, name, ".test_")) |idx| {
         // Found ".test_" (numbered test) - replace with "::"
-        const module_path = name[0..idx];
-        const test_name = name[idx + 1 ..]; // Skip "."
-        const formatted = std.fmt.bufPrint(buf, "{s}::{s}", .{ module_path, test_name }) catch name;
-        return formatted;
+        const test_name_part = name[idx + 1 ..]; // Skip "."
+
+        if (module_prefix) |prefix| {
+            // Use hierarchical module prefix from test file path
+            const formatted = std.fmt.bufPrint(buf, "{s}::{s}", .{ prefix, test_name_part }) catch name;
+            return formatted;
+        } else {
+            // Fallback to original behavior (for lib/main tests)
+            const module_path = name[0..idx];
+            const formatted = std.fmt.bufPrint(buf, "{s}::{s}", .{ module_path, test_name_part }) catch name;
+            return formatted;
+        }
     }
 
     return name;

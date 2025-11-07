@@ -1,41 +1,5 @@
 const std = @import("std");
-
-// Helper function to configure test runner with common options
-fn configureTestRunner(
-    run: *std.Build.Step.Run,
-    filter: ?[]const u8,
-    timing: bool,
-    fail_first: bool,
-    args: ?[]const []const u8,
-) void {
-    if (filter) |f| {
-        run.addArg("--filter");
-        run.addArg(f);
-    }
-    if (timing) {
-        run.addArg("--timing");
-    }
-    if (fail_first) {
-        run.addArg("--fail-first");
-    }
-    if (args) |a| {
-        run.addArgs(a);
-    }
-}
-
-// Helper function to discover .zig files in a directory
-fn discoverZigFiles(
-    dir_path: []const u8,
-) !?std.fs.Dir {
-    return std.fs.cwd().openDir(dir_path, .{
-        .iterate = true,
-    }) catch |err| {
-        if (err == error.FileNotFound) {
-            return null;
-        }
-        return err;
-    };
-}
+const TestRunner = @import("libs/test-runner/build.zig");
 
 pub fn build(b: *std.Build) !void {
     // ============================================================================
@@ -171,7 +135,7 @@ pub fn build(b: *std.Build) !void {
 
     // A run step that will run the test executable.
     const run_mod_tests = b.addRunArtifact(mod_tests);
-    configureTestRunner(run_mod_tests, test_filter, test_timing, test_fail_first, b.args);
+    TestRunner.configureRunner(run_mod_tests, test_filter, test_timing, test_fail_first, b.args);
 
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
@@ -186,58 +150,66 @@ pub fn build(b: *std.Build) !void {
 
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
-    configureTestRunner(run_exe_tests, test_filter, test_timing, test_fail_first, b.args);
+    TestRunner.configureRunner(run_exe_tests, test_filter, test_timing, test_fail_first, b.args);
 
-    // Integration tests (`tests/` directory) - auto-discover all .zig files
+    // Integration tests (`tests/` directory) - recursively auto-discover all .zig files
     const IntegrationTest = struct {
         run: *std.Build.Step.Run,
-        file_name: []const u8,
+        compile: *std.Build.Step.Compile,
+        file_name: []const u8, // Relative path (e.g., "big.zig" or "interpreter/stack_ops.zig")
     };
     var integration_test_runs = std.ArrayList(IntegrationTest){};
     defer integration_test_runs.deinit(b.allocator);
 
-    const tests_dir = try discoverZigFiles("tests");
+    // Discover all .zig files recursively
+    var test_files = try TestRunner.discoverTestFiles(b.allocator, "tests");
+    defer test_files.deinit(b.allocator);
+    // Note: We don't free the individual strings because they're used by integration_test_runs,
+    // which persists beyond this defer. The build allocator is arena-allocated anyway.
 
-    if (tests_dir) |dir| {
-        var tests_dir_mut = dir;
-        defer tests_dir_mut.close();
+    // Create test steps for each discovered file
+    for (test_files.items) |relative_path| {
+        const test_file_path = b.fmt("tests/{s}", .{relative_path});
 
-        var iter = tests_dir_mut.iterate();
-        while (try iter.next()) |entry| {
-            if (entry.kind != .file) continue;
-            if (!std.mem.endsWith(u8, entry.name, ".zig")) continue;
-
-            const test_file_path = b.fmt("tests/{s}", .{entry.name});
-
-            const integration_tests = b.addTest(.{
-                .root_module = b.createModule(.{
-                    .root_source_file = b.path(test_file_path),
-                    .target = target,
-                    .optimize = optimize,
-                    .imports = &.{
-                        .{ .name = "zevm", .module = mod },
-                    },
-                }),
-                .test_runner = .{
-                    .path = b.path("libs/test-runner/runner.zig"),
-                    .mode = .simple,
+        const integration_tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(test_file_path),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "zevm", .module = mod },
                 },
-            });
+            }),
+            .test_runner = .{
+                .path = b.path("libs/test-runner/runner.zig"),
+                .mode = .simple,
+            },
+        });
 
-            const run_integration_tests = b.addRunArtifact(integration_tests);
-            configureTestRunner(run_integration_tests, test_filter, test_timing, test_fail_first, b.args);
+        const run_integration_tests = b.addRunArtifact(integration_tests);
+        TestRunner.configureRunner(run_integration_tests, test_filter, test_timing, test_fail_first, b.args);
 
-            try integration_test_runs.append(b.allocator, .{
-                .run = run_integration_tests,
-                .file_name = entry.name,
-            });
-        }
+        // Pass full path as test name for better output (e.g., "tests/interpreter/stack_ops.zig")
+        run_integration_tests.addArg("--test-name");
+        run_integration_tests.addArg(test_file_path);
+
+        try integration_test_runs.append(b.allocator, .{
+            .run = run_integration_tests,
+            .compile = integration_tests,
+            .file_name = relative_path,
+        });
     }
 
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
+
+    // Determine if we need aggregation (multiple test suites or integration tests)
+    const needs_aggregation = if (test_target) |target_name|
+        std.mem.eql(u8, target_name, "integration")
+    else
+        true; // No target = run all tests = need aggregation
 
     // Conditional test execution based on -Dtarget flag
     if (test_target) |target_name| {
@@ -246,9 +218,42 @@ pub fn build(b: *std.Build) !void {
         } else if (std.mem.eql(u8, target_name, "main")) {
             test_step.dependOn(&run_exe_tests.step);
         } else if (std.mem.eql(u8, target_name, "integration")) {
-            // Run all integration tests
-            for (integration_test_runs.items) |integration_test| {
-                test_step.dependOn(&integration_test.run.step);
+            if (needs_aggregation and integration_test_runs.items.len > 0) {
+                // Use aggregation for multiple integration tests
+                // First, run all tests with normal output
+                for (integration_test_runs.items) |integration_test| {
+                    test_step.dependOn(&integration_test.run.step);
+                }
+
+                // Then add aggregation step
+                var test_artifacts = std.ArrayList(*std.Build.Step.Compile){};
+                var test_names = std.ArrayList([]const u8){};
+
+                for (integration_test_runs.items) |integration_test| {
+                    try test_artifacts.append(b.allocator, integration_test.compile);
+                    try test_names.append(b.allocator, integration_test.file_name);
+                }
+
+                const aggregate_step = TestRunner.AggregateTestStep.create(
+                    b,
+                    test_artifacts,
+                    test_names,
+                    test_filter,
+                    test_fail_first,
+                    b.args,
+                );
+
+                // Aggregate step depends on all test runs completing
+                for (integration_test_runs.items) |integration_test| {
+                    aggregate_step.step.dependOn(&integration_test.run.step);
+                }
+
+                test_step.dependOn(&aggregate_step.step);
+            } else {
+                // Single or no integration tests, just run normally
+                for (integration_test_runs.items) |integration_test| {
+                    test_step.dependOn(&integration_test.run.step);
+                }
             }
         } else if (std.mem.startsWith(u8, target_name, "tests/")) {
             // Run specific integration test file
@@ -271,12 +276,46 @@ pub fn build(b: *std.Build) !void {
             std.process.exit(1);
         }
     } else {
-        // No target specified, run all tests (default behavior)
+        // No target specified, run all tests with aggregation
+        // First, run all tests with normal output
         test_step.dependOn(&run_mod_tests.step);
         test_step.dependOn(&run_exe_tests.step);
         for (integration_test_runs.items) |integration_test| {
             test_step.dependOn(&integration_test.run.step);
         }
+
+        // Then add aggregation step
+        var test_artifacts = std.ArrayList(*std.Build.Step.Compile){};
+        var test_names = std.ArrayList([]const u8){};
+
+        try test_artifacts.append(b.allocator, mod_tests);
+        try test_names.append(b.allocator, "lib");
+
+        try test_artifacts.append(b.allocator, exe_tests);
+        try test_names.append(b.allocator, "main");
+
+        for (integration_test_runs.items) |integration_test| {
+            try test_artifacts.append(b.allocator, integration_test.compile);
+            try test_names.append(b.allocator, integration_test.file_name);
+        }
+
+        const aggregate_step = TestRunner.AggregateTestStep.create(
+            b,
+            test_artifacts,
+            test_names,
+            test_filter,
+            test_fail_first,
+            b.args,
+        );
+
+        // Aggregate step depends on all test runs completing
+        aggregate_step.step.dependOn(&run_mod_tests.step);
+        aggregate_step.step.dependOn(&run_exe_tests.step);
+        for (integration_test_runs.items) |integration_test| {
+            aggregate_step.step.dependOn(&integration_test.run.step);
+        }
+
+        test_step.dependOn(&aggregate_step.step);
     }
 
     // ============================================================================
@@ -291,7 +330,13 @@ pub fn build(b: *std.Build) !void {
     var benchmark_runs = std.ArrayList(Benchmark){};
     defer benchmark_runs.deinit(b.allocator);
 
-    const bench_dir = try discoverZigFiles("bench");
+    // Discover benchmark files (non-recursive, top-level only)
+    const bench_dir = std.fs.cwd().openDir("bench", .{ .iterate = true }) catch |err| blk: {
+        if (err == error.FileNotFound) {
+            break :blk null;
+        }
+        return err;
+    };
 
     if (bench_dir) |dir| {
         var bench_dir_mut = dir;
