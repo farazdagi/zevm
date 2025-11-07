@@ -108,9 +108,11 @@ pub const Interpreter = struct {
     /// Whether execution has halted
     is_halted: bool,
 
+    const Self = @This();
+
     /// Initialize interpreter with bytecode and gas limit.
-    pub fn init(allocator: Allocator, bytecode: []const u8, spec: Spec, gas_limit: u64) !Interpreter {
-        return Interpreter{
+    pub fn init(allocator: Allocator, bytecode: []const u8, spec: Spec, gas_limit: u64) !Self {
+        return Self{
             .allocator = allocator,
             .bytecode = bytecode,
             .pc = 0,
@@ -124,7 +126,7 @@ pub const Interpreter = struct {
     }
 
     /// Clean up allocated resources.
-    pub fn deinit(self: *Interpreter) void {
+    pub fn deinit(self: *Self) void {
         self.stack.deinit();
         self.memory.deinit();
         // return_data is owned by the caller after extracting from result
@@ -133,7 +135,7 @@ pub const Interpreter = struct {
     /// Execute bytecode until halted or error.
     ///
     /// Returns the execution result including status, gas used, and return data.
-    pub fn run(self: *Interpreter) !InterpreterResult {
+    pub fn run(self: *Self) !InterpreterResult {
         while (!self.is_halted) {
             self.step() catch |err| {
                 return self.handleError(err);
@@ -144,7 +146,7 @@ pub const Interpreter = struct {
     }
 
     /// Execute one instruction (fetch-decode-execute).
-    pub fn step(self: *Interpreter) !void {
+    pub fn step(self: *Self) !void {
         // Verify we're not going beyond bytecode bounds.
         if (self.pc >= self.bytecode.len) {
             return error.InvalidProgramCounter;
@@ -178,7 +180,7 @@ pub const Interpreter = struct {
     ///
     /// This is the main dispatch table.
     /// Special cases that need direct interpreter state access (e.g. PUSH) are handled inline.
-    fn execute(self: *Interpreter, opcode: Opcode) !void {
+    fn execute(self: *Self, opcode: Opcode) !void {
         switch (opcode) {
             // ================================================================
             // Control Flow
@@ -375,7 +377,7 @@ pub const Interpreter = struct {
     }
 
     /// Convert a Zig error to an ExecutionStatus.
-    fn handleError(self: *Interpreter, err: Error) InterpreterResult {
+    fn handleError(self: *Self, err: Error) InterpreterResult {
         const status: ExecutionStatus = switch (err) {
             error.StackOverflow => .STACK_OVERFLOW,
             error.StackUnderflow => .STACK_UNDERFLOW,
@@ -395,7 +397,7 @@ pub const Interpreter = struct {
     }
 
     /// Build the successful execution result.
-    fn buildResult(self: *Interpreter) InterpreterResult {
+    fn buildResult(self: *Self) InterpreterResult {
         return InterpreterResult{
             .status = .SUCCESS,
             .gas_used = self.gas.used,

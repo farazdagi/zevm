@@ -18,6 +18,8 @@ const B160 = bytes.B160;
 pub const Address = struct {
     inner: B160,
 
+    const Self = @This();
+
     /// Address errors.
     pub const Error = error{
         InvalidHexStringLength,
@@ -26,17 +28,17 @@ pub const Address = struct {
     };
 
     /// Initialize an address from a 20-byte array.
-    pub fn init(b: [20]u8) Address {
-        return Address{ .inner = B160.init(b) };
+    pub fn init(b: [20]u8) Self {
+        return Self{ .inner = B160.init(b) };
     }
 
     /// Create a zero-filled address.
-    pub fn zero() Address {
-        return Address{ .inner = B160.zero() };
+    pub fn zero() Self {
+        return Self{ .inner = B160.zero() };
     }
 
     /// Check if the address is all zeros.
-    pub fn isZero(self: Address) bool {
+    pub fn isZero(self: Self) bool {
         return self.inner.isZero();
     }
 
@@ -52,7 +54,7 @@ pub const Address = struct {
     /// - "0xd8da6bf26964af9d7eed9e03e53415d37aa96045" (with prefix)
     /// - "d8da6bf26964af9d7eed9e03e53415d37aa96045" (without prefix)
     /// - "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045" (uppercase)
-    pub fn fromHex(hex: []const u8) Error!Address {
+    pub fn fromHex(hex: []const u8) Error!Self {
         const b160 = B160.fromHex(hex) catch |err| switch (err) {
             B160.Error.InvalidHexStringLength => return Error.InvalidHexStringLength,
             B160.Error.InvalidHexDigit => return Error.InvalidHexDigit,
@@ -70,8 +72,8 @@ pub const Address = struct {
     /// ```zig
     /// const zero_address = address("0x0000000000000000000000000000000000000000");
     /// ```
-    pub fn fromHexComptime(comptime hex: []const u8) Address {
-        return Address{ .inner = B160.fromHexComptime(hex) };
+    pub fn fromHexComptime(comptime hex: []const u8) Self {
+        return Self{ .inner = B160.fromHexComptime(hex) };
     }
 
     /// Parse an address from a checksummed hex string and validate the checksum.
@@ -84,7 +86,7 @@ pub const Address = struct {
     /// Parameters:
     /// - hex: The checksummed hex string (with or without "0x" prefix)
     /// - chain_id: Optional chain ID for EIP-1191 validation. If null, uses EIP-55.
-    pub fn fromChecksummedHex(hex: []const u8, chain_id: ?u64) Error!Address {
+    pub fn fromChecksummedHex(hex: []const u8, chain_id: ?u64) Error!Self {
         if (hex.len != 40 and hex.len != 42)
             return Error.InvalidHexStringLength;
 
@@ -114,7 +116,7 @@ pub const Address = struct {
     }
 
     /// Format address as a hex string (lowercase, with "0x" prefix).
-    pub fn toHex(self: Address, buf: []u8) ![]const u8 {
+    pub fn toHex(self: Self, buf: []u8) ![]const u8 {
         return self.inner.toHex(buf);
     }
 
@@ -145,7 +147,7 @@ pub const Address = struct {
     /// References:
     /// - EIP-55: https://eips.ethereum.org/EIPS/eip-55
     /// - EIP-1191/ERC-1191: https://eips.ethereum.org/EIPS/eip-1191
-    pub fn toChecksummedHex(self: Address, buf: []u8, chain_id: ?u64) ![]const u8 {
+    pub fn toChecksummedHex(self: Self, buf: []u8, chain_id: ?u64) ![]const u8 {
         // The output buffer must be at least 42 bytes (2 for "0x" + 40 for hex digits).
         if (buf.len < 42) return error.BufferTooSmall;
 
@@ -199,7 +201,7 @@ pub const Address = struct {
     }
 
     /// Validate the checksum of a hex string against this address.
-    fn validateChecksum(self: Address, hex_digits: []const u8, chain_id: ?u64) bool {
+    fn validateChecksum(self: Self, hex_digits: []const u8, chain_id: ?u64) bool {
         // The hex string should be 40 characters (without "0x" prefix).
         if (hex_digits.len != 40) return false;
 
@@ -216,7 +218,7 @@ pub const Address = struct {
     }
 
     /// Check if two addresses are equal.
-    pub fn eql(self: Address, other: Address) bool {
+    pub fn eql(self: Self, other: Self) bool {
         return self.inner.eql(other.inner);
     }
 
@@ -240,7 +242,7 @@ pub const Address = struct {
     /// defer allocator.free(s2);
     /// ```
     pub fn format(
-        self: Address,
+        self: Self,
         writer: anytype,
     ) @TypeOf(writer.*).Error!void {
         var buf: [42]u8 = undefined;

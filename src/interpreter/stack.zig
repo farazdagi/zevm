@@ -18,6 +18,8 @@ pub const Stack = struct {
     // Allocator for cleanup
     allocator: Allocator,
 
+    const Self = @This();
+
     /// Maximum stack capacity as defined by the Ethereum specification.
     pub const CAPACITY: usize = constants.STACK_LIMIT;
 
@@ -30,9 +32,9 @@ pub const Stack = struct {
     /// Initialize a new stack with the given allocator.
     ///
     /// Pre-allocates capacity for `STACK_LIMIT` items to avoid reallocation.
-    pub fn init(allocator: Allocator) !Stack {
+    pub fn init(allocator: Allocator) !Self {
         const data = try allocator.alloc(U256, CAPACITY);
-        return Stack{
+        return Self{
             .data = data,
             .len = 0,
             .allocator = allocator,
@@ -42,14 +44,14 @@ pub const Stack = struct {
     /// Free the stack's memory.
     ///
     /// Must be called when done with the stack.
-    pub fn deinit(self: *Stack) void {
+    pub fn deinit(self: *Self) void {
         self.allocator.free(self.data);
     }
 
     /// Push a value onto the stack.
     ///
     /// Returns `error.StackOverflow` if stack is full.
-    pub fn push(self: *Stack, value: U256) Error!void {
+    pub fn push(self: *Self, value: U256) Error!void {
         if (self.len >= CAPACITY)
             return error.StackOverflow;
 
@@ -60,7 +62,7 @@ pub const Stack = struct {
     /// Pop a value from the stack.
     ///
     /// Returns `error.StackUnderflow` if stack is empty.
-    pub fn pop(self: *Stack) Error!U256 {
+    pub fn pop(self: *Self) Error!U256 {
         if (self.len == 0)
             return error.StackUnderflow;
 
@@ -72,7 +74,7 @@ pub const Stack = struct {
     ///
     /// Index 0 is the top of the stack, index 1 is second from top, etc.
     /// Returns `error.StackUnderflow` if index is out of bounds.
-    pub fn peek(self: *const Stack, index: usize) Error!U256 {
+    pub fn peek(self: *const Self, index: usize) Error!U256 {
         if (index >= self.len)
             return error.StackUnderflow;
         return self.data[self.len - 1 - index];
@@ -81,7 +83,7 @@ pub const Stack = struct {
     /// Duplicate the value at the given index from the top (1-16).
     ///
     /// Returns `error.StackUnderflow` if index is invalid or out of bounds.
-    pub fn dup(self: *Stack, index: usize) Error!void {
+    pub fn dup(self: *Self, index: usize) Error!void {
         if (index == 0 or index > 16) {
             return error.StackUnderflow;
         }
@@ -92,7 +94,7 @@ pub const Stack = struct {
     /// Swap the top value with the value at the given index (1-16).
     ///
     /// Returns `error.StackUnderflow` if index is invalid or out of bounds.
-    pub fn swap(self: *Stack, index: usize) Error!void {
+    pub fn swap(self: *Self, index: usize) Error!void {
         if (index == 0 or index > 16 or index >= self.len)
             return error.StackUnderflow;
 
@@ -102,12 +104,12 @@ pub const Stack = struct {
     }
 
     /// Check if the stack is empty.
-    pub fn isEmpty(self: *const Stack) bool {
+    pub fn isEmpty(self: *const Self) bool {
         return self.len == 0;
     }
 
     /// Check if the stack is full (at maximum capacity).
-    pub fn isFull(self: *const Stack) bool {
+    pub fn isFull(self: *const Self) bool {
         return self.len >= CAPACITY;
     }
 };

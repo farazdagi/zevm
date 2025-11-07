@@ -22,6 +22,8 @@ pub const Memory = struct {
     /// Allocator for memory management.
     allocator: Allocator,
 
+    const Self = @This();
+
     /// Memory operation errors.
     pub const Error = error{
         OutOfMemory,
@@ -40,21 +42,21 @@ pub const Memory = struct {
     ///
     /// Pre-allocates capacity to avoid reallocations for typical usage.
     /// All memory starts at size 0, expanding on first access.
-    pub fn init(allocator: Allocator) !Memory {
+    pub fn init(allocator: Allocator) !Self {
         const data = try std.ArrayList(u8).initCapacity(allocator, INITIAL_CAPACITY);
-        return Memory{
+        return Self{
             .data = data,
             .allocator = allocator,
         };
     }
 
     /// Free the memory's storage.
-    pub fn deinit(self: *Memory) void {
+    pub fn deinit(self: *Self) void {
         self.data.deinit(self.allocator);
     }
 
     /// Get current memory size in bytes.
-    pub fn len(self: *const Memory) usize {
+    pub fn len(self: *const Self) usize {
         return self.data.items.len;
     }
 
@@ -64,7 +66,7 @@ pub const Memory = struct {
     /// New bytes are zero-initialized as required by the EVM specification.
     ///
     /// This is an internal method - use ensureCapacity for operations.
-    fn resize(self: *Memory, new_size: usize) Error!void {
+    fn resize(self: *Self, new_size: usize) Error!void {
         const aligned_size = try alignToWord(new_size);
         if (aligned_size <= self.data.items.len) return;
 
@@ -79,7 +81,7 @@ pub const Memory = struct {
     ///
     /// Automatically expands memory if needed.
     /// Zero-size operations do not trigger expansion.
-    pub fn ensureCapacity(self: *Memory, offset: usize, size: usize) Error!void {
+    pub fn ensureCapacity(self: *Self, offset: usize, size: usize) Error!void {
         if (size == 0) return;
 
         const end = try checkedAdd(offset, size);
@@ -97,7 +99,7 @@ pub const Memory = struct {
     /// Automatically expands memory if needed.
     ///
     /// Note: Caller must handle gas calculation before calling this method.
-    pub fn mload(self: *Memory, offset: usize) Error!U256 {
+    pub fn mload(self: *Self, offset: usize) Error!U256 {
         try self.ensureCapacity(offset, 32);
         const bytes = self.data.items[offset..][0..32];
         return U256.fromBeBytes(bytes);
@@ -108,7 +110,7 @@ pub const Memory = struct {
     /// Automatically expands memory if needed.
     ///
     /// Note: Caller must handle gas calculation before calling this method.
-    pub fn mstore(self: *Memory, offset: usize, value: U256) Error!void {
+    pub fn mstore(self: *Self, offset: usize, value: U256) Error!void {
         try self.ensureCapacity(offset, 32);
         const bytes = value.toBeBytes();
         @memcpy(self.data.items[offset..][0..32], &bytes);
@@ -120,7 +122,7 @@ pub const Memory = struct {
     /// Only the lowest 8 bits of the value are used.
     ///
     /// Note: Caller must handle gas calculation before calling this method.
-    pub fn mstore8(self: *Memory, offset: usize, value: u8) Error!void {
+    pub fn mstore8(self: *Self, offset: usize, value: u8) Error!void {
         try self.ensureCapacity(offset, 1);
         self.data.items[offset] = value;
     }
@@ -131,7 +133,7 @@ pub const Memory = struct {
     /// Used for zero-copy operations like CALLDATACOPY, RETURN, etc.
     ///
     /// The returned slice is valid until the next memory modification.
-    pub fn getSlice(self: *const Memory, offset: usize, size: usize) Error![]const u8 {
+    pub fn getSlice(self: *const Self, offset: usize, size: usize) Error![]const u8 {
         const end = try checkedAdd(offset, size);
 
         if (end > self.data.items.len) {
@@ -146,7 +148,7 @@ pub const Memory = struct {
     /// Used for operations that write directly to memory (CALLDATACOPY, etc.).
     ///
     /// The returned slice is valid until the next memory modification.
-    pub fn getSliceMut(self: *Memory, offset: usize, size: usize) Error![]u8 {
+    pub fn getSliceMut(self: *Self, offset: usize, size: usize) Error![]u8 {
         const end = try checkedAdd(offset, size);
 
         if (end > self.data.items.len) {
@@ -160,7 +162,7 @@ pub const Memory = struct {
     /// Automatically expands memory if needed.
     ///
     /// Note: Caller must handle gas calculation before calling this method.
-    pub fn set(self: *Memory, offset: usize, bytes: []const u8) Error!void {
+    pub fn set(self: *Self, offset: usize, bytes: []const u8) Error!void {
         if (bytes.len == 0) return;
         try self.ensureCapacity(offset, bytes.len);
         @memcpy(self.data.items[offset..][0..bytes.len], bytes);
@@ -169,7 +171,7 @@ pub const Memory = struct {
     /// Copy data from memory into a buffer.
     ///
     /// Returns error if range is out of bounds.
-    pub fn copy(self: *const Memory, offset: usize, dest: []u8) Error!void {
+    pub fn copy(self: *const Self, offset: usize, dest: []u8) Error!void {
         const end = try checkedAdd(offset, dest.len);
 
         if (end > self.data.items.len) {

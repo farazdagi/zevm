@@ -32,14 +32,16 @@ pub const Gas = struct {
     /// Hard fork specification (controls gas costs and refund rules)
     spec: Spec,
 
+    const Self = @This();
+
     /// Gas operation errors
     pub const Error = error{
         OutOfGas,
     };
 
     /// Initialize gas accounting with given limit and fork specification.
-    pub fn init(limit: u64, spec: Spec) Gas {
-        return Gas{
+    pub fn init(limit: u64, spec: Spec) Self {
+        return Self{
             .limit = limit,
             .used = 0,
             .refunded = 0,
@@ -49,7 +51,7 @@ pub const Gas = struct {
     }
 
     /// Consume gas, error if exceeds limit.
-    pub fn consume(self: *Gas, amount: u64) Error!void {
+    pub fn consume(self: *Self, amount: u64) Error!void {
         const new_used = self.used + amount;
         if (new_used > self.limit) {
             return error.OutOfGas;
@@ -58,7 +60,7 @@ pub const Gas = struct {
     }
 
     /// Get remaining gas.
-    pub fn remaining(self: *const Gas) u64 {
+    pub fn remaining(self: *const Self) u64 {
         return self.limit - self.used;
     }
 
@@ -66,7 +68,7 @@ pub const Gas = struct {
     ///
     /// Note: The actual refund is capped when finalizing (EIP-3529).
     /// We track the full refund amount here and cap it later.
-    pub fn refund(self: *Gas, amount: u64) void {
+    pub fn refund(self: *Self, amount: u64) void {
         self.refunded += amount;
     }
 
@@ -74,7 +76,7 @@ pub const Gas = struct {
     ///
     /// Refund cap varies by fork (EIP-3529 changed from used/2 to used/5).
     /// This is called after execution to determine actual refund.
-    pub fn finalRefund(self: *const Gas) u64 {
+    pub fn finalRefund(self: *const Self) u64 {
         const max_refund = self.used / self.spec.max_refund_quotient;
         return @min(self.refunded, max_refund);
     }
@@ -82,7 +84,7 @@ pub const Gas = struct {
     /// Get gas left after accounting for refund.
     ///
     /// This is the gas returned to the caller.
-    pub fn remainingWithRefund(self: *const Gas) u64 {
+    pub fn remainingWithRefund(self: *const Self) u64 {
         return self.remaining() + self.finalRefund();
     }
 
@@ -90,7 +92,7 @@ pub const Gas = struct {
     ///
     /// Takes old and new memory sizes from Memory struct.
     /// Returns only the incremental cost (new_cost - last_cost).
-    pub fn memoryExpansionCost(self: *const Gas, old_size: usize, new_size: usize) u64 {
+    pub fn memoryExpansionCost(self: *const Self, old_size: usize, new_size: usize) u64 {
         if (new_size <= old_size) {
             return 0;
         }
@@ -101,7 +103,7 @@ pub const Gas = struct {
     /// Update last memory cost after successful expansion.
     ///
     /// Called by interpreter after gas is charged and memory expanded.
-    pub fn updateMemoryCost(self: *Gas, memory_size: usize) void {
+    pub fn updateMemoryCost(self: *Self, memory_size: usize) void {
         self.last_memory_cost = cost_fns.memoryCost(memory_size);
     }
 };
