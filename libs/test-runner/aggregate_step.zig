@@ -132,6 +132,10 @@ pub const AggregateTestStep = struct {
             }
         }
 
+        // Clear the build system's progress line (e.g., "[16/18] steps")
+        // by writing escape sequences to stderr
+        _ = std.posix.write(std.posix.STDERR_FILENO, "\r\x1b[2K") catch {};
+
         // Print aggregate summary
         var buf: [2048]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buf);
