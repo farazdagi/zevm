@@ -112,6 +112,21 @@ pub const Stack = struct {
     pub fn isFull(self: *const Self) bool {
         return self.len >= CAPACITY;
     }
+
+    /// Compare two stacks for equality.
+    ///
+    /// Returns true if both stacks have the same depth and all values match in order.
+    /// Useful for testing expected stack states.
+    pub fn eql(self: *const Self, other: *const Self) bool {
+        if (self.len != other.len) return false;
+
+        var i: usize = 0;
+        while (i < self.len) : (i += 1) {
+            if (!self.data[i].eql(other.data[i])) return false;
+        }
+
+        return true;
+    }
 };
 
 // ============================================================================
@@ -400,5 +415,83 @@ test "Stack: random operations maintain invariants" {
         try expect(stack.len <= Stack.CAPACITY);
         try expectEqual(stack.len == 0, stack.isEmpty());
         try expectEqual(stack.len >= Stack.CAPACITY, stack.isFull());
+    }
+}
+
+test "Stack: eql" {
+    const test_cases = [_]struct {
+        name: []const u8,
+        stack1_values: []const u64,
+        stack2_values: []const u64,
+        expected_equal: bool,
+    }{
+        .{
+            .name = "both empty",
+            .stack1_values = &[_]u64{},
+            .stack2_values = &[_]u64{},
+            .expected_equal = true,
+        },
+        .{
+            .name = "identical single value",
+            .stack1_values = &[_]u64{42},
+            .stack2_values = &[_]u64{42},
+            .expected_equal = true,
+        },
+        .{
+            .name = "identical multiple values",
+            .stack1_values = &[_]u64{ 42, 100 },
+            .stack2_values = &[_]u64{ 42, 100 },
+            .expected_equal = true,
+        },
+        .{
+            .name = "different depths (1 vs 0)",
+            .stack1_values = &[_]u64{42},
+            .stack2_values = &[_]u64{},
+            .expected_equal = false,
+        },
+        .{
+            .name = "different depths (1 vs 2)",
+            .stack1_values = &[_]u64{42},
+            .stack2_values = &[_]u64{ 42, 43 },
+            .expected_equal = false,
+        },
+        .{
+            .name = "different values (same depth)",
+            .stack1_values = &[_]u64{42},
+            .stack2_values = &[_]u64{43},
+            .expected_equal = false,
+        },
+        .{
+            .name = "different values (multiple)",
+            .stack1_values = &[_]u64{ 42, 100 },
+            .stack2_values = &[_]u64{ 42, 99 },
+            .expected_equal = false,
+        },
+        .{
+            .name = "order matters",
+            .stack1_values = &[_]u64{ 1, 2 },
+            .stack2_values = &[_]u64{ 2, 1 },
+            .expected_equal = false,
+        },
+    };
+
+    for (test_cases) |tc| {
+        var stack1 = try Stack.init(testing.allocator);
+        defer stack1.deinit();
+        var stack2 = try Stack.init(testing.allocator);
+        defer stack2.deinit();
+
+        for (tc.stack1_values) |value| {
+            try stack1.push(U256.fromU64(value));
+        }
+        for (tc.stack2_values) |value| {
+            try stack2.push(U256.fromU64(value));
+        }
+
+        if (tc.expected_equal) {
+            try expect(stack1.eql(&stack2));
+        } else {
+            try expect(!stack1.eql(&stack2));
+        }
     }
 }
