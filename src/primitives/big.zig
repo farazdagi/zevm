@@ -38,6 +38,11 @@ pub const U256 = struct {
         };
     }
 
+    /// Create a U256 from a boolean value (0 or 1).
+    pub inline fn fromBool(value: bool) Self {
+        return Self{ .limbs = .{ @intFromBool(value), 0, 0, 0 } };
+    }
+
     /// Create a U256 from little-endian bytes (32 bytes).
     ///
     /// The first byte is the least significant.
@@ -884,6 +889,17 @@ test "U256: fromU128" {
     try expectEqual(0, a.limbs[2]);
     try expectEqual(0, a.limbs[3]);
     try expect(a.fitsInU128());
+}
+
+test "U256: fromBool" {
+    const true_val = U256.fromBool(true);
+    try expect(true_val.eql(U256.ONE));
+    try expectEqual(1, true_val.limbs[0]);
+    try expectEqual(0, true_val.limbs[1]);
+
+    const false_val = U256.fromBool(false);
+    try expect(false_val.eql(U256.ZERO));
+    try expect(false_val.isZero());
 }
 
 test "U256: toU64" {

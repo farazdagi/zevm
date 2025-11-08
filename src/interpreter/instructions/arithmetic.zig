@@ -10,10 +10,8 @@ const Stack = @import("../stack.zig").Stack;
 /// Wraps on overflow (modulo 2^256)
 pub inline fn add(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.add(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.add(b.*);
 }
 
 /// Multiplication (MUL).
@@ -22,10 +20,8 @@ pub inline fn add(stack: *Stack) !void {
 /// Wraps on overflow (modulo 2^256)
 pub inline fn mul(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.mul(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.mul(b.*);
 }
 
 /// Subtraction (SUB).
@@ -34,10 +30,8 @@ pub inline fn mul(stack: *Stack) !void {
 /// Wraps on underflow (modulo 2^256)
 pub inline fn sub(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.sub(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.sub(b.*);
 }
 
 /// Division (DIV).
@@ -46,10 +40,8 @@ pub inline fn sub(stack: *Stack) !void {
 /// Division by zero returns 0 (EVM spec)
 pub inline fn div(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.div(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.div(b.*);
 }
 
 /// Modulo (MOD).
@@ -58,10 +50,8 @@ pub inline fn div(stack: *Stack) !void {
 /// Modulo by zero returns 0 (EVM spec)
 pub inline fn mod(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.rem(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.rem(b.*);
 }
 
 /// Exponentiation (EXP).
@@ -73,10 +63,8 @@ pub inline fn mod(stack: *Stack) !void {
 /// - Dynamic gas (based on exponent byte length) must be charged in execute()
 pub inline fn exp(stack: *Stack) !void {
     const base = try stack.pop();
-    const exponent = try stack.pop();
-
-    const result = base.exp(exponent);
-    try stack.push(result);
+    const exponent = try stack.peekMut(0);
+    exponent.* = base.exp(exponent.*);
 }
 
 /// Sign extension (SIGNEXTEND).
@@ -88,19 +76,17 @@ pub inline fn exp(stack: *Stack) !void {
 /// - Otherwise, extends the sign bit at position (byte_num * 8 + 7) to all higher bits
 pub inline fn signextend(stack: *Stack) !void {
     const value = try stack.pop();
-    const byte_num_u256 = try stack.pop();
+    const byte_num_u256 = try stack.peekMut(0);
 
     // If byte_num doesn't fit in u64, return value unchanged
     const byte_num_u64 = byte_num_u256.toU64() orelse {
-        try stack.push(value);
+        byte_num_u256.* = value;
         return;
     };
 
     // Convert to u8; values >= 256 wrap (U256.signExtend handles >= 31 correctly)
-    const byte_num_u8: u8 = @intCast(byte_num_u64 & 0xFF);
-    const result = value.signExtend(byte_num_u8);
-
-    try stack.push(result);
+    const byte_num_u8 = @as(u8, @intCast(byte_num_u64 & 0xFF));
+    byte_num_u256.* = value.signExtend(byte_num_u8);
 }
 
 /// Signed division (SDIV).
@@ -113,10 +99,8 @@ pub inline fn signextend(stack: *Stack) !void {
 /// Stack: [a, b, ...] -> [a / b, ...]
 pub fn sdiv(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.sdiv(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.sdiv(b.*);
 }
 
 /// Signed modulo (SMOD).
@@ -130,10 +114,8 @@ pub fn sdiv(stack: *Stack) !void {
 /// Stack: [a, b, ...] -> [a % b, ...]
 pub fn smod(stack: *Stack) !void {
     const a = try stack.pop();
-    const b = try stack.pop();
-
-    const result = a.srem(b);
-    try stack.push(result);
+    const b = try stack.peekMut(0);
+    b.* = a.srem(b.*);
 }
 
 /// Modular addition (ADDMOD).
@@ -144,10 +126,8 @@ pub fn smod(stack: *Stack) !void {
 pub fn addmod(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.pop();
-    const n = try stack.pop();
-
-    const result = a.addmod(b, n);
-    try stack.push(result);
+    const n = try stack.peekMut(0);
+    n.* = a.addmod(b, n.*);
 }
 
 /// Modular multiplication (MULMOD).
@@ -159,10 +139,8 @@ pub fn addmod(stack: *Stack) !void {
 pub fn mulmod(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.pop();
-    const n = try stack.pop();
-
-    const result = a.mulmod(b, n);
-    try stack.push(result);
+    const n = try stack.peekMut(0);
+    n.* = a.mulmod(b, n.*);
 }
 
 // ============================================================================
