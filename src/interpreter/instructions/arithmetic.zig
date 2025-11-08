@@ -6,80 +6,89 @@ const Stack = @import("../stack.zig").Stack;
 
 /// Addition (ADD).
 ///
-/// Stack: [..., a, b] -> [..., a + b]
+/// Stack: [a, b, ...] -> [a + b, ...]
 /// Wraps on overflow (modulo 2^256)
 pub inline fn add(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
-    try stack.push(a.add(b));
+    const b = try stack.pop();
+
+    const result = a.add(b);
+    try stack.push(result);
 }
 
 /// Multiplication (MUL).
 ///
-/// Stack: [..., a, b] -> [..., a * b]
+/// Stack: [a, b, ...] -> [a * b, ...]
 /// Wraps on overflow (modulo 2^256)
 pub inline fn mul(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
-    try stack.push(a.mul(b));
+    const b = try stack.pop();
+
+    const result = a.mul(b);
+    try stack.push(result);
 }
 
 /// Subtraction (SUB).
 ///
-/// Stack: [..., a, b] -> [..., a - b]
+/// Stack: [a, b, ...] -> [a - b, ...]
 /// Wraps on underflow (modulo 2^256)
 pub inline fn sub(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
-    try stack.push(a.sub(b));
+    const b = try stack.pop();
+
+    const result = a.sub(b);
+    try stack.push(result);
 }
 
 /// Division (DIV).
 ///
-/// Stack: [..., a, b] -> [..., a / b]
+/// Stack: [a, b, ...] -> [a // b, ...]
 /// Division by zero returns 0 (EVM spec)
 pub inline fn div(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
-    const result = if (b.isZero()) U256.ZERO else a.div(b);
+    const b = try stack.pop();
+
+    const result = a.div(b);
     try stack.push(result);
 }
 
 /// Modulo (MOD).
 ///
-/// Stack: [..., a, b] -> [..., a % b]
+/// Stack: [a, b, ...] -> [a % b, ...]
 /// Modulo by zero returns 0 (EVM spec)
 pub inline fn mod(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
-    const result = if (b.isZero()) U256.ZERO else a.rem(b);
+    const b = try stack.pop();
+
+    const result = a.rem(b);
     try stack.push(result);
 }
 
 /// Exponentiation (EXP).
 ///
-/// Stack: [..., base, exponent] -> [..., base ^ exponent]
+/// Stack: [base, exponent, ...] -> [base ^ exponent, ...]
 /// Note: This function only handles the stack operations.
 /// Gas must be charged BEFORE calling this function:
 /// - Base gas is charged in interpreter.step()
 /// - Dynamic gas (based on exponent byte length) must be charged in execute()
 pub inline fn exp(stack: *Stack) !void {
-    const exponent = try stack.pop();
     const base = try stack.pop();
+    const exponent = try stack.pop();
+
     const result = base.exp(exponent);
     try stack.push(result);
 }
 
 /// Sign extension (SIGNEXTEND).
 ///
-/// Stack: [..., byte_num, value] -> [..., extended_value]
+/// Stack: [value, byte_num, ...] -> [signextend(value, byte_num), ...]
 /// Extends the sign bit from position (byte_num * 8 + 7).
 /// - byte_num: position of the sign byte (0 = rightmost/LSB, 31 = leftmost/MSB)
 /// - If byte_num >= 31, returns value unchanged
 /// - Otherwise, extends the sign bit at position (byte_num * 8 + 7) to all higher bits
 pub inline fn signextend(stack: *Stack) !void {
-    const byte_num_u256 = try stack.pop();
     const value = try stack.pop();
+    const byte_num_u256 = try stack.pop();
 
     // If byte_num doesn't fit in u64, return value unchanged
     const byte_num_u64 = byte_num_u256.toU64() orelse {
@@ -101,10 +110,10 @@ pub inline fn signextend(stack: *Stack) !void {
 /// - Division by zero returns 0
 /// - MIN_I256 / -1 returns MIN_I256 (overflow wraps)
 ///
-/// Stack: [..., a, b] -> [..., a / b]
+/// Stack: [a, b, ...] -> [a / b, ...]
 pub fn sdiv(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
+    const b = try stack.pop();
 
     const result = a.sdiv(b);
     try stack.push(result);
@@ -118,10 +127,10 @@ pub fn sdiv(stack: *Stack) !void {
 /// - MIN_I256 % -1 returns 0 (since MIN / -1 = MIN with remainder 0)
 /// - Result takes the sign of the dividend
 ///
-/// Stack: [..., a, b] -> [..., a % b]
+/// Stack: [a, b, ...] -> [a % b, ...]
 pub fn smod(stack: *Stack) !void {
-    const b = try stack.pop();
     const a = try stack.pop();
+    const b = try stack.pop();
 
     const result = a.srem(b);
     try stack.push(result);
@@ -131,11 +140,11 @@ pub fn smod(stack: *Stack) !void {
 ///
 /// Computes (a + b) % N with proper overflow handling.
 ///
-/// Stack: [..., a, b, N] -> [..., (a + b) % N]
+/// Stack: [a, b, N, ...] -> [(a + b) % N, ...]
 pub fn addmod(stack: *Stack) !void {
-    const n = try stack.pop();
-    const b = try stack.pop();
     const a = try stack.pop();
+    const b = try stack.pop();
+    const n = try stack.pop();
 
     const result = a.addmod(b, n);
     try stack.push(result);
@@ -146,13 +155,12 @@ pub fn addmod(stack: *Stack) !void {
 /// Computes (a * b) % N with proper overflow handling.
 /// Uses widening multiplication or reduction to avoid overflow.
 ///
-/// Stack: [..., a, b, N] -> [..., (a * b) % N]
+/// Stack: [a, b, N, ...] -> [(a * b) % N, ...]
 pub fn mulmod(stack: *Stack) !void {
-    const n = try stack.pop();
-    const b = try stack.pop();
     const a = try stack.pop();
+    const b = try stack.pop();
+    const n = try stack.pop();
 
-    // Use U256's mulmod (already handles overflow correctly)
     const result = a.mulmod(b, n);
     try stack.push(result);
 }
@@ -165,359 +173,127 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
-test "add: 2 + 3 = 5" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
+const test_helpers = @import("test_helpers.zig");
+const TestCase = test_helpers.TestCase;
+const testOp = test_helpers.testOp;
+const t = test_helpers.TestCase.binaryCase;
 
-    try stack.push(U256.fromU64(2));
-    try stack.push(U256.fromU64(3));
-    try add(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(5, result.toU64().?);
+test "add" {
+    const test_cases = [_]TestCase{
+        // 2 + 3 = 5
+        t(2, 3, 5),
+        // MAX + 1 = 0 (wrapping overflow)
+        t(U256.MAX, 1, 0),
+    };
+    try testOp(&add, &test_cases);
 }
 
-test "add: wrapping overflow" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.MAX);
-    try stack.push(U256.fromU64(1));
-    try add(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
+test "mul" {
+    const test_cases = [_]TestCase{
+        // 10 * 3 = 30
+        t(10, 3, 30),
+    };
+    try testOp(&mul, &test_cases);
 }
 
-test "mul: 10 * 3 = 30" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.fromU64(3));
-    try mul(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(30, result.toU64().?);
+test "sub" {
+    const test_cases = [_]TestCase{
+        // 10 - 3 = 7
+        t(10, 3, 7),
+        // 0 - 1 = MAX (wrapping underflow)
+        t(0, 1, U256.MAX),
+    };
+    try testOp(&sub, &test_cases);
 }
 
-test "sub: 10 - 3 = 7" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.fromU64(3));
-    try sub(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(7, result.toU64().?);
+test "div" {
+    const test_cases = [_]TestCase{
+        // 10 / 3 = 3
+        t(10, 3, 3),
+        // 10 / 0 = 0 (division by zero)
+        t(10, 0, 0),
+    };
+    try testOp(&div, &test_cases);
 }
 
-test "sub: wrapping underflow" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.ZERO);
-    try stack.push(U256.fromU64(1));
-    try sub(&stack);
-
-    const result = try stack.pop();
-    try expect(result.eql(U256.MAX));
+test "mod" {
+    const test_cases = [_]TestCase{
+        // 10 % 3 = 1
+        t(10, 3, 1),
+        // 10 % 0 = 0 (modulo by zero)
+        t(10, 0, 0),
+    };
+    try testOp(&mod, &test_cases);
 }
 
-test "div: 10 / 3 = 3" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.fromU64(3));
-    try div(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(3, result.toU64().?);
+test "exp" {
+    const test_cases = [_]TestCase{
+        // 2^8 = 256
+        t(2, 8, 256),
+    };
+    try testOp(&exp, &test_cases);
 }
 
-test "div: division by zero returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.ZERO);
-    try div(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
+test "signextend" {
+    const test_cases = [_]TestCase{
+        // byte 0 positive - remains 0x7F
+        t(0x7F, 0, 0x7F),
+        // byte 0 negative - extends to all 1s
+        t(0xFF, 0, U256.MAX),
+        // byte 1 positive - remains 0x7FFF
+        t(0x7FFF, 1, 0x7FFF),
+        // byte 1 negative (0x8FFF) - extends sign bit to all higher bits
+        t(0x8FFF, 1, U256{ .limbs = .{ 0xFFFF_FFFF_FFFF_8FFF, 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF } }),
+        // byte 3 with high bits set - clears high bits (sign bit is 0)
+        t(U256{ .limbs = .{ 0x7FFF_FFFF, 0xFF00_0000, 0, 0 } }, 3, 0x7FFF_FFFF),
+        // byte_num >= 31 - unchanged
+        t(0x1234_5678_90AB_CDEF, 31, 0x1234_5678_90AB_CDEF),
+        // byte_num > 31 - unchanged
+        t(0x1234_5678_90AB_CDEF, 100, 0x1234_5678_90AB_CDEF),
+    };
+    try testOp(&signextend, &test_cases);
 }
 
-test "mod: 10 % 3 = 1" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.fromU64(3));
-    try mod(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(1, result.toU64().?);
+test "sdiv" {
+    const test_cases = [_]TestCase{
+        // 10 / 3 = 3
+        t(10, 3, 3),
+        // 10 / 0 = 0 (division by zero)
+        t(10, 0, 0),
+        // MIN_I256 / -1 = MIN_I256 (overflow wraps)
+        t(U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }, U256.MAX, U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }),
+    };
+    try testOp(&sdiv, &test_cases);
 }
 
-test "mod: modulo by zero returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.ZERO);
-    try mod(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
+test "smod" {
+    const test_cases = [_]TestCase{
+        // 10 % 3 = 1
+        t(10, 3, 1),
+        // 10 % 0 = 0 (modulo by zero)
+        t(10, 0, 0),
+        // MIN_I256 % -1 = 0 (overflow case)
+        t(U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }, U256.MAX, 0),
+    };
+    try testOp(&smod, &test_cases);
 }
 
-test "exp: 2^8 = 256" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(2));
-    try stack.push(U256.fromU64(8));
-    try exp(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(256, result.toU64().?);
+test "addmod" {
+    const test_cases = [_]TestCase{
+        // (5 + 7) % 10 = 2
+        TestCase.ternaryCase(5, 7, 10, 2),
+        // (5 + 7) % 0 = 0 (modulo by zero)
+        TestCase.ternaryCase(5, 7, 0, 0),
+    };
+    try testOp(&addmod, &test_cases);
 }
 
-test "signextend: byte 0 positive (0x7F)" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(0x7F)); // value: 0x7F (positive, bit 7 = 0)
-    try stack.push(U256.ZERO); // byte_num: 0
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(0x7F, result.toU64().?); // Should remain 0x7F
-}
-
-test "signextend: byte 0 negative (0xFF)" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(0xFF)); // value: 0xFF (negative, bit 7 = 1)
-    try stack.push(U256.ZERO); // byte_num: 0
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    // Should extend to all 1s: 0xFFFF...FFFF
-    try expect(result.eql(U256.MAX));
-}
-
-test "signextend: byte 1 positive (0x7FFF)" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(0x7FFF)); // value: 0x7FFF (positive at byte 1)
-    try stack.push(U256.fromU64(1)); // byte_num: 1
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(0x7FFF, result.toU64().?); // Should remain 0x7FFF
-}
-
-test "signextend: byte 1 negative (0x8FFF)" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(0x8FFF)); // value: 0x8FFF (bit 15 = 1)
-    try stack.push(U256.fromU64(1)); // byte_num: 1
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    // Should extend bit 15 to ALL higher bits (including limbs 1-3)
-    const expected = U256{ .limbs = .{ 0xFFFF_FFFF_FFFF_8FFF, 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF } };
-    try expect(result.eql(expected));
-}
-
-test "signextend: byte 3 clearing high bits" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    // Value with high bits set: 0xFF_00_00_00_7F_FF_FF_FF
-    const value = U256{ .limbs = .{ 0x7FFF_FFFF, 0xFF00_0000, 0, 0 } };
-    try stack.push(value);
-    try stack.push(U256.fromU64(3)); // byte_num: 3
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    // Bit 31 (bit 7 of byte 3) is 1, so should extend
-    // Actually 0x7F at byte 3 means bit 31 is 0 (positive)
-    // So should clear all bits above bit 31: 0x7FFF_FFFF
-    try expectEqual(0x7FFF_FFFF, result.toU64().?);
-}
-
-test "signextend: byte_num >= 31 returns unchanged" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    const value = U256.fromU64(0x1234_5678_90AB_CDEF);
-    try stack.push(value);
-    try stack.push(U256.fromU64(31)); // byte_num: 31
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    try expect(result.eql(value)); // Should be unchanged
-}
-
-test "signextend: byte_num > 31 returns unchanged" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    const value = U256.fromU64(0x1234_5678_90AB_CDEF);
-    try stack.push(value);
-    try stack.push(U256.fromU64(100)); // byte_num: 100
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    try expect(result.eql(value)); // Should be unchanged
-}
-
-test "signextend: byte_num very large returns unchanged" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    const value = U256.fromU64(0x1234_5678_90AB_CDEF);
-    try stack.push(value);
-    try stack.push(U256.MAX); // byte_num: huge number
-    try signextend(&stack);
-
-    const result = try stack.pop();
-    try expect(result.eql(value)); // Should be unchanged
-}
-
-test "sdiv: basic signed division" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    // 10 / 3 = 3
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.fromU64(3));
-    try sdiv(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(3, result.toU64().?);
-}
-
-test "sdiv: division by zero returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.ZERO);
-    try sdiv(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
-}
-
-test "sdiv: MIN / -1 returns MIN" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    const MIN_I256 = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } };
-    try stack.push(MIN_I256);
-    try stack.push(U256.MAX); // -1 in two's complement
-    try sdiv(&stack);
-
-    const result = try stack.pop();
-    try expect(result.eql(MIN_I256));
-}
-
-test "smod: basic signed modulo" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    // 10 % 3 = 1
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.fromU64(3));
-    try smod(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(1, result.toU64().?);
-}
-
-test "smod: modulo by zero returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(10));
-    try stack.push(U256.ZERO);
-    try smod(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
-}
-
-test "smod: MIN % -1 returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    const MIN_I256 = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } };
-    try stack.push(MIN_I256);
-    try stack.push(U256.MAX); // -1 in two's complement
-    try smod(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
-}
-
-test "addmod: basic modular addition" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    // (5 + 7) % 10 = 2
-    try stack.push(U256.fromU64(5));
-    try stack.push(U256.fromU64(7));
-    try stack.push(U256.fromU64(10));
-    try addmod(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(2, result.toU64().?);
-}
-
-test "addmod: modulo by zero returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(5));
-    try stack.push(U256.fromU64(7));
-    try stack.push(U256.ZERO);
-    try addmod(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
-}
-
-test "mulmod: basic modular multiplication" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    // (5 * 7) % 10 = 5
-    try stack.push(U256.fromU64(5));
-    try stack.push(U256.fromU64(7));
-    try stack.push(U256.fromU64(10));
-    try mulmod(&stack);
-
-    const result = try stack.pop();
-    try expectEqual(5, result.toU64().?);
-}
-
-test "mulmod: modulo by zero returns 0" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(5));
-    try stack.push(U256.fromU64(7));
-    try stack.push(U256.ZERO);
-    try mulmod(&stack);
-
-    const result = try stack.pop();
-    try expect(result.isZero());
+test "mulmod" {
+    const test_cases = [_]TestCase{
+        // (5 * 7) % 10 = 5
+        TestCase.ternaryCase(5, 7, 10, 5),
+        // (5 * 7) % 0 = 0 (modulo by zero)
+        TestCase.ternaryCase(5, 7, 0, 0),
+    };
+    try testOp(&mulmod, &test_cases);
 }
