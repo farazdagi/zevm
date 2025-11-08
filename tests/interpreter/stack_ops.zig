@@ -2,99 +2,97 @@
 
 const std = @import("std");
 const zevm = @import("zevm");
+const test_helpers = @import("test_helpers.zig");
 
 const Interpreter = zevm.interpreter.Interpreter;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const U256 = zevm.primitives.U256;
+const TestCase = test_helpers.TestCase;
+const runOpcodeTests = test_helpers.runOpcodeTests;
 
 // Test helpers
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-test "PUSH1 pushes 1 byte" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x42, // PUSH1 0x42
-        0x00, // STOP
+test "PUSH operations" {
+    const test_cases = [_]TestCase{
+        .{
+            .name = "PUSH1 0x42",
+            .bytecode = &[_]u8{
+                0x60, 0x42, // PUSH1 0x42
+                0x00, // STOP
+            },
+            // Stack: [0x42]
+            .expected_stack = &[_]U256{U256.fromU64(0x42)},
+            .expected_gas = 3, // PUSH1(3) + STOP(0)
+        },
+        .{
+            .name = "PUSH2 0x1234",
+            .bytecode = &[_]u8{
+                0x61, 0x12, 0x34, // PUSH2 0x1234
+                0x00, // STOP
+            },
+            // Stack: [0x1234]
+            .expected_stack = &[_]U256{U256.fromU64(0x1234)},
+            .expected_gas = 3, // PUSH2(3) + STOP(0)
+        },
+        .{
+            .name = "PUSH32 (0x0000...0123)",
+            .bytecode = &[_]u8{
+                0x7F, // PUSH32
+                // 32 bytes: 0x0000...0123
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x01,
+                0x23,
+                0x00, // STOP
+            },
+            // Stack: [0x123]
+            .expected_stack = &[_]U256{U256.fromU64(0x123)},
+            .expected_gas = 3, // PUSH32(3) + STOP(0)
+        },
+        .{
+            .name = "PUSH0 (Shanghai)",
+            .bytecode = &[_]u8{
+                0x5F, // PUSH0
+                0x00, // STOP
+            },
+            // Stack: [0]
+            .expected_stack = &[_]U256{U256.ZERO},
+            .expected_gas = 3, // PUSH0(3 - VERYLOW) + STOP(0)
+            .spec = Spec.forFork(.SHANGHAI),
+        },
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(1, interpreter.stack.len);
-    const value = try interpreter.stack.peek(0);
-    try expectEqual(0x42, value.toU64().?);
-}
-
-test "PUSH2 pushes 2 bytes" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x61, 0x12, 0x34, // PUSH2 0x1234
-        0x00, // STOP
-    };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    const value = try interpreter.stack.peek(0);
-    try expectEqual(0x1234, value.toU64().?);
-}
-
-test "PUSH32 pushes 32 bytes" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x7F, // PUSH32
-        // 32 bytes: 0x0000...0123
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x01,
-        0x23,
-        0x00, // STOP
-    };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    const value = try interpreter.stack.peek(0);
-    try expectEqual(0x123, value.toU64().?);
+    try runOpcodeTests(std.testing.allocator, &test_cases);
 }
 
 test "PUSH with insufficient bytes" {
@@ -108,23 +106,6 @@ test "PUSH with insufficient bytes" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
-}
-
-test "PUSH0 (Shanghai+)" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.SHANGHAI); // PUSH0 available in Shanghai+
-
-    const bytecode = &[_]u8{
-        0x5F, // PUSH0
-        0x00, // STOP
-    };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    const value = try interpreter.stack.peek(0);
-    try expect(value.isZero());
 }
 
 test "PUSH0 not available pre-Shanghai" {
@@ -185,24 +166,22 @@ test "PC advances correctly with PUSH" {
     try expectEqual(5, interpreter.pc); // PC at STOP
 }
 
-test "POP removes item from stack" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x42, // PUSH1 0x42
-        0x60, 0x43, // PUSH1 0x43
-        0x50, // POP (removes 0x43)
-        0x00, // STOP
+test "POP" {
+    const test_cases = [_]TestCase{
+        .{
+            .name = "POP removes top element",
+            .bytecode = &[_]u8{
+                0x60, 0x42, // PUSH1 0x42
+                0x60, 0x43, // PUSH1 0x43
+                0x50, // POP (removes 0x43)
+                0x00, // STOP
+            },
+            // Stack: [0x42] (0x43 was popped)
+            .expected_stack = &[_]U256{U256.fromU64(0x42)},
+            .expected_gas = 8, // PUSH1(3) + PUSH1(3) + POP(2) + STOP(0)
+        },
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(1, interpreter.stack.len);
-    const value = try interpreter.stack.peek(0);
-    try expectEqual(0x42, value.toU64().?);
+    try runOpcodeTests(std.testing.allocator, &test_cases);
 }
 
 test "POP on empty stack" {
@@ -220,52 +199,37 @@ test "POP on empty stack" {
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
-test "DUP1 duplicates top of stack" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x42, // PUSH1 0x42
-        0x80, // DUP1
-        0x00, // STOP
+test "DUP operations" {
+    const test_cases = [_]TestCase{
+        .{
+            .name = "DUP1 duplicates top element",
+            .bytecode = &[_]u8{
+                0x60, 0x42, // PUSH1 0x42
+                0x80, // DUP1
+                0x00, // STOP
+            },
+            // Stack: [0x42, 0x42] (bottom to top)
+            .expected_stack = &[_]U256{ U256.fromU64(0x42), U256.fromU64(0x42) },
+            .expected_gas = 6, // PUSH1(3) + DUP1(3) + STOP(0)
+        },
+        .{
+            .name = "DUP2 duplicates second element",
+            .bytecode = &[_]u8{
+                0x60, 0x42, // PUSH1 0x42
+                0x60, 0x43, // PUSH1 0x43
+                0x81, // DUP2 (duplicates 0x42)
+                0x00, // STOP
+            },
+            // Stack: [0x42, 0x43, 0x42] (DUP2 copies second element to top)
+            .expected_stack = &[_]U256{
+                U256.fromU64(0x42),
+                U256.fromU64(0x43),
+                U256.fromU64(0x42),
+            },
+            .expected_gas = 9, // PUSH1(3) + PUSH1(3) + DUP2(3) + STOP(0)
+        },
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(2, interpreter.stack.len);
-
-    const top = try interpreter.stack.peek(0);
-    const second = try interpreter.stack.peek(1);
-    try expectEqual(0x42, top.toU64().?);
-    try expectEqual(0x42, second.toU64().?);
-}
-
-test "DUP2 duplicates second item" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x11, // PUSH1 0x11
-        0x60, 0x22, // PUSH1 0x22
-        0x81, // DUP2 (duplicates 0x11)
-        0x00, // STOP
-    };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(3, interpreter.stack.len);
-
-    // Stack should be [0x11, 0x22, 0x11] (top to bottom)
-    const top = try interpreter.stack.peek(0);
-    const second = try interpreter.stack.peek(1);
-    const third = try interpreter.stack.peek(2);
-    try expectEqual(0x11, top.toU64().?);
-    try expectEqual(0x22, second.toU64().?);
-    try expectEqual(0x11, third.toU64().?);
+    try runOpcodeTests(std.testing.allocator, &test_cases);
 }
 
 test "DUP16 duplicates 16th item" {
@@ -328,74 +292,39 @@ test "DUP2 with only one item fails" {
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
-test "DUP gas consumption" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x42, // PUSH1 0x42  (3 gas)
-        0x80, // DUP1        (3 gas)
-        0x00, // STOP        (0 gas)
+test "SWAP operations" {
+    const test_cases = [_]TestCase{
+        .{
+            .name = "SWAP1 swaps top two elements",
+            .bytecode = &[_]u8{
+                0x60, 0x42, // PUSH1 0x42
+                0x60, 0x43, // PUSH1 0x43
+                0x90, // SWAP1
+                0x00, // STOP
+            },
+            // Stack: [0x43, 0x42] (swapped from [0x42, 0x43])
+            .expected_stack = &[_]U256{ U256.fromU64(0x43), U256.fromU64(0x42) },
+            .expected_gas = 9, // PUSH1(3) + PUSH1(3) + SWAP1(3) + STOP(0)
+        },
+        .{
+            .name = "SWAP2 swaps top with third element",
+            .bytecode = &[_]u8{
+                0x60, 0x41, // PUSH1 0x41
+                0x60, 0x42, // PUSH1 0x42
+                0x60, 0x43, // PUSH1 0x43
+                0x91, // SWAP2
+                0x00, // STOP
+            },
+            // Stack: [0x43, 0x42, 0x41] (top and third swapped)
+            .expected_stack = &[_]U256{
+                U256.fromU64(0x43),
+                U256.fromU64(0x42),
+                U256.fromU64(0x41),
+            },
+            .expected_gas = 12, // PUSH1(3) + PUSH1(3) + PUSH1(3) + SWAP2(3) + STOP(0)
+        },
     };
-    // Total: 6 gas
-
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(6, result.gas_used);
-}
-
-test "SWAP1 swaps top two items" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x11, // PUSH1 0x11
-        0x60, 0x22, // PUSH1 0x22
-        0x90, // SWAP1
-        0x00, // STOP
-    };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(2, interpreter.stack.len);
-
-    // Stack should be [0x22, 0x11] swapped to [0x11, 0x22]
-    const top = try interpreter.stack.peek(0);
-    const second = try interpreter.stack.peek(1);
-    try expectEqual(0x11, top.toU64().?);
-    try expectEqual(0x22, second.toU64().?);
-}
-
-test "SWAP2 swaps top with third item" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x11, // PUSH1 0x11
-        0x60, 0x22, // PUSH1 0x22
-        0x60, 0x33, // PUSH1 0x33
-        0x91, // SWAP2 (swaps 0x33 with 0x11)
-        0x00, // STOP
-    };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(3, interpreter.stack.len);
-
-    // Stack was [0x11, 0x22, 0x33], after SWAP2: [0x33, 0x22, 0x11]
-    const top = try interpreter.stack.peek(0);
-    const second = try interpreter.stack.peek(1);
-    const third = try interpreter.stack.peek(2);
-    try expectEqual(0x11, top.toU64().?);
-    try expectEqual(0x22, second.toU64().?);
-    try expectEqual(0x33, third.toU64().?);
+    try runOpcodeTests(std.testing.allocator, &test_cases);
 }
 
 test "SWAP16 swaps top with 17th item" {
@@ -464,22 +393,3 @@ test "SWAP2 with only two items fails" {
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
-test "SWAP gas consumption" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{
-        0x60, 0x11, // PUSH1 0x11  (3 gas)
-        0x60, 0x22, // PUSH1 0x22  (3 gas)
-        0x90, // SWAP1       (3 gas)
-        0x00, // STOP        (0 gas)
-    };
-    // Total: 9 gas
-
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(9, result.gas_used);
-}
