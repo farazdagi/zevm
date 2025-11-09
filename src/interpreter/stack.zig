@@ -80,6 +80,16 @@ pub const Stack = struct {
         return self.data[self.len - 1 - index];
     }
 
+    /// Get a mutable reference to the value at the given index from the top.
+    ///
+    /// This enables the peek-mutate optimization in operation handlers,
+    /// avoiding an extra pop+push by mutating the value in place.
+    pub fn peekMut(self: *Self, index: usize) Error!*U256 {
+        if (index >= self.len)
+            return error.StackUnderflow;
+        return &self.data[self.len - 1 - index];
+    }
+
     /// Duplicate the value at the given index from the top (1-16).
     ///
     /// Returns `error.StackUnderflow` if index is invalid or out of bounds.

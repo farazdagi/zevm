@@ -6,50 +6,55 @@ const Stack = @import("../stack.zig").Stack;
 
 /// Less than (LT) - unsigned comparison.
 ///
-/// Stack: [..., a, b] -> [..., a < b ? 1 : 0]
-pub inline fn lt(stack: *Stack) !void {
-    _ = stack;
-    return error.UnimplementedOpcode;
+/// Stack: [a, b, ...] -> [a < b ? 1 : 0, ...]
+pub inline fn opLt(stack: *Stack) !void {
+    const a = try stack.pop();
+    const b = try stack.peekMut(0);
+    b.set(a.lt(b.*));
 }
 
 /// Greater than (GT) - unsigned comparison.
 ///
-/// Stack: [..., a, b] -> [..., a > b ? 1 : 0]
-pub inline fn gt(stack: *Stack) !void {
-    _ = stack;
-    return error.UnimplementedOpcode;
+/// Stack: [a, b, ...] -> [a > b ? 1 : 0, ...]
+pub inline fn opGt(stack: *Stack) !void {
+    const a = try stack.pop();
+    const b = try stack.peekMut(0);
+    b.set(a.gt(b.*));
 }
 
 /// Signed less than (SLT) - signed comparison.
 ///
-/// Stack: [..., a, b] -> [..., a < b ? 1 : 0] (signed)
-pub inline fn slt(stack: *Stack) !void {
-    _ = stack;
-    return error.UnimplementedOpcode;
+/// Stack: [a, b, ...] -> [a < b ? 1 : 0, ...] (signed)
+pub inline fn opSlt(stack: *Stack) !void {
+    const a = try stack.pop();
+    const b = try stack.peekMut(0);
+    b.set(a.slt(b.*));
 }
 
 /// Signed greater than (SGT) - signed comparison.
 ///
-/// Stack: [..., a, b] -> [..., a > b ? 1 : 0] (signed)
-pub inline fn sgt(stack: *Stack) !void {
-    _ = stack;
-    return error.UnimplementedOpcode;
+/// Stack: [a, b, ...] -> [a > b ? 1 : 0, ...] (signed)
+pub inline fn opSgt(stack: *Stack) !void {
+    const a = try stack.pop();
+    const b = try stack.peekMut(0);
+    b.set(a.sgt(b.*));
 }
 
 /// Equality (EQ).
 ///
-/// Stack: [..., a, b] -> [..., a == b ? 1 : 0]
-pub inline fn eq(stack: *Stack) !void {
-    _ = stack;
-    return error.UnimplementedOpcode;
+/// Stack: [a, b, ...] -> [a == b ? 1 : 0, ...]
+pub inline fn opEq(stack: *Stack) !void {
+    const a = try stack.pop();
+    const b = try stack.peekMut(0);
+    b.set(a.eql(b.*));
 }
 
 /// Is zero (ISZERO).
 ///
-/// Stack: [..., a] -> [..., a == 0 ? 1 : 0]
-pub inline fn iszero(stack: *Stack) !void {
-    _ = stack;
-    return error.UnimplementedOpcode;
+/// Stack: [a, ...] -> [a == 0 ? 1 : 0, ...]
+pub inline fn opIszero(stack: *Stack) !void {
+    const a = try stack.peekMut(0);
+    a.set(a.isZero());
 }
 
 // ============================================================================
@@ -60,19 +65,107 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
-test "comparison: all operations unimplemented" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
+const test_helpers = @import("test_helpers.zig");
+const TestCase = test_helpers.TestCase;
+const testOp = test_helpers.testOp;
+const t = test_helpers.TestCase.binaryCase;
+const tu = test_helpers.TestCase.unaryCase;
 
-    try stack.push(U256.fromU64(5));
-    try stack.push(U256.fromU64(10));
+test "LT" {
+    const test_cases = [_]TestCase{
+        t(5, 10, 1),
+        t(10, 5, 0),
+        t(5, 5, 0),
+        t(0, 1, 1),
+        t(1, 0, 0),
+        t(0, 0, 0),
+        t(U256.ZERO, U256.MAX, 1),
+        t(U256.MAX, U256.ZERO, 0),
+        t(U256.MAX, U256.MAX, 0),
+    };
 
-    try expectError(error.UnimplementedOpcode, lt(&stack));
-    try expectError(error.UnimplementedOpcode, gt(&stack));
-    try expectError(error.UnimplementedOpcode, slt(&stack));
-    try expectError(error.UnimplementedOpcode, sgt(&stack));
-    try expectError(error.UnimplementedOpcode, eq(&stack));
+    try testOp(&opLt, &test_cases);
+}
 
-    _ = try stack.pop();
-    try expectError(error.UnimplementedOpcode, iszero(&stack));
+test "GT" {
+    const test_cases = [_]TestCase{
+        t(10, 5, 1),
+        t(5, 10, 0),
+        t(5, 5, 0),
+        t(1, 0, 1),
+        t(0, 1, 0),
+        t(0, 0, 0),
+        t(U256.MAX, U256.ZERO, 1),
+        t(U256.ZERO, U256.MAX, 0),
+        t(U256.MAX, U256.MAX, 0),
+    };
+
+    try testOp(&opGt, &test_cases);
+}
+
+test "SLT" {
+    const NEG_ONE = U256.MAX;
+    const NEG_TWO = U256{ .limbs = .{ 0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF } };
+    const MIN_I256 = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } };
+
+    const test_cases = [_]TestCase{
+        t(5, 10, 1),
+        t(10, 5, 0),
+        t(5, 5, 0),
+        t(0, 1, 1),
+        t(NEG_ONE, U256.fromU64(5), 1),
+        t(U256.fromU64(5), NEG_ONE, 0),
+        t(NEG_TWO, NEG_ONE, 1),
+        t(NEG_ONE, NEG_TWO, 0),
+        t(MIN_I256, U256.ZERO, 1),
+    };
+
+    try testOp(&opSlt, &test_cases);
+}
+
+test "SGT" {
+    const NEG_ONE = U256.MAX;
+    const NEG_TWO = U256{ .limbs = .{ 0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF } };
+    const MIN_I256 = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } };
+
+    const test_cases = [_]TestCase{
+        t(10, 5, 1),
+        t(5, 10, 0),
+        t(5, 5, 0),
+        t(1, 0, 1),
+        t(U256.fromU64(5), NEG_ONE, 1),
+        t(NEG_ONE, U256.fromU64(5), 0),
+        t(NEG_ONE, NEG_TWO, 1),
+        t(NEG_TWO, NEG_ONE, 0),
+        t(U256.ZERO, MIN_I256, 1),
+    };
+
+    try testOp(&opSgt, &test_cases);
+}
+
+test "EQ" {
+    const test_cases = [_]TestCase{
+        t(5, 5, 1),
+        t(5, 10, 0),
+        t(0, 0, 1),
+        t(0, 1, 0),
+        t(1000, 1000, 1),
+        t(U256.MAX, U256.MAX, 1),
+        t(U256.MAX, U256.ZERO, 0),
+        t(U256.ZERO, U256.MAX, 0),
+    };
+
+    try testOp(&opEq, &test_cases);
+}
+
+test "ISZERO" {
+    const test_cases = [_]TestCase{
+        tu(0, 1),
+        tu(1, 0),
+        tu(5, 0),
+        tu(255, 0),
+        tu(U256.MAX, 0),
+    };
+
+    try testOp(&opIszero, &test_cases);
 }

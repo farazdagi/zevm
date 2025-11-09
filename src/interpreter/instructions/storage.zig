@@ -9,7 +9,7 @@ const Stack = @import("../stack.zig").Stack;
 /// Stack: [..., key] -> [..., value]
 /// Note: This operation needs access to the storage state.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn sload(stack: *Stack) !void {
+pub inline fn opSload(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -19,7 +19,7 @@ pub inline fn sload(stack: *Stack) !void {
 /// Stack: [..., key, value] -> [...]
 /// Note: This operation needs access to the storage state and has complex gas costs.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn sstore(stack: *Stack) !void {
+pub inline fn opSstore(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -29,7 +29,7 @@ pub inline fn sstore(stack: *Stack) !void {
 /// Stack: [..., key] -> [..., value]
 /// Note: This operation needs access to the transient storage state.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn tload(stack: *Stack) !void {
+pub inline fn opTload(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -39,7 +39,7 @@ pub inline fn tload(stack: *Stack) !void {
 /// Stack: [..., key, value] -> [...]
 /// Note: This operation needs access to the transient storage state.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn tstore(stack: *Stack) !void {
+pub inline fn opTstore(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -57,14 +57,14 @@ test "storage: all operations unimplemented" {
     defer stack.deinit();
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, sload(&stack));
+    try expectError(error.UnimplementedOpcode, opSload(&stack));
 
     try stack.push(U256.fromU64(42));
-    try expectError(error.UnimplementedOpcode, sstore(&stack));
+    try expectError(error.UnimplementedOpcode, opSstore(&stack));
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, tload(&stack));
+    try expectError(error.UnimplementedOpcode, opTload(&stack));
 
     try stack.push(U256.fromU64(42));
-    try expectError(error.UnimplementedOpcode, tstore(&stack));
+    try expectError(error.UnimplementedOpcode, opTstore(&stack));
 }

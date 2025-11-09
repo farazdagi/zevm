@@ -11,7 +11,7 @@ const Stack = @import("../stack.zig").Stack;
 /// Get address of currently executing account (ADDRESS).
 ///
 /// Stack: [...] -> [..., address]
-pub inline fn address(stack: *Stack) !void {
+pub inline fn opAddress(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -19,7 +19,7 @@ pub inline fn address(stack: *Stack) !void {
 /// Get balance of an address (BALANCE).
 ///
 /// Stack: [..., address] -> [..., balance]
-pub inline fn balance(stack: *Stack) !void {
+pub inline fn opBalance(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -27,7 +27,7 @@ pub inline fn balance(stack: *Stack) !void {
 /// Get execution origination address (ORIGIN).
 ///
 /// Stack: [...] -> [..., address]
-pub inline fn origin(stack: *Stack) !void {
+pub inline fn opOrigin(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -35,7 +35,7 @@ pub inline fn origin(stack: *Stack) !void {
 /// Get caller address (CALLER).
 ///
 /// Stack: [...] -> [..., address]
-pub inline fn caller(stack: *Stack) !void {
+pub inline fn opCaller(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -43,7 +43,7 @@ pub inline fn caller(stack: *Stack) !void {
 /// Get deposited value (CALLVALUE).
 ///
 /// Stack: [...] -> [..., value]
-pub inline fn callvalue(stack: *Stack) !void {
+pub inline fn opCallvalue(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -51,7 +51,7 @@ pub inline fn callvalue(stack: *Stack) !void {
 /// Get gas price (GASPRICE).
 ///
 /// Stack: [...] -> [..., price]
-pub inline fn gasprice(stack: *Stack) !void {
+pub inline fn opGasprice(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -59,7 +59,7 @@ pub inline fn gasprice(stack: *Stack) !void {
 /// Get balance of currently executing account (SELFBALANCE) - EIP-1884.
 ///
 /// Stack: [...] -> [..., balance]
-pub inline fn selfbalance(stack: *Stack) !void {
+pub inline fn opSelfbalance(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -71,7 +71,7 @@ pub inline fn selfbalance(stack: *Stack) !void {
 /// Load word from input data (CALLDATALOAD).
 ///
 /// Stack: [..., offset] -> [..., data]
-pub inline fn calldataload(stack: *Stack) !void {
+pub inline fn opCalldataload(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -79,7 +79,7 @@ pub inline fn calldataload(stack: *Stack) !void {
 /// Get size of input data (CALLDATASIZE).
 ///
 /// Stack: [...] -> [..., size]
-pub inline fn calldatasize(stack: *Stack) !void {
+pub inline fn opCalldatasize(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -87,7 +87,7 @@ pub inline fn calldatasize(stack: *Stack) !void {
 /// Copy input data to memory (CALLDATACOPY).
 ///
 /// Stack: [..., destOffset, offset, length] -> [...]
-pub inline fn calldatacopy(stack: *Stack) !void {
+pub inline fn opCalldatacopy(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -99,7 +99,7 @@ pub inline fn calldatacopy(stack: *Stack) !void {
 /// Get size of code (CODESIZE).
 ///
 /// Stack: [...] -> [..., size]
-pub inline fn codesize(stack: *Stack) !void {
+pub inline fn opCodesize(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -107,7 +107,7 @@ pub inline fn codesize(stack: *Stack) !void {
 /// Copy code to memory (CODECOPY).
 ///
 /// Stack: [..., destOffset, offset, length] -> [...]
-pub inline fn codecopy(stack: *Stack) !void {
+pub inline fn opCodecopy(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -115,7 +115,7 @@ pub inline fn codecopy(stack: *Stack) !void {
 /// Get size of external code (EXTCODESIZE).
 ///
 /// Stack: [..., address] -> [..., size]
-pub inline fn extcodesize(stack: *Stack) !void {
+pub inline fn opExtcodesize(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -123,7 +123,7 @@ pub inline fn extcodesize(stack: *Stack) !void {
 /// Copy external code to memory (EXTCODECOPY).
 ///
 /// Stack: [..., address, destOffset, offset, length] -> [...]
-pub inline fn extcodecopy(stack: *Stack) !void {
+pub inline fn opExtcodecopy(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -131,7 +131,7 @@ pub inline fn extcodecopy(stack: *Stack) !void {
 /// Get hash of external code (EXTCODEHASH) - EIP-1052.
 ///
 /// Stack: [..., address] -> [..., hash]
-pub inline fn extcodehash(stack: *Stack) !void {
+pub inline fn opExtcodehash(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -143,7 +143,7 @@ pub inline fn extcodehash(stack: *Stack) !void {
 /// Get size of return data (RETURNDATASIZE) - EIP-211.
 ///
 /// Stack: [...] -> [..., size]
-pub inline fn returndatasize(stack: *Stack) !void {
+pub inline fn opReturndatasize(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -151,7 +151,7 @@ pub inline fn returndatasize(stack: *Stack) !void {
 /// Copy return data to memory (RETURNDATACOPY) - EIP-211.
 ///
 /// Stack: [..., destOffset, offset, length] -> [...]
-pub inline fn returndatacopy(stack: *Stack) !void {
+pub inline fn opReturndatacopy(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -163,7 +163,7 @@ pub inline fn returndatacopy(stack: *Stack) !void {
 /// Get hash of recent complete block (BLOCKHASH).
 ///
 /// Stack: [..., blockNumber] -> [..., hash]
-pub inline fn blockhash(stack: *Stack) !void {
+pub inline fn opBlockhash(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -171,7 +171,7 @@ pub inline fn blockhash(stack: *Stack) !void {
 /// Get block's beneficiary address (COINBASE).
 ///
 /// Stack: [...] -> [..., address]
-pub inline fn coinbase(stack: *Stack) !void {
+pub inline fn opCoinbase(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -179,7 +179,7 @@ pub inline fn coinbase(stack: *Stack) !void {
 /// Get block's timestamp (TIMESTAMP).
 ///
 /// Stack: [...] -> [..., timestamp]
-pub inline fn timestamp(stack: *Stack) !void {
+pub inline fn opTimestamp(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -187,7 +187,7 @@ pub inline fn timestamp(stack: *Stack) !void {
 /// Get block's number (NUMBER).
 ///
 /// Stack: [...] -> [..., number]
-pub inline fn number(stack: *Stack) !void {
+pub inline fn opNumber(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -196,7 +196,7 @@ pub inline fn number(stack: *Stack) !void {
 ///
 /// Stack: [...] -> [..., difficulty]
 /// Note: Post-merge this returns PREVRANDAO (EIP-4399)
-pub inline fn prevrandao(stack: *Stack) !void {
+pub inline fn opPrevrandao(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -204,7 +204,7 @@ pub inline fn prevrandao(stack: *Stack) !void {
 /// Get block's gas limit (GASLIMIT).
 ///
 /// Stack: [...] -> [..., limit]
-pub inline fn gaslimit(stack: *Stack) !void {
+pub inline fn opGaslimit(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -212,7 +212,7 @@ pub inline fn gaslimit(stack: *Stack) !void {
 /// Get chain ID (CHAINID) - EIP-1344.
 ///
 /// Stack: [...] -> [..., chainId]
-pub inline fn chainid(stack: *Stack) !void {
+pub inline fn opChainid(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -220,7 +220,7 @@ pub inline fn chainid(stack: *Stack) !void {
 /// Get base fee (BASEFEE) - EIP-3198.
 ///
 /// Stack: [...] -> [..., baseFee]
-pub inline fn basefee(stack: *Stack) !void {
+pub inline fn opBasefee(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -228,7 +228,7 @@ pub inline fn basefee(stack: *Stack) !void {
 /// Get versioned hash of blob at index (BLOBHASH) - EIP-4844.
 ///
 /// Stack: [..., index] -> [..., versionedHash]
-pub inline fn blobhash(stack: *Stack) !void {
+pub inline fn opBlobhash(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -236,7 +236,7 @@ pub inline fn blobhash(stack: *Stack) !void {
 /// Get blob base fee (BLOBBASEFEE) - EIP-7516.
 ///
 /// Stack: [...] -> [..., blobBaseFee]
-pub inline fn blobbasefee(stack: *Stack) !void {
+pub inline fn opBlobbasefee(stack: *Stack) !void {
     _ = stack;
     return error.UnimplementedOpcode;
 }
@@ -253,16 +253,16 @@ test "environmental: transaction context operations unimplemented" {
     var stack = try Stack.init(std.testing.allocator);
     defer stack.deinit();
 
-    try expectError(error.UnimplementedOpcode, address(&stack));
+    try expectError(error.UnimplementedOpcode, opAddress(&stack));
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, balance(&stack));
+    try expectError(error.UnimplementedOpcode, opBalance(&stack));
 
-    try expectError(error.UnimplementedOpcode, origin(&stack));
-    try expectError(error.UnimplementedOpcode, caller(&stack));
-    try expectError(error.UnimplementedOpcode, callvalue(&stack));
-    try expectError(error.UnimplementedOpcode, gasprice(&stack));
-    try expectError(error.UnimplementedOpcode, selfbalance(&stack));
+    try expectError(error.UnimplementedOpcode, opOrigin(&stack));
+    try expectError(error.UnimplementedOpcode, opCaller(&stack));
+    try expectError(error.UnimplementedOpcode, opCallvalue(&stack));
+    try expectError(error.UnimplementedOpcode, opGasprice(&stack));
+    try expectError(error.UnimplementedOpcode, opSelfbalance(&stack));
 }
 
 test "environmental: calldata operations unimplemented" {
@@ -270,41 +270,41 @@ test "environmental: calldata operations unimplemented" {
     defer stack.deinit();
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, calldataload(&stack));
+    try expectError(error.UnimplementedOpcode, opCalldataload(&stack));
 
-    try expectError(error.UnimplementedOpcode, calldatasize(&stack));
+    try expectError(error.UnimplementedOpcode, opCalldatasize(&stack));
 
     for (0..3) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, calldatacopy(&stack));
+    try expectError(error.UnimplementedOpcode, opCalldatacopy(&stack));
 }
 
 test "environmental: code operations unimplemented" {
     var stack = try Stack.init(std.testing.allocator);
     defer stack.deinit();
 
-    try expectError(error.UnimplementedOpcode, codesize(&stack));
+    try expectError(error.UnimplementedOpcode, opCodesize(&stack));
 
     for (0..3) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, codecopy(&stack));
+    try expectError(error.UnimplementedOpcode, opCodecopy(&stack));
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, extcodesize(&stack));
+    try expectError(error.UnimplementedOpcode, opExtcodesize(&stack));
 
     for (0..4) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, extcodecopy(&stack));
+    try expectError(error.UnimplementedOpcode, opExtcodecopy(&stack));
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, extcodehash(&stack));
+    try expectError(error.UnimplementedOpcode, opExtcodehash(&stack));
 }
 
 test "environmental: return data operations unimplemented" {
     var stack = try Stack.init(std.testing.allocator);
     defer stack.deinit();
 
-    try expectError(error.UnimplementedOpcode, returndatasize(&stack));
+    try expectError(error.UnimplementedOpcode, opReturndatasize(&stack));
 
     for (0..3) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, returndatacopy(&stack));
+    try expectError(error.UnimplementedOpcode, opReturndatacopy(&stack));
 }
 
 test "environmental: block information operations unimplemented" {
@@ -312,18 +312,18 @@ test "environmental: block information operations unimplemented" {
     defer stack.deinit();
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, blockhash(&stack));
+    try expectError(error.UnimplementedOpcode, opBlockhash(&stack));
 
-    try expectError(error.UnimplementedOpcode, coinbase(&stack));
-    try expectError(error.UnimplementedOpcode, timestamp(&stack));
-    try expectError(error.UnimplementedOpcode, number(&stack));
-    try expectError(error.UnimplementedOpcode, prevrandao(&stack));
-    try expectError(error.UnimplementedOpcode, gaslimit(&stack));
-    try expectError(error.UnimplementedOpcode, chainid(&stack));
-    try expectError(error.UnimplementedOpcode, basefee(&stack));
+    try expectError(error.UnimplementedOpcode, opCoinbase(&stack));
+    try expectError(error.UnimplementedOpcode, opTimestamp(&stack));
+    try expectError(error.UnimplementedOpcode, opNumber(&stack));
+    try expectError(error.UnimplementedOpcode, opPrevrandao(&stack));
+    try expectError(error.UnimplementedOpcode, opGaslimit(&stack));
+    try expectError(error.UnimplementedOpcode, opChainid(&stack));
+    try expectError(error.UnimplementedOpcode, opBasefee(&stack));
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, blobhash(&stack));
+    try expectError(error.UnimplementedOpcode, opBlobhash(&stack));
 
-    try expectError(error.UnimplementedOpcode, blobbasefee(&stack));
+    try expectError(error.UnimplementedOpcode, opBlobbasefee(&stack));
 }

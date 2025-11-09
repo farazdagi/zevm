@@ -8,7 +8,7 @@ const Memory = @import("../memory.zig").Memory;
 /// Load word from memory (MLOAD).
 ///
 /// Stack: [..., offset] -> [..., value]
-pub inline fn mload(stack: *Stack, memory: *Memory) !void {
+pub inline fn opMload(stack: *Stack, memory: *Memory) !void {
     _ = stack;
     _ = memory;
     return error.UnimplementedOpcode;
@@ -17,7 +17,7 @@ pub inline fn mload(stack: *Stack, memory: *Memory) !void {
 /// Store word to memory (MSTORE).
 ///
 /// Stack: [..., offset, value] -> [...]
-pub inline fn mstore(stack: *Stack, memory: *Memory) !void {
+pub inline fn opMstore(stack: *Stack, memory: *Memory) !void {
     _ = stack;
     _ = memory;
     return error.UnimplementedOpcode;
@@ -27,7 +27,7 @@ pub inline fn mstore(stack: *Stack, memory: *Memory) !void {
 ///
 /// Stack: [..., offset, value] -> [...]
 /// Only the least significant byte of value is stored
-pub inline fn mstore8(stack: *Stack, memory: *Memory) !void {
+pub inline fn opMstore8(stack: *Stack, memory: *Memory) !void {
     _ = stack;
     _ = memory;
     return error.UnimplementedOpcode;
@@ -36,7 +36,7 @@ pub inline fn mstore8(stack: *Stack, memory: *Memory) !void {
 /// Get size of active memory in bytes (MSIZE).
 ///
 /// Stack: [...] -> [..., size]
-pub inline fn msize(stack: *Stack, memory: *Memory) !void {
+pub inline fn opMsize(stack: *Stack, memory: *Memory) !void {
     _ = stack;
     _ = memory;
     return error.UnimplementedOpcode;
@@ -45,7 +45,7 @@ pub inline fn msize(stack: *Stack, memory: *Memory) !void {
 /// Copy memory (MCOPY) - EIP-5656.
 ///
 /// Stack: [..., dest_offset, src_offset, length] -> [...]
-pub inline fn mcopy(stack: *Stack, memory: *Memory) !void {
+pub inline fn opMcopy(stack: *Stack, memory: *Memory) !void {
     _ = stack;
     _ = memory;
     return error.UnimplementedOpcode;
@@ -67,17 +67,17 @@ test "memory_ops: all operations unimplemented" {
     defer memory.deinit();
 
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, mload(&stack, &memory));
+    try expectError(error.UnimplementedOpcode, opMload(&stack, &memory));
 
     try stack.push(U256.fromU64(42));
-    try expectError(error.UnimplementedOpcode, mstore(&stack, &memory));
+    try expectError(error.UnimplementedOpcode, opMstore(&stack, &memory));
 
     try stack.push(U256.fromU64(0xFF));
-    try expectError(error.UnimplementedOpcode, mstore8(&stack, &memory));
+    try expectError(error.UnimplementedOpcode, opMstore8(&stack, &memory));
 
-    try expectError(error.UnimplementedOpcode, msize(&stack, &memory));
+    try expectError(error.UnimplementedOpcode, opMsize(&stack, &memory));
 
     try stack.push(U256.fromU64(32));
     try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, mcopy(&stack, &memory));
+    try expectError(error.UnimplementedOpcode, opMcopy(&stack, &memory));
 }

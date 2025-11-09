@@ -11,7 +11,7 @@ const Memory = @import("../memory.zig").Memory;
 /// Reads data from memory and pushes the keccak256 hash onto the stack.
 /// Note: This operation requires access to memory and has dynamic gas costs.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn keccak256(stack: *Stack, memory: *Memory) !void {
+pub inline fn opKeccak256(stack: *Stack, memory: *Memory) !void {
     _ = stack;
     _ = memory;
     return error.UnimplementedOpcode;
@@ -34,5 +34,5 @@ test "crypto: KECCAK256 unimplemented" {
 
     try stack.push(U256.fromU64(32)); // length
     try stack.push(U256.ZERO); // offset
-    try expectError(error.UnimplementedOpcode, keccak256(&stack, &memory));
+    try expectError(error.UnimplementedOpcode, opKeccak256(&stack, &memory));
 }

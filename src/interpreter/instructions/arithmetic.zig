@@ -8,7 +8,7 @@ const Stack = @import("../stack.zig").Stack;
 ///
 /// Stack: [a, b, ...] -> [a + b, ...]
 /// Wraps on overflow (modulo 2^256)
-pub inline fn add(stack: *Stack) !void {
+pub inline fn opAdd(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.add(b.*);
@@ -18,7 +18,7 @@ pub inline fn add(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a * b, ...]
 /// Wraps on overflow (modulo 2^256)
-pub inline fn mul(stack: *Stack) !void {
+pub inline fn opMul(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.mul(b.*);
@@ -28,7 +28,7 @@ pub inline fn mul(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a - b, ...]
 /// Wraps on underflow (modulo 2^256)
-pub inline fn sub(stack: *Stack) !void {
+pub inline fn opSub(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.sub(b.*);
@@ -38,7 +38,7 @@ pub inline fn sub(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a // b, ...]
 /// Division by zero returns 0 (EVM spec)
-pub inline fn div(stack: *Stack) !void {
+pub inline fn opDiv(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.div(b.*);
@@ -48,7 +48,7 @@ pub inline fn div(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a % b, ...]
 /// Modulo by zero returns 0 (EVM spec)
-pub inline fn mod(stack: *Stack) !void {
+pub inline fn opMod(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.rem(b.*);
@@ -61,7 +61,7 @@ pub inline fn mod(stack: *Stack) !void {
 /// Gas must be charged BEFORE calling this function:
 /// - Base gas is charged in interpreter.step()
 /// - Dynamic gas (based on exponent byte length) must be charged in execute()
-pub inline fn exp(stack: *Stack) !void {
+pub inline fn opExp(stack: *Stack) !void {
     const base = try stack.pop();
     const exponent = try stack.peekMut(0);
     exponent.* = base.exp(exponent.*);
@@ -74,7 +74,7 @@ pub inline fn exp(stack: *Stack) !void {
 /// - byte_num: position of the sign byte (0 = rightmost/LSB, 31 = leftmost/MSB)
 /// - If byte_num >= 31, returns value unchanged
 /// - Otherwise, extends the sign bit at position (byte_num * 8 + 7) to all higher bits
-pub inline fn signextend(stack: *Stack) !void {
+pub inline fn opSignextend(stack: *Stack) !void {
     const value = try stack.pop();
     const byte_num_u256 = try stack.peekMut(0);
 
@@ -97,7 +97,7 @@ pub inline fn signextend(stack: *Stack) !void {
 /// - MIN_I256 / -1 returns MIN_I256 (overflow wraps)
 ///
 /// Stack: [a, b, ...] -> [a / b, ...]
-pub fn sdiv(stack: *Stack) !void {
+pub fn opSdiv(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.sdiv(b.*);
@@ -112,7 +112,7 @@ pub fn sdiv(stack: *Stack) !void {
 /// - Result takes the sign of the dividend
 ///
 /// Stack: [a, b, ...] -> [a % b, ...]
-pub fn smod(stack: *Stack) !void {
+pub fn opSmod(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.peekMut(0);
     b.* = a.srem(b.*);
@@ -123,7 +123,7 @@ pub fn smod(stack: *Stack) !void {
 /// Computes (a + b) % N with proper overflow handling.
 ///
 /// Stack: [a, b, N, ...] -> [(a + b) % N, ...]
-pub fn addmod(stack: *Stack) !void {
+pub fn opAddmod(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.pop();
     const n = try stack.peekMut(0);
@@ -136,7 +136,7 @@ pub fn addmod(stack: *Stack) !void {
 /// Uses widening multiplication or reduction to avoid overflow.
 ///
 /// Stack: [a, b, N, ...] -> [(a * b) % N, ...]
-pub fn mulmod(stack: *Stack) !void {
+pub fn opMulmod(stack: *Stack) !void {
     const a = try stack.pop();
     const b = try stack.pop();
     const n = try stack.peekMut(0);
@@ -156,63 +156,63 @@ const TestCase = test_helpers.TestCase;
 const testOp = test_helpers.testOp;
 const t = test_helpers.TestCase.binaryCase;
 
-test "add" {
+test "ADD" {
     const test_cases = [_]TestCase{
         // 2 + 3 = 5
         t(2, 3, 5),
         // MAX + 1 = 0 (wrapping overflow)
         t(U256.MAX, 1, 0),
     };
-    try testOp(&add, &test_cases);
+    try testOp(&opAdd, &test_cases);
 }
 
-test "mul" {
+test "MUL" {
     const test_cases = [_]TestCase{
         // 10 * 3 = 30
         t(10, 3, 30),
     };
-    try testOp(&mul, &test_cases);
+    try testOp(&opMul, &test_cases);
 }
 
-test "sub" {
+test "SUB" {
     const test_cases = [_]TestCase{
         // 10 - 3 = 7
         t(10, 3, 7),
         // 0 - 1 = MAX (wrapping underflow)
         t(0, 1, U256.MAX),
     };
-    try testOp(&sub, &test_cases);
+    try testOp(&opSub, &test_cases);
 }
 
-test "div" {
+test "DIV" {
     const test_cases = [_]TestCase{
         // 10 / 3 = 3
         t(10, 3, 3),
         // 10 / 0 = 0 (division by zero)
         t(10, 0, 0),
     };
-    try testOp(&div, &test_cases);
+    try testOp(&opDiv, &test_cases);
 }
 
-test "mod" {
+test "MOD" {
     const test_cases = [_]TestCase{
         // 10 % 3 = 1
         t(10, 3, 1),
         // 10 % 0 = 0 (modulo by zero)
         t(10, 0, 0),
     };
-    try testOp(&mod, &test_cases);
+    try testOp(&opMod, &test_cases);
 }
 
-test "exp" {
+test "EXP" {
     const test_cases = [_]TestCase{
         // 2^8 = 256
         t(2, 8, 256),
     };
-    try testOp(&exp, &test_cases);
+    try testOp(&opExp, &test_cases);
 }
 
-test "signextend" {
+test "SIGNEXTEND" {
     const test_cases = [_]TestCase{
         // byte 0 positive - remains 0x7F
         t(0x7F, 0, 0x7F),
@@ -229,10 +229,10 @@ test "signextend" {
         // byte_num > 31 - unchanged
         t(0x1234_5678_90AB_CDEF, 100, 0x1234_5678_90AB_CDEF),
     };
-    try testOp(&signextend, &test_cases);
+    try testOp(&opSignextend, &test_cases);
 }
 
-test "sdiv" {
+test "SDIV" {
     const test_cases = [_]TestCase{
         // 10 / 3 = 3
         t(10, 3, 3),
@@ -241,10 +241,10 @@ test "sdiv" {
         // MIN_I256 / -1 = MIN_I256 (overflow wraps)
         t(U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }, U256.MAX, U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }),
     };
-    try testOp(&sdiv, &test_cases);
+    try testOp(&opSdiv, &test_cases);
 }
 
-test "smod" {
+test "SMOD" {
     const test_cases = [_]TestCase{
         // 10 % 3 = 1
         t(10, 3, 1),
@@ -253,25 +253,25 @@ test "smod" {
         // MIN_I256 % -1 = 0 (overflow case)
         t(U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } }, U256.MAX, 0),
     };
-    try testOp(&smod, &test_cases);
+    try testOp(&opSmod, &test_cases);
 }
 
-test "addmod" {
+test "ADDMOD" {
     const test_cases = [_]TestCase{
         // (5 + 7) % 10 = 2
         TestCase.ternaryCase(5, 7, 10, 2),
         // (5 + 7) % 0 = 0 (modulo by zero)
         TestCase.ternaryCase(5, 7, 0, 0),
     };
-    try testOp(&addmod, &test_cases);
+    try testOp(&opAddmod, &test_cases);
 }
 
-test "mulmod" {
+test "MULMOD" {
     const test_cases = [_]TestCase{
         // (5 * 7) % 10 = 5
         TestCase.ternaryCase(5, 7, 10, 5),
         // (5 * 7) % 0 = 0 (modulo by zero)
         TestCase.ternaryCase(5, 7, 0, 0),
     };
-    try testOp(&mulmod, &test_cases);
+    try testOp(&opMulmod, &test_cases);
 }

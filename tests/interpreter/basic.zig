@@ -82,7 +82,7 @@ test "unimplemented opcode" {
     const allocator = std.testing.allocator;
     const spec = Spec.forFork(.BERLIN);
 
-    const bytecode = &[_]u8{0x10}; // LT (not yet implemented)
+    const bytecode = &[_]u8{0x51}; // MLOAD (not yet implemented)
     var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000);
     defer interpreter.deinit();
 
@@ -174,13 +174,13 @@ test "Chained operations with mixed ops" {
 
     // (10 / 2) + (3 * 4) = 5 + 12 = 17
     const bytecode = &[_]u8{
-        0x60, 0x0A, // PUSH1 10
-        0x60, 0x02, // PUSH1 2
-        0x04, // DIV        -> [5]
+        0x60, 0x02, // PUSH1 2 (second operand, pushed first)
+        0x60, 0x0A, // PUSH1 10 (first operand, on top)
+        0x04, // DIV -> computes 10 / 2 = 5
         0x60, 0x03, // PUSH1 3
         0x60, 0x04, // PUSH1 4
-        0x02, // MUL        -> [5, 12]
-        0x01, // ADD        -> [17]
+        0x02, // MUL -> computes 3 * 4 = 12 (MUL is commutative)
+        0x01, // ADD -> computes 5 + 12 = 17 (ADD is commutative)
         0x00, // STOP
     };
     var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);

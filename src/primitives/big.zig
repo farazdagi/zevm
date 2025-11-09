@@ -129,6 +129,44 @@ pub const U256 = struct {
         return bytes;
     }
 
+    /// Generic set method supporting multiple types as a zero-cost abstraction.
+    pub inline fn set(self: *Self, value: anytype) void {
+        const T = @TypeOf(value);
+
+        // Use compile-time type checks for zero-cost abstraction.
+        if (T == bool) {
+            self.* = fromBool(value);
+        } else if (T == U256) {
+            self.* = value;
+        } else if (@typeInfo(T) == .comptime_int) {
+            if (value < 0) {
+                @compileError("Negative comptime_int values not supported in set()");
+            }
+            if (value <= std.math.maxInt(u64)) {
+                self.* = fromU64(@intCast(value));
+            } else if (value <= std.math.maxInt(u128)) {
+                self.* = fromU128(@intCast(value));
+            } else {
+                @compileError("comptime_int value too large for set() (max: u128)");
+            }
+        } else if (@typeInfo(T) == .int) {
+            const int_info = @typeInfo(T).int;
+            if (int_info.signedness == .unsigned) {
+                if (int_info.bits <= 64) {
+                    self.* = fromU64(@intCast(value));
+                } else if (int_info.bits <= 128) {
+                    self.* = fromU128(@intCast(value));
+                } else {
+                    @compileError("Unsupported integer bit width for set(): " ++ @typeName(T));
+                }
+            } else {
+                @compileError("Signed integers not supported in set(): " ++ @typeName(T));
+            }
+        } else {
+            @compileError("Unsupported type for set(): " ++ @typeName(T));
+        }
+    }
+
     /// Check if the value is zero.
     pub inline fn isZero(self: Self) bool {
         return self.limbs[0] == 0 and self.limbs[1] == 0 and self.limbs[2] == 0 and self.limbs[3] == 0;
@@ -459,6 +497,9 @@ pub const U256 = struct {
     ///
     /// Computes (self + other) mod 2^256.
     pub inline fn add(self: Self, other: Self) Self {
+        // Result location mechanism should avoid real allocation to stack, but we can also
+        // resort to in-place assignment by overwriting self, say U256.add(&a, a.*, b).
+        // Note: when checked really similar ASM code is generated in both cases.
         var result: Self = undefined;
         var carry: u64 = 0;
 
@@ -900,6 +941,84 @@ test "U256: fromBool" {
     const false_val = U256.fromBool(false);
     try expect(false_val.eql(U256.ZERO));
     try expect(false_val.isZero());
+}
+
+test "U256: set - generic type support" {
+    var val: U256 = undefined;
+
+    // Bool values
+    {
+        val.set(true);
+        try expect(val.eql(U256.ONE));
+
+        val.set(false);
+        try expect(val.eql(U256.ZERO));
+    }
+
+    // Unsigned integers (u8, u16, u32, u64) - test various values for each type
+    {
+        const test_values = [_]u64{ 0, 1, 42, 255, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF };
+
+        for (test_values) |test_val| {
+            // u8
+            val.set(@as(u8, @truncate(test_val)));
+            try expectEqual(test_val & 0xFF, val.toU64().?);
+
+            // u16
+            val.set(@as(u16, @truncate(test_val)));
+            try expectEqual(test_val & 0xFFFF, val.toU64().?);
+
+            // u32
+            val.set(@as(u32, @truncate(test_val)));
+            try expectEqual(test_val & 0xFFFFFFFF, val.toU64().?);
+
+            // u64
+            val.set(@as(u64, test_val));
+            try expectEqual(test_val, val.toU64().?);
+        }
+    }
+
+    // u128 values
+    {
+        const test_u128: u128 = 0x0123456789ABCDEF0123456789ABCDEF;
+        val.set(test_u128);
+        try expectEqual(test_u128, val.toU128().?);
+
+        const max_u128: u128 = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+        val.set(max_u128);
+        try expectEqual(max_u128, val.toU128().?);
+
+        val.set(@as(u128, 42));
+        try expectEqual(42, val.toU64().?);
+    }
+
+    // U256 values
+    {
+        val.set(U256.ZERO);
+        try expect(val.eql(U256.ZERO));
+
+        val.set(U256.ONE);
+        try expect(val.eql(U256.ONE));
+
+        val.set(U256.MAX);
+        try expect(val.eql(U256.MAX));
+
+        const custom = U256{ .limbs = .{ 0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444 } };
+        val.set(custom);
+        try expect(val.eql(custom));
+    }
+
+    // comptime_int literals
+    {
+        val.set(0);
+        try expect(val.isZero());
+
+        val.set(1);
+        try expect(val.eql(U256.ONE));
+
+        val.set(123456789);
+        try expectEqual(123456789, val.toU64().?);
+    }
 }
 
 test "U256: toU64" {
