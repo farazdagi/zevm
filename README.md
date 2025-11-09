@@ -2,80 +2,72 @@
 
 Zig implementation of the Ethereum Virtual Machine (EVM).
 
-## Testing
+## Overview
 
-Run tests using `zig build test`. 
+Zevm is built from the ground up in Zig with the following goals:
 
-The project has three test suites: library unit tests (`lib`), executable tests (`main`), and integration tests (located in `tests/`).
+- **Correctness**: Pass the official Ethereum test suite
+- **Performance**: Competitive with state-of-the-art implementations (revm, geth, evmone)
+- **Readability**: Serve as a clear reference implementation in idiomatic Zig
+- **Extensibility**: Multi-chain support for Ethereum L2s (Optimism, Arbitrum, etc.)
 
-### Run specific test suites
+## Status
 
-```bash
-# Run only library tests
-zig build test -Dtest-target=lib
+**Implementation progress: 48/145 opcodes (33%)**
 
-# Run only executable tests
-zig build test -Dtest-target=main
+Currently implemented:
+- Stack operations (PUSH, POP, DUP1-16, SWAP1-16)
+- Arithmetic operations (ADD, MUL, SUB, DIV, MOD, EXP, SIGNEXTEND, etc.)
+- Comparison & bitwise operations (LT, GT, EQ, AND, OR, XOR, SHL, SHR, SAR, etc.)
+- All 20 Ethereum hardforks (FRONTIER through OSAKA)
+- Gas metering foundation
+- Comprehensive test coverage
 
-# Run all integration tests
-zig build test -Dtest-target=integration
-
-# Run specific integration test file
-zig build test -Dtest-target=tests/big.zig
-```
-
-### Filter tests by name
-
-```bash
-# Combine suite selection with filtering
-zig build test -Dtest-target=lib -Dfilter=address
-
-# Alternative syntax (--test-target also works with --)
-zig build test -- --test-target=lib address::
-
-# Filter tests (works across all suites)
-zig build test -- address::
-```
-
-### Default behavior
+## Quickstart
 
 ```bash
-# Run all tests (default)
+# Build the project
+zig build
+
+# Run tests
 zig build test
-```
 
-## Benchmarking
-
-Run benchmarks using `zig build bench`. Benchmark files are located in the `bench/` directory and are automatically discovered by the build system.
-
-### Run all benchmarks
-
-```bash
-# Run all benchmarks (default, Debug mode)
+# Run benchmarks
 zig build bench
 ```
 
-### Run specific benchmarks
+See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed testing and benchmarking options.
 
-```bash
-# Run only the stack benchmark
-zig build bench -Dbench-target=stack
+## Roadmap
 
-# Run only the big integer benchmark
-zig build bench -Dbench-target=big
+Development is organized into thematic sprints:
 
-# Alternative: specify with .zig extension
-zig build bench -Dbench-target=stack.zig
-```
+- **Core opcodes** - Memory operations, environmental information, block context
+- **Hashing & cryptography** - KECCAK256, signature verification
+- **State management** - Storage operations (SLOAD/SSTORE), account handling
+- **External calls** - CALL, STATICCALL, DELEGATECALL, contract creation
+- **Multi-chain support** - Optimism-specific extensions (L1 data fees, system contracts)
+- **Testing & validation** - Ethereum official test suite, Optimism test suite
 
-### Optimization modes
+## Architecture
 
-By default, benchmarks run in Debug mode to prevent over-optimization of benchmark loops. You can specify different optimization levels:
+High-level components:
 
-```bash
-# Run with full optimizations
-zig build bench -Dbench-optimize=ReleaseFast
+- **Primitives** - Address, U256, B256, Bytes, Stack, Memory
+- **Interpreter** - Fetch-decode-execute loop, opcode handlers, PC management
+- **Spec Handler** - Hardfork management, fork-specific gas costs and features
+- **Gas System** - Base costs, memory expansion, fork-aware calculations
+- **Host** (planned) - Abstract interface between EVM and state backend
 
-# Run specific benchmark with optimizations
-zig build bench -Dbench-target=stack -Dbench-optimize=ReleaseFast
-```
+## References
+
+**Ethereum Specifications:**
+- [Ethereum Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf) - Formal specification
+- [Jello Paper](https://jellopaper.org/) - More readable specification
+- [EVM Opcodes](https://www.evm.codes/) - Interactive opcode reference
+
+**Reference Implementations:**
+- [Revm](https://github.com/bluealloy/revm) (Rust)
+- [Geth](https://github.com/ethereum/go-ethereum) (Go)
+- [Evmone](https://github.com/ipsilon/evmone) (C++)
+- [Execution Specs](https://github.com/ethereum/execution-specs) (Python)
