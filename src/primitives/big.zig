@@ -107,6 +107,14 @@ pub const U256 = struct {
         return (@as(u128, self.limbs[1]) << 64) | @as(u128, self.limbs[0]);
     }
 
+    /// Convert to usize if the value fits, otherwise return null.
+    pub inline fn toUsize(self: Self) ?usize {
+        const val_u64 = self.toU64() orelse return null;
+        // Cast u64 to usize. On 64-bit systems this is a no-op.
+        // On 32-bit systems, returns null if value doesn't fit in 32 bits.
+        return std.math.cast(usize, val_u64);
+    }
+
     /// Write the U256 as little-endian bytes (32 bytes).
     pub inline fn toLeBytes(self: Self) [32]u8 {
         var bytes: [32]u8 = undefined;
@@ -1035,6 +1043,37 @@ test "U256: toU128" {
 
     const b = U256{ .limbs = .{ 0, 0, 1, 0 } };
     try expect(b.toU128() == null);
+}
+
+test "U256: toUsize" {
+    // Test values that fit in usize
+    const test_cases = [_]struct {
+        input: u64,
+        should_fit: bool,
+    }{
+        .{ .input = 0, .should_fit = true },
+        .{ .input = 123, .should_fit = true },
+        // Max u32
+        .{ .input = 0xFFFFFFFF, .should_fit = true },
+        // Max u64, fits only on 64-bit
+        .{ .input = 0xFFFFFFFFFFFFFFFF, .should_fit = @sizeOf(usize) == 8 },
+    };
+
+    for (test_cases) |tc| {
+        const val = U256.fromU64(tc.input);
+        const result = val.toUsize();
+
+        if (tc.should_fit) {
+            try expect(result != null);
+            try expectEqual(tc.input, result.?);
+        } else {
+            try expect(result == null);
+        }
+    }
+
+    // Test value that doesn't fit in u64 (and therefore not in usize)
+    const big = U256{ .limbs = .{ 0, 1, 0, 0 } }; // 2^64
+    try expect(big.toUsize() == null);
 }
 
 test "U256: fromBeBytes and toBeBytes" {

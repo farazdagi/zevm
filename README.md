@@ -13,15 +13,16 @@ Zevm is built from the ground up in Zig with the following goals:
 
 ## Status
 
-**Implementation progress: 48/145 opcodes (33%)**
+**Implementation progress: 52/145 opcodes (36%)**
 
 Currently implemented:
 - Stack operations (PUSH, POP, DUP1-16, SWAP1-16)
 - Arithmetic operations (ADD, MUL, SUB, DIV, MOD, EXP, SIGNEXTEND, etc.)
 - Comparison & bitwise operations (LT, GT, EQ, AND, OR, XOR, SHL, SHR, SAR, etc.)
+- Memory operations (MLOAD, MSTORE, MSTORE8, MSIZE)
 - All 20 Ethereum hardforks (FRONTIER through OSAKA)
-- Gas metering foundation
-- Comprehensive test coverage
+- Gas metering foundation with memory expansion costs
+- Comprehensive test coverage (363 tests)
 
 ## Quickstart
 
