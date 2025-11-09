@@ -4,13 +4,6 @@ const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
 const Stack = @import("../stack.zig").Stack;
 
-/// Remove item from stack (POP).
-///
-/// Stack: [..., a] -> [...]
-pub inline fn opPop(stack: *Stack) !void {
-    _ = try stack.pop();
-}
-
 /// Halt execution (STOP).
 ///
 /// Note: This operation needs to set the interpreter's is_halted flag.
@@ -104,26 +97,6 @@ pub inline fn opInvalid() !void {
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
-
-test "control: POP removes item from stack" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try stack.push(U256.fromU64(42));
-    try stack.push(U256.fromU64(43));
-    try opPop(&stack);
-
-    try expectEqual(1, stack.len);
-    const value = try stack.peek(0);
-    try expectEqual(42, value.toU64().?);
-}
-
-test "control: POP on empty stack underflows" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    try expectError(error.StackUnderflow, opPop(&stack));
-}
 
 test "control: JUMPDEST is a no-op" {
     opJumpdest();

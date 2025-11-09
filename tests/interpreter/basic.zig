@@ -82,7 +82,7 @@ test "unimplemented opcode" {
     const allocator = std.testing.allocator;
     const spec = Spec.forFork(.BERLIN);
 
-    const bytecode = &[_]u8{0x51}; // MLOAD (not yet implemented)
+    const bytecode = &[_]u8{0x54}; // SLOAD (not yet implemented)
     var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000);
     defer interpreter.deinit();
 

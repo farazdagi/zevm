@@ -14,16 +14,7 @@ const U256 = @import("../primitives/big.zig").U256;
 const cost_fns = @import("gas/cost_fns.zig");
 
 // Instruction handlers
-const arithmetic = @import("instructions/arithmetic.zig");
-const comparison = @import("instructions/comparison.zig");
-const bitwise = @import("instructions/bitwise.zig");
-const crypto = @import("instructions/crypto.zig");
-const memory_ops = @import("instructions/memory_ops.zig");
-const control = @import("instructions/control.zig");
-const storage = @import("instructions/storage.zig");
-const system = @import("instructions/system.zig");
-const environmental = @import("instructions/environmental.zig");
-const logging = @import("instructions/logging.zig");
+const handlers = @import("instructions/mod.zig");
 
 /// Execution status after interpreter completes.
 pub const ExecutionStatus = enum {
@@ -190,11 +181,27 @@ pub const Interpreter = struct {
                 self.is_halted = true;
             },
 
+            .JUMP => try handlers.opJump(&self.stack),
+
+            .JUMPI => try handlers.opJumpi(&self.stack),
+
+            .JUMPDEST => handlers.opJumpdest(),
+
+            .PC => try handlers.opPc(&self.stack),
+
+            .GAS => try handlers.opGas(&self.stack),
+
+            .RETURN => try handlers.opReturn(&self.stack),
+
+            .REVERT => try handlers.opRevert(&self.stack),
+
             // ================================================================
             // Stack Operations
             // ================================================================
 
-            .POP => try control.opPop(&self.stack),
+            .POP => {
+                _ = try self.stack.pop();
+            },
 
             .PUSH0 => {
                 // EIP-3855: PUSH0 pushes 0 without reading immediates
@@ -231,16 +238,15 @@ pub const Interpreter = struct {
             // Arithmetic Operations
             // ================================================================
 
-            .ADD => try arithmetic.opAdd(&self.stack),
-            .MUL => try arithmetic.opMul(&self.stack),
-            .SUB => try arithmetic.opSub(&self.stack),
-            .DIV => try arithmetic.opDiv(&self.stack),
-            .MOD => try arithmetic.opMod(&self.stack),
-
-            .SDIV => try arithmetic.opSdiv(&self.stack),
-            .SMOD => try arithmetic.opSmod(&self.stack),
-            .ADDMOD => try arithmetic.opAddmod(&self.stack),
-            .MULMOD => try arithmetic.opMulmod(&self.stack),
+            .ADD => try handlers.opAdd(&self.stack),
+            .MUL => try handlers.opMul(&self.stack),
+            .SUB => try handlers.opSub(&self.stack),
+            .DIV => try handlers.opDiv(&self.stack),
+            .MOD => try handlers.opMod(&self.stack),
+            .SDIV => try handlers.opSdiv(&self.stack),
+            .SMOD => try handlers.opSmod(&self.stack),
+            .ADDMOD => try handlers.opAddmod(&self.stack),
+            .MULMOD => try handlers.opMulmod(&self.stack),
 
             .EXP => {
                 // EXP has dynamic gas based on exponent byte length
@@ -248,40 +254,40 @@ pub const Interpreter = struct {
                 const exp_bytes: u8 = @intCast(exponent.byteLen());
                 try self.gas.consume(cost_fns.expCost(self.spec, exp_bytes));
 
-                try arithmetic.opExp(&self.stack);
+                try handlers.opExp(&self.stack);
             },
 
-            .SIGNEXTEND => try arithmetic.opSignextend(&self.stack),
+            .SIGNEXTEND => try handlers.opSignextend(&self.stack),
 
             // ================================================================
             // Comparison Operations
             // ================================================================
 
-            .LT => try comparison.opLt(&self.stack),
-            .GT => try comparison.opGt(&self.stack),
-            .SLT => try comparison.opSlt(&self.stack),
-            .SGT => try comparison.opSgt(&self.stack),
-            .EQ => try comparison.opEq(&self.stack),
-            .ISZERO => try comparison.opIszero(&self.stack),
+            .LT => try handlers.opLt(&self.stack),
+            .GT => try handlers.opGt(&self.stack),
+            .SLT => try handlers.opSlt(&self.stack),
+            .SGT => try handlers.opSgt(&self.stack),
+            .EQ => try handlers.opEq(&self.stack),
+            .ISZERO => try handlers.opIszero(&self.stack),
 
             // ================================================================
             // Bitwise Operations
             // ================================================================
 
-            .AND => try bitwise.opAnd(&self.stack),
-            .OR => try bitwise.opOr(&self.stack),
-            .XOR => try bitwise.opXor(&self.stack),
-            .NOT => try bitwise.opNot(&self.stack),
-            .BYTE => try bitwise.opByte(&self.stack),
-            .SHL => try bitwise.opShl(&self.stack),
-            .SHR => try bitwise.opShr(&self.stack),
-            .SAR => try bitwise.opSar(&self.stack),
+            .AND => try handlers.opAnd(&self.stack),
+            .OR => try handlers.opOr(&self.stack),
+            .XOR => try handlers.opXor(&self.stack),
+            .NOT => try handlers.opNot(&self.stack),
+            .BYTE => try handlers.opByte(&self.stack),
+            .SHL => try handlers.opShl(&self.stack),
+            .SHR => try handlers.opShr(&self.stack),
+            .SAR => try handlers.opSar(&self.stack),
 
             // ================================================================
             // Cryptographic Operations
             // ================================================================
 
-            .KECCAK256 => try crypto.opKeccak256(&self.stack, &self.memory),
+            .KECCAK256 => try handlers.opKeccak256(&self.stack, &self.memory),
 
             // ================================================================
             // Memory Operations
@@ -297,82 +303,70 @@ pub const Interpreter = struct {
             // Storage Operations
             // ================================================================
 
-            .SLOAD => try storage.opSload(&self.stack),
-            .SSTORE => try storage.opSstore(&self.stack),
-            .TLOAD => try storage.opTload(&self.stack),
-            .TSTORE => try storage.opTstore(&self.stack),
-
-            // ================================================================
-            // Control Flow (Complex)
-            // ================================================================
-
-            .JUMP => try control.opJump(&self.stack),
-            .JUMPI => try control.opJumpi(&self.stack),
-            .JUMPDEST => control.opJumpdest(),
-            .PC => try control.opPc(&self.stack),
-            .GAS => try control.opGas(&self.stack),
-            .RETURN => try control.opReturn(&self.stack),
-            .REVERT => try control.opRevert(&self.stack),
+            .SLOAD => try handlers.opSload(&self.stack),
+            .SSTORE => try handlers.opSstore(&self.stack),
+            .TLOAD => try handlers.opTload(&self.stack),
+            .TSTORE => try handlers.opTstore(&self.stack),
 
             // ================================================================
             // System Operations
             // ================================================================
 
-            .CREATE => try system.opCreate(&self.stack),
-            .CREATE2 => try system.opCreate2(&self.stack),
-            .CALL => try system.opCall(&self.stack),
-            .CALLCODE => try system.opCallcode(&self.stack),
-            .DELEGATECALL => try system.opDelegatecall(&self.stack),
-            .STATICCALL => try system.opStaticcall(&self.stack),
-            .SELFDESTRUCT => try system.opSelfdestruct(&self.stack),
+            .CREATE => try handlers.opCreate(&self.stack),
+            .CREATE2 => try handlers.opCreate2(&self.stack),
+            .CALL => try handlers.opCall(&self.stack),
+            .CALLCODE => try handlers.opCallcode(&self.stack),
+            .DELEGATECALL => try handlers.opDelegatecall(&self.stack),
+            .STATICCALL => try handlers.opStaticcall(&self.stack),
+            .SELFDESTRUCT => try handlers.opSelfdestruct(&self.stack),
 
             // ================================================================
             // Environmental Operations
             // ================================================================
 
-            .ADDRESS => try environmental.opAddress(&self.stack),
-            .BALANCE => try environmental.opBalance(&self.stack),
-            .ORIGIN => try environmental.opOrigin(&self.stack),
-            .CALLER => try environmental.opCaller(&self.stack),
-            .CALLVALUE => try environmental.opCallvalue(&self.stack),
-            .CALLDATALOAD => try environmental.opCalldataload(&self.stack),
-            .CALLDATASIZE => try environmental.opCalldatasize(&self.stack),
-            .CALLDATACOPY => try environmental.opCalldatacopy(&self.stack),
-            .CODESIZE => try environmental.opCodesize(&self.stack),
-            .CODECOPY => try environmental.opCodecopy(&self.stack),
-            .GASPRICE => try environmental.opGasprice(&self.stack),
-            .EXTCODESIZE => try environmental.opExtcodesize(&self.stack),
-            .EXTCODECOPY => try environmental.opExtcodecopy(&self.stack),
-            .RETURNDATASIZE => try environmental.opReturndatasize(&self.stack),
-            .RETURNDATACOPY => try environmental.opReturndatacopy(&self.stack),
-            .EXTCODEHASH => try environmental.opExtcodehash(&self.stack),
-            .BLOCKHASH => try environmental.opBlockhash(&self.stack),
-            .COINBASE => try environmental.opCoinbase(&self.stack),
-            .TIMESTAMP => try environmental.opTimestamp(&self.stack),
-            .NUMBER => try environmental.opNumber(&self.stack),
-            .PREVRANDAO => try environmental.opPrevrandao(&self.stack),
-            .GASLIMIT => try environmental.opGaslimit(&self.stack),
-            .CHAINID => try environmental.opChainid(&self.stack),
-            .SELFBALANCE => try environmental.opSelfbalance(&self.stack),
-            .BASEFEE => try environmental.opBasefee(&self.stack),
-            .BLOBHASH => try environmental.opBlobhash(&self.stack),
-            .BLOBBASEFEE => try environmental.opBlobbasefee(&self.stack),
+            .ADDRESS => try handlers.opAddress(&self.stack),
+            .BALANCE => try handlers.opBalance(&self.stack),
+            .ORIGIN => try handlers.opOrigin(&self.stack),
+            .CALLER => try handlers.opCaller(&self.stack),
+            .CALLVALUE => try handlers.opCallvalue(&self.stack),
+            .CALLDATALOAD => try handlers.opCalldataload(&self.stack),
+            .CALLDATASIZE => try handlers.opCalldatasize(&self.stack),
+            .CALLDATACOPY => try handlers.opCalldatacopy(&self.stack),
+            .CODESIZE => try handlers.opCodesize(&self.stack),
+            .CODECOPY => try handlers.opCodecopy(&self.stack),
+            .GASPRICE => try handlers.opGasprice(&self.stack),
+            .EXTCODESIZE => try handlers.opExtcodesize(&self.stack),
+            .EXTCODECOPY => try handlers.opExtcodecopy(&self.stack),
+            .RETURNDATASIZE => try handlers.opReturndatasize(&self.stack),
+            .RETURNDATACOPY => try handlers.opReturndatacopy(&self.stack),
+            .EXTCODEHASH => try handlers.opExtcodehash(&self.stack),
+            .BLOCKHASH => try handlers.opBlockhash(&self.stack),
+            .COINBASE => try handlers.opCoinbase(&self.stack),
+            .TIMESTAMP => try handlers.opTimestamp(&self.stack),
+            .NUMBER => try handlers.opNumber(&self.stack),
+            .PREVRANDAO => try handlers.opPrevrandao(&self.stack),
+            .GASLIMIT => try handlers.opGaslimit(&self.stack),
+            .CHAINID => try handlers.opChainid(&self.stack),
+            .SELFBALANCE => try handlers.opSelfbalance(&self.stack),
+            .BASEFEE => try handlers.opBasefee(&self.stack),
+            .BLOBHASH => try handlers.opBlobhash(&self.stack),
+            .BLOBBASEFEE => try handlers.opBlobbasefee(&self.stack),
 
             // ================================================================
             // Logging Operations
             // ================================================================
 
-            .LOG0 => try logging.opLog0(&self.stack),
-            .LOG1 => try logging.opLog1(&self.stack),
-            .LOG2 => try logging.opLog2(&self.stack),
-            .LOG3 => try logging.opLog3(&self.stack),
-            .LOG4 => try logging.opLog4(&self.stack),
+            .LOG0 => try handlers.opLog0(&self.stack),
+            .LOG1 => try handlers.opLog1(&self.stack),
+            .LOG2 => try handlers.opLog2(&self.stack),
+            .LOG3 => try handlers.opLog3(&self.stack),
+            .LOG4 => try handlers.opLog4(&self.stack),
 
             // ================================================================
             // Special Operations
             // ================================================================
 
-            .INVALID => try control.opInvalid(),
+            .INVALID => try handlers.opInvalid(),
         }
     }
 

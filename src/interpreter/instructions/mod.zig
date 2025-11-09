@@ -48,7 +48,6 @@ pub const opEq = comparison.opEq;
 pub const opIszero = comparison.opIszero;
 
 // Control flow operations
-pub const opPop = control.opPop;
 pub const opStop = control.opStop;
 pub const opJump = control.opJump;
 pub const opJumpi = control.opJumpi;

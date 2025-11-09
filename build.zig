@@ -156,7 +156,7 @@ pub fn build(b: *std.Build) !void {
     const IntegrationTest = struct {
         run: *std.Build.Step.Run,
         compile: *std.Build.Step.Compile,
-        file_name: []const u8, // Relative path (e.g., "big.zig" or "interpreter/stack_ops.zig")
+        file_name: []const u8, // Relative path (e.g., "big.zig" or "interpreter/stack.zig")
     };
     var integration_test_runs = std.ArrayList(IntegrationTest){};
     defer integration_test_runs.deinit(b.allocator);
@@ -189,7 +189,7 @@ pub fn build(b: *std.Build) !void {
         const run_integration_tests = b.addRunArtifact(integration_tests);
         TestRunner.configureRunner(run_integration_tests, test_filter, test_timing, test_fail_first, b.args);
 
-        // Pass full path as test name for better output (e.g., "tests/interpreter/stack_ops.zig")
+        // Pass full path as test name for better output (e.g., "tests/interpreter/stack.zig")
         run_integration_tests.addArg("--test-name");
         run_integration_tests.addArg(test_file_path);
 

@@ -583,8 +583,8 @@ fn getFriendlyName(full_name: []const u8) []const u8 {
 
 fn formatTestName(buf: []u8, name: []const u8, test_name: ?[]const u8) []const u8 {
     // Extract module prefix from test_name if provided (for integration tests)
-    // This enables hierarchical test names like "interpreter.stack_ops::test_name"
-    // e.g., "tests/interpreter/stack_ops.zig" -> "interpreter.stack_ops"
+    // This enables hierarchical test names like "interpreter.stack::test_name"
+    // e.g., "tests/interpreter/stack.zig" -> "interpreter.stack"
     // e.g., "tests/big.zig" -> "big"
     var module_prefix_buf: [256]u8 = undefined;
     const module_prefix: ?[]const u8 = if (test_name) |tn| blk: {
@@ -613,7 +613,7 @@ fn formatTestName(buf: []u8, name: []const u8, test_name: ?[]const u8) []const u
 
     // Replace ".test." with "::" and ".test_" with "::"
     // e.g., "lib.test.my_test" -> "lib::my_test"
-    // e.g., "stack_ops.test.my_test" -> "interpreter.stack_ops::my_test" (with module_prefix)
+    // e.g., "stack.test.my_test" -> "interpreter.stack::my_test" (with module_prefix)
 
     if (std.mem.indexOf(u8, name, ".test.")) |idx| {
         // Found ".test." - replace with "::"
