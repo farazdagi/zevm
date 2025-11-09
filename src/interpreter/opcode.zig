@@ -289,6 +289,22 @@ pub const Opcode = enum(u8) {
         };
     }
 
+    /// Check if this is a PUSH opcode (PUSH0-PUSH32).
+    pub inline fn isPush(self: Opcode) bool {
+        return @intFromEnum(self) >= @intFromEnum(Opcode.PUSH0) and
+            @intFromEnum(self) <= @intFromEnum(Opcode.PUSH32);
+    }
+
+    /// Get the number of immediate data bytes for a PUSH opcode.
+    ///
+    /// Returns 0 for PUSH0 and non-PUSH opcodes, 1-32 for PUSH1-PUSH32.
+    pub inline fn pushSize(self: Opcode) usize {
+        if (!self.isPush()) return 0;
+        if (self == .PUSH0) return 0;
+        // PUSH1 = 1 byte, PUSH2 = 2 bytes, ..., PUSH32 = 32 bytes
+        return @intFromEnum(self) - @intFromEnum(Opcode.PUSH0);
+    }
+
     /// Check if this is a control flow opcode that manages PC directly.
     ///
     /// These opcodes either halt execution or modify PC explicitly,
@@ -591,4 +607,41 @@ test "Opcode: baseCost" {
     // Fork-specific: SLOAD changed in Tangerine and Berlin
     try expectEqual(50, Opcode.SLOAD.baseCost(spec_frontier));
     try expectEqual(100, Opcode.SLOAD.baseCost(spec_berlin)); // Warm cost
+}
+
+test "Opcode: isPush" {
+    // PUSH opcodes
+    try expect(Opcode.PUSH0.isPush());
+    try expect(Opcode.PUSH1.isPush());
+    try expect(Opcode.PUSH2.isPush());
+    try expect(Opcode.PUSH16.isPush());
+    try expect(Opcode.PUSH32.isPush());
+
+    // Non-PUSH opcodes
+    try expect(!Opcode.ADD.isPush());
+    try expect(!Opcode.STOP.isPush());
+    try expect(!Opcode.JUMP.isPush());
+    try expect(!Opcode.JUMPDEST.isPush());
+    try expect(!Opcode.DUP1.isPush());
+}
+
+test "Opcode: pushSize" {
+    const test_cases = [_]struct {
+        opcode: Opcode,
+        expected: usize,
+    }{
+        .{ .opcode = .PUSH0, .expected = 0 },
+        .{ .opcode = .PUSH1, .expected = 1 },
+        .{ .opcode = .PUSH2, .expected = 2 },
+        .{ .opcode = .PUSH16, .expected = 16 },
+        .{ .opcode = .PUSH32, .expected = 32 },
+        // Non-PUSH opcodes should return 0
+        .{ .opcode = .ADD, .expected = 0 },
+        .{ .opcode = .STOP, .expected = 0 },
+        .{ .opcode = .JUMP, .expected = 0 },
+    };
+
+    for (test_cases) |tc| {
+        try expectEqual(tc.expected, tc.opcode.pushSize());
+    }
 }
