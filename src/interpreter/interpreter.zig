@@ -294,60 +294,21 @@ pub const Interpreter = struct {
             // ================================================================
 
             .MLOAD => {
-                // MLOAD accesses 32 bytes starting at offset
-                const offset_u256 = try self.stack.peek(0);
-                const offset_u64 = offset_u256.toU64() orelse return error.InvalidOffset;
-                const offset: usize = @intCast(offset_u64);
-
-                const old_size = self.memory.len();
-                const new_size = offset +| 32; // Saturating add for safety
-
-                // Charge memory expansion gas
-                const expansion_gas = self.gas.memoryExpansionCost(old_size, new_size);
-                try self.gas.consume(expansion_gas);
-
+                try self.chargeMemoryExpansion(0, 32);
                 try handlers.opMload(&self.stack, &self.memory);
-
-                // Update memory cost tracker
-                self.gas.updateMemoryCost(new_size);
+                self.gas.updateMemoryCost(self.memory.len());
             },
 
             .MSTORE => {
-                // MSTORE accesses 32 bytes starting at offset
-                const offset_u256 = try self.stack.peek(0);
-                const offset_u64 = offset_u256.toU64() orelse return error.InvalidOffset;
-                const offset: usize = @intCast(offset_u64);
-
-                const old_size = self.memory.len();
-                const new_size = offset +| 32; // Saturating add for safety
-
-                // Charge memory expansion gas
-                const expansion_gas = self.gas.memoryExpansionCost(old_size, new_size);
-                try self.gas.consume(expansion_gas);
-
+                try self.chargeMemoryExpansion(0, 32);
                 try handlers.opMstore(&self.stack, &self.memory);
-
-                // Update memory cost tracker
-                self.gas.updateMemoryCost(new_size);
+                self.gas.updateMemoryCost(self.memory.len());
             },
 
             .MSTORE8 => {
-                // MSTORE8 accesses 1 byte at offset
-                const offset_u256 = try self.stack.peek(0);
-                const offset_u64 = offset_u256.toU64() orelse return error.InvalidOffset;
-                const offset: usize = @intCast(offset_u64);
-
-                const old_size = self.memory.len();
-                const new_size = offset +| 1; // Saturating add for safety
-
-                // Charge memory expansion gas
-                const expansion_gas = self.gas.memoryExpansionCost(old_size, new_size);
-                try self.gas.consume(expansion_gas);
-
+                try self.chargeMemoryExpansion(0, 1);
                 try handlers.opMstore8(&self.stack, &self.memory);
-
-                // Update memory cost tracker
-                self.gas.updateMemoryCost(new_size);
+                self.gas.updateMemoryCost(self.memory.len());
             },
 
             .MSIZE => try handlers.opMsize(&self.stack, &self.memory),
@@ -422,6 +383,25 @@ pub const Interpreter = struct {
 
             .INVALID => try handlers.opInvalid(),
         }
+    }
+
+    /// Charge gas for memory expansion.
+    ///
+    /// This helper encapsulates the common pattern for memory operations:
+    fn chargeMemoryExpansion(
+        self: *Self,
+        offset_from_stack_top: usize,
+        access_size: usize,
+    ) !void {
+        const offset_u256 = try self.stack.peek(offset_from_stack_top);
+        const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+
+        const old_size = self.memory.len();
+        const new_size = offset +| access_size; // Saturating add for safety
+
+        // Charge memory expansion gas
+        const expansion_gas = self.gas.memoryExpansionCost(old_size, new_size);
+        try self.gas.consume(expansion_gas);
     }
 
     /// Convert a Zig error to an ExecutionStatus.
