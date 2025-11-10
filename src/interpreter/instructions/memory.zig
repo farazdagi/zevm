@@ -46,7 +46,7 @@ pub inline fn opMstore8(stack: *Stack, memory: *Memory) !void {
 /// Get size of active memory in bytes (MSIZE).
 ///
 /// Stack: [...] -> [size, ...]
-pub inline fn opMsize(stack: *Stack, memory: *Memory) !void {
+pub inline fn opMsize(stack: *Stack, memory: *const Memory) !void {
     const size = memory.len();
     try stack.push(U256.fromU64(size));
 }

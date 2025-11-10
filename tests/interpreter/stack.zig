@@ -105,7 +105,7 @@ test "PUSH with insufficient bytes" {
     defer interpreter.deinit();
 
     const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
+    try expectEqual(ExecutionStatus.INVALID_PC, result.status);
 }
 
 test "PUSH0 not available pre-Shanghai" {
@@ -138,14 +138,14 @@ test "multiple PUSH operations" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(3, interpreter.stack.len);
+    try expectEqual(3, interpreter.ctx.stack.len);
 
     // Stack: [1, 2, 3] (3 on top)
-    const top = try interpreter.stack.peek(0);
+    const top = try interpreter.ctx.stack.peek(0);
     try expectEqual(3, top.toU64().?);
-    const second = try interpreter.stack.peek(1);
+    const second = try interpreter.ctx.stack.peek(1);
     try expectEqual(2, second.toU64().?);
-    const third = try interpreter.stack.peek(2);
+    const third = try interpreter.ctx.stack.peek(2);
     try expectEqual(1, third.toU64().?);
 }
 
@@ -254,10 +254,10 @@ test "DUP16 duplicates 16th item" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(17, interpreter.stack.len);
+    try expectEqual(17, interpreter.ctx.stack.len);
 
     // Top should be 1 (the 16th item from top, which is the first we pushed)
-    const top = try interpreter.stack.peek(0);
+    const top = try interpreter.ctx.stack.peek(0);
     try expectEqual(1, top.toU64().?);
 }
 
@@ -349,14 +349,14 @@ test "SWAP16 swaps top with 17th item" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(17, interpreter.stack.len);
+    try expectEqual(17, interpreter.ctx.stack.len);
 
     // Top should be 1 (swapped from 17th position)
-    const top = try interpreter.stack.peek(0);
+    const top = try interpreter.ctx.stack.peek(0);
     try expectEqual(1, top.toU64().?);
 
     // 17th item (index 16) should now be 17
-    const seventeenth = try interpreter.stack.peek(16);
+    const seventeenth = try interpreter.ctx.stack.peek(16);
     try expectEqual(17, seventeenth.toU64().?);
 }
 
@@ -392,4 +392,3 @@ test "SWAP2 with only two items fails" {
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
-

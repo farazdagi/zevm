@@ -49,6 +49,6 @@ pub fn runOpcodeTests(allocator: std.mem.Allocator, test_cases: []const TestCase
             try expected_stack.push(value);
         }
 
-        try expect(interpreter.stack.eql(&expected_stack));
+        try expect(interpreter.ctx.stack.eql(&expected_stack));
     }
 }

@@ -48,15 +48,12 @@ pub const opEq = comparison.opEq;
 pub const opIszero = comparison.opIszero;
 
 // Control flow operations
-pub const opStop = control.opStop;
 pub const opJump = control.opJump;
 pub const opJumpi = control.opJumpi;
-pub const opJumpdest = control.opJumpdest;
 pub const opPc = control.opPc;
 pub const opGas = control.opGas;
 pub const opReturn = control.opReturn;
 pub const opRevert = control.opRevert;
-pub const opInvalid = control.opInvalid;
 
 // Cryptographic operations
 pub const opKeccak256 = crypto.opKeccak256;

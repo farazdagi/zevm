@@ -35,7 +35,7 @@ test "empty bytecode" {
     defer interpreter.deinit();
 
     const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
+    try expectEqual(ExecutionStatus.INVALID_PC, result.status);
 }
 
 test "STOP halts execution" {
@@ -164,7 +164,7 @@ test "Complex calculation - Fibonacci-like" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    const top = try interpreter.stack.peek(0);
+    const top = try interpreter.ctx.stack.peek(0);
     try expectEqual(6, top.toU64().?);
 }
 
@@ -188,6 +188,6 @@ test "Chained operations with mixed ops" {
 
     const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    const value = try interpreter.stack.peek(0);
+    const value = try interpreter.ctx.stack.peek(0);
     try expectEqual(17, value.toU64().?);
 }
