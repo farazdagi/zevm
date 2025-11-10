@@ -11,7 +11,7 @@ pub const AnalyzedBytecode = struct {
     jumpdests: std.DynamicBitSet,
 
     /// Raw bytecode bytes
-    bytecode: []const u8,
+    raw: []const u8,
 
     /// Analyze bytecode to find all valid JUMPDEST positions.
     ///
@@ -39,7 +39,7 @@ pub const AnalyzedBytecode = struct {
 
         return .{
             .jumpdests = jumpdests,
-            .bytecode = bytecode,
+            .raw = bytecode,
         };
     }
 
@@ -54,7 +54,7 @@ pub const AnalyzedBytecode = struct {
 
     /// Get bytecode length.
     pub fn len(self: *const AnalyzedBytecode) usize {
-        return self.bytecode.len;
+        return self.raw.len;
     }
 
     /// Free allocated resources.
@@ -237,9 +237,9 @@ pub const Bytecode = union(enum) {
     /// Returns the bytecode bytes that should be executed by the interpreter.
     /// For EIP-7702, this is the 23-byte delegation indicator (actual code resolution happens
     /// at the Host/State layer).
-    pub fn code(self: *const Bytecode) []const u8 {
+    pub inline fn code(self: *const Bytecode) []const u8 {
         return switch (self.*) {
-            .analyzed => |b| b.bytecode,
+            .analyzed => |b| b.raw,
             .eip7702 => |b| b.raw,
         };
     }

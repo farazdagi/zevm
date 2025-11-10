@@ -12,6 +12,8 @@ const Spec = @import("../hardfork/spec.zig").Spec;
 const Opcode = @import("opcode.zig").Opcode;
 const U256 = @import("../primitives/big.zig").U256;
 const cost_fns = @import("gas/cost_fns.zig");
+const Bytecode = @import("bytecode.zig").Bytecode;
+const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 
 // Instruction handlers
 const handlers = @import("instructions/mod.zig");
@@ -58,6 +60,45 @@ pub const InterpreterResult = struct {
     return_data: ?[]const u8,
 };
 
+/// Call-scoped execution context.
+///
+/// Contains the state that is local to a single execution context (call frame).
+/// This includes the bytecode being executed, the operand stack, and memory.
+/// When implementing CALL/DELEGATECALL/STATICCALL operations, each nested call
+/// will have its own context.
+pub const CallContext = struct {
+    /// Analyzed bytecode (guaranteed to be executable, not EIP-7702 delegation)
+    bytecode: AnalyzedBytecode,
+
+    /// Operand stack
+    stack: Stack,
+
+    /// Call memory
+    memory: Memory,
+
+    /// Initialize a new interpreter context.
+    pub fn init(allocator: Allocator, bytecode: AnalyzedBytecode) !CallContext {
+        var stack = try Stack.init(allocator);
+        errdefer stack.deinit();
+
+        var memory = try Memory.init(allocator);
+        errdefer memory.deinit();
+
+        return CallContext{
+            .bytecode = bytecode,
+            .stack = stack,
+            .memory = memory,
+        };
+    }
+
+    /// Clean up allocated resources.
+    pub fn deinit(self: *CallContext) void {
+        self.stack.deinit();
+        self.memory.deinit();
+        self.bytecode.deinit();
+    }
+};
+
 /// EVM bytecode interpreter.
 ///
 /// Executes bytecode using a fetch-decode-execute loop with centralized
@@ -70,22 +111,19 @@ pub const Interpreter = struct {
         UnimplementedOpcode,
         InvalidJump,
         InvalidProgramCounter,
+        InvalidOffset,
+        InvalidBytecode,
+        Revert,
     };
 
-    /// Bytecode to execute
-    bytecode: []const u8,
+    /// Call-scoped execution context (stack, memory, bytecode)
+    ctx: CallContext,
 
     /// Program counter (index into bytecode)
     pc: usize,
 
-    /// Stack
-    stack: Stack,
-
     /// Gas accounting
     gas: Gas,
-
-    /// Memory
-    memory: Memory,
 
     /// Spec (fork-specific rules and costs)
     spec: Spec,
@@ -102,13 +140,26 @@ pub const Interpreter = struct {
     const Self = @This();
 
     /// Initialize interpreter with bytecode and gas limit.
-    pub fn init(allocator: Allocator, bytecode: []const u8, spec: Spec, gas_limit: u64) !Self {
+    pub fn init(allocator: Allocator, raw_bytecode: []const u8, spec: Spec, gas_limit: u64) !Self {
+        // Analyze bytecode (detects format automatically)
+        var bytecode = try Bytecode.analyze(allocator, raw_bytecode);
+        errdefer bytecode.deinit(allocator);
+
+        // EIP-7702 delegation bytecode must be resolved at the Host/State layer.
+        // The interpreter can only execute regular analyzed bytecode.
+        const analyzed = switch (bytecode) {
+            .analyzed => |b| b,
+            .eip7702 => return error.InvalidBytecode,
+        };
+
+        // Create execution context with analyzed bytecode
+        var ctx = try CallContext.init(allocator, analyzed);
+        errdefer ctx.deinit();
+
         return Self{
             .allocator = allocator,
-            .bytecode = bytecode,
+            .ctx = ctx,
             .pc = 0,
-            .stack = try Stack.init(allocator),
-            .memory = try Memory.init(allocator),
             .gas = Gas.init(gas_limit, spec),
             .spec = spec,
             .is_halted = false,
@@ -118,8 +169,7 @@ pub const Interpreter = struct {
 
     /// Clean up allocated resources.
     pub fn deinit(self: *Self) void {
-        self.stack.deinit();
-        self.memory.deinit();
+        self.ctx.deinit();
         // return_data is owned by the caller after extracting from result
     }
 
@@ -138,18 +188,20 @@ pub const Interpreter = struct {
 
     /// Execute one instruction (fetch-decode-execute).
     pub fn step(self: *Self) !void {
+        const code = self.ctx.bytecode.raw;
+
         // Verify we're not going beyond bytecode bounds.
-        if (self.pc >= self.bytecode.len) {
+        if (self.pc >= code.len) {
             return error.InvalidProgramCounter;
         }
 
         // Fetch and decode opcode byte
-        const opcode_byte = self.bytecode[self.pc];
+        const opcode_byte = code[self.pc];
         const opcode = try Opcode.fromByte(opcode_byte);
 
         // Ensure there are enough bytes for this opcode's immediates.
         const required_bytes = 1 + opcode.immediateBytes();
-        if (self.pc + required_bytes > self.bytecode.len) {
+        if (self.pc + required_bytes > code.len) {
             return error.InvalidProgramCounter;
         }
 
