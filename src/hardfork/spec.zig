@@ -211,6 +211,34 @@ pub const Spec = struct {
     }
 };
 
+/// Build a new Spec based on a previous fork with specified field overrides.
+///
+/// This helper reduces repetition when defining fork specs by allowing you to
+/// specify only the fields that change from the base fork.
+///
+/// Example:
+/// ```
+/// pub const LONDON = forkSpec(.LONDON, BERLIN, .{
+///     .max_refund_quotient = 5,      // EIP-3529
+///     .has_basefee = true,           // EIP-3198
+/// });
+/// ```
+fn forkSpec(
+    comptime fork: Hardfork,
+    comptime base: Spec,
+    comptime changes: anytype,
+) Spec {
+    var result = base;
+    result.fork = fork;
+
+    // Apply all field overrides from the changes struct
+    inline for (std.meta.fields(@TypeOf(changes))) |field| {
+        @field(result, field.name) = @field(changes, field.name);
+    }
+
+    return result;
+}
+
 /// Frontier (July, 2015)
 ///
 /// Genesis fork
@@ -251,32 +279,9 @@ pub const FRONTIER_THAWING = FRONTIER;
 /// EIP-2: makes edits to contract creation process.
 /// EIP-7: adds new opcode: DELEGATECALL
 /// EIP-8: introduces devp2p forward compatibility requirements
-pub const HOMESTEAD = Spec{
-    .fork = .HOMESTEAD,
-    .max_refund_quotient = 2,
-    .sstore_clears_schedule = 15000,
-    .selfdestruct_refund = 24000,
-    .cold_sload_cost = 200,
+pub const HOMESTEAD = forkSpec(.HOMESTEAD, FRONTIER, .{
     .cold_account_access_cost = 700, // Pre-EIP-2929 flat cost
-    .warm_storage_read_cost = 200,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
-    .has_basefee = false,
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = false,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// DAO Fork (July 2016)
 ///
@@ -287,32 +292,9 @@ pub const DAO_FORK = HOMESTEAD;
 ///
 /// EIP-150: increases gas costs of opcodes that can be used in spam attacks.
 /// EIP-158: reduces state size by removing a large number of empty accounts.
-pub const TANGERINE = Spec{
-    .fork = .TANGERINE,
-    .max_refund_quotient = 2,
-    .sstore_clears_schedule = 15000,
-    .selfdestruct_refund = 24000,
-    .cold_sload_cost = 200,
+pub const TANGERINE = forkSpec(.TANGERINE, HOMESTEAD, .{
     .cold_account_access_cost = 0,
-    .warm_storage_read_cost = 200,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
-    .has_basefee = false,
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = false,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// Spurious Dragon (November, 2016)
 ///
@@ -320,32 +302,7 @@ pub const TANGERINE = Spec{
 /// EIP-160: adjusts prices of EXP opcode - makes it more difficult to slow down the network via computationally expensive contract operations.
 /// EIP-161: allows for removal of empty accounts added via the DOS attacks.
 /// EIP-170: changes the maximum code size that a contract on the blockchain can have - to 24576 bytes.
-pub const SPURIOUS_DRAGON = Spec{
-    .fork = .SPURIOUS_DRAGON,
-    .max_refund_quotient = 2,
-    .sstore_clears_schedule = 15000,
-    .selfdestruct_refund = 24000,
-    .cold_sload_cost = 200,
-    .cold_account_access_cost = 0,
-    .warm_storage_read_cost = 200,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576, // EIP-170
-    .has_push0 = false,
-    .has_basefee = false,
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = false,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+pub const SPURIOUS_DRAGON = forkSpec(.SPURIOUS_DRAGON, TANGERINE, .{});
 
 /// Byzantium (October, 2017)
 /// EIP-140: adds REVERT opcode.
@@ -381,32 +338,7 @@ pub const PETERSBURG = SPURIOUS_DRAGON;
 /// EIP-1884: optimising opcode gas prices based on consumption.
 /// EIP-2028: reduces the cost of CallData to allow more data in blocks - good for Layer 2 scaling.
 /// EIP-2200: other opcode gas price alterations.
-pub const ISTANBUL = Spec{
-    .fork = .ISTANBUL,
-    .max_refund_quotient = 2,
-    .sstore_clears_schedule = 15000,
-    .selfdestruct_refund = 24000,
-    .cold_sload_cost = 200,
-    .cold_account_access_cost = 0,
-    .warm_storage_read_cost = 200,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
-    .has_basefee = false,
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = false,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+pub const ISTANBUL = forkSpec(.ISTANBUL, SPURIOUS_DRAGON, .{});
 
 /// Muir Glacier (January, 2020)
 ///
@@ -419,32 +351,11 @@ pub const MUIR_GLACIER = ISTANBUL;
 /// EIP-2718: enables easier support for multiple transaction types
 /// EIP-2929: gas cost increases for state access opcodes
 /// EIP-2930: adds optional access lists
-pub const BERLIN = Spec{
-    .fork = .BERLIN,
-    .max_refund_quotient = 2,
-    .sstore_clears_schedule = 15000,
-    .selfdestruct_refund = 24000,
+pub const BERLIN = forkSpec(.BERLIN, ISTANBUL, .{
     .cold_sload_cost = 2100, // EIP-2929
     .cold_account_access_cost = 2600, // EIP-2929
     .warm_storage_read_cost = 100, // EIP-2929
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
-    .has_basefee = false,
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = false,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// London (August, 2021)
 ///
@@ -453,32 +364,13 @@ pub const BERLIN = Spec{
 /// EIP-3529: reduces gas refunds for EVM operations
 /// EIP-3541: prevents deploying contracts starting with 0xEF
 /// EIP-3554: delays the Ice Age until December 2021
-pub const LONDON = Spec{
-    .fork = .LONDON,
+pub const LONDON = forkSpec(.LONDON, BERLIN, .{
     .max_refund_quotient = 5, // EIP-3529: Changed from 2 to 5
     .sstore_clears_schedule = 4800, // EIP-3529: Reduced from 15000
     .selfdestruct_refund = 0, // EIP-3529: Removed
-    .cold_sload_cost = 2100,
-    .cold_account_access_cost = 2600,
-    .warm_storage_read_cost = 100,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
     .has_basefee = true, // EIP-3198
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
     .has_base_fee = true, // EIP-1559
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// Arrow Glacier (December, 2021)
 ///
@@ -494,32 +386,9 @@ pub const GRAY_GLACIER = LONDON;
 ///
 /// EIP-3675: Upgrade consensus to Proof-of-Stake
 /// EIP-4399: Supplant DIFFICULTY opcode with PREVRANDAO
-pub const MERGE = Spec{
-    .fork = .MERGE,
-    .max_refund_quotient = 5,
-    .sstore_clears_schedule = 4800,
-    .selfdestruct_refund = 0,
-    .cold_sload_cost = 2100,
-    .cold_account_access_cost = 2600,
-    .warm_storage_read_cost = 100,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
-    .has_basefee = true,
+pub const MERGE = forkSpec(.MERGE, LONDON, .{
     .has_prevrandao = true, // EIP-4399: DIFFICULTY → PREVRANDAO
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = true,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// Shanghai (April, 2023)
 ///
@@ -528,32 +397,11 @@ pub const MERGE = Spec{
 /// EIP-3860: Limit and meter initcode
 /// EIP-4895: Beacon chain push withdrawals as operations
 /// EIP-6049: Deprecate SELFDESTRUCT
-pub const SHANGHAI = Spec{
-    .fork = .SHANGHAI,
-    .max_refund_quotient = 5,
-    .sstore_clears_schedule = 4800,
-    .selfdestruct_refund = 0,
-    .cold_sload_cost = 2100,
-    .cold_account_access_cost = 2600,
-    .warm_storage_read_cost = 100,
+pub const SHANGHAI = forkSpec(.SHANGHAI, MERGE, .{
     .max_initcode_size = 49152, // EIP-3860: 2 * max_code_size
     .initcode_word_cost = 2, // EIP-3860
-    .max_code_size = 24576,
     .has_push0 = true, // EIP-3855
-    .has_basefee = true,
-    .has_prevrandao = true,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = true,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// Cancun (March, 2024)
 ///
@@ -563,32 +411,14 @@ pub const SHANGHAI = Spec{
 /// EIP-5656: MCOPY - Memory copying instruction
 /// EIP-6780: SELFDESTRUCT only in same transaction
 /// EIP-7516: BLOBBASEFEE opcode
-pub const CANCUN = Spec{
-    .fork = .CANCUN,
-    .max_refund_quotient = 5,
-    .sstore_clears_schedule = 4800,
-    .selfdestruct_refund = 0,
-    .cold_sload_cost = 2100,
-    .cold_account_access_cost = 2600,
-    .warm_storage_read_cost = 100,
-    .max_initcode_size = 49152,
-    .initcode_word_cost = 2,
-    .max_code_size = 24576,
-    .has_push0 = true,
-    .has_basefee = true,
-    .has_prevrandao = true,
-    .has_selfdestruct = true,
+pub const CANCUN = forkSpec(.CANCUN, SHANGHAI, .{
     .has_blob_opcodes = true, // EIP-4844
     .has_tstore = true, // EIP-1153
     .has_mcopy = true, // EIP-5656
-    .has_base_fee = true,
     .has_blob_gas = true, // EIP-4844
     .target_blobs_per_block = 3, // EIP-4844
     .max_blobs_per_block = 6, // EIP-4844
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
-};
+});
 
 /// Prague (May, 2025)
 ///
@@ -608,32 +438,13 @@ pub const CANCUN = Spec{
 /// EIP-2537: Precompile for BLS12-381 curve operations
 /// EIP-2935: Save historical block hashes in state
 /// EIP-7549: Move committee index outside Attestation
-pub const PRAGUE = Spec{
-    .fork = .PRAGUE,
-    .max_refund_quotient = 5,
-    .sstore_clears_schedule = 4800,
-    .selfdestruct_refund = 0,
-    .cold_sload_cost = 2100,
-    .cold_account_access_cost = 2600,
-    .warm_storage_read_cost = 100,
-    .max_initcode_size = 49152,
-    .initcode_word_cost = 2,
-    .max_code_size = 24576,
-    .has_push0 = true,
-    .has_basefee = true,
-    .has_prevrandao = true,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = true,
-    .has_tstore = true,
-    .has_mcopy = true,
-    .has_base_fee = true,
-    .has_blob_gas = true,
+pub const PRAGUE = forkSpec(.PRAGUE, CANCUN, .{
     .target_blobs_per_block = 6, // EIP-7691: Doubled from 3
     .max_blobs_per_block = 9, // EIP-7691: Increased from 6
     .has_eip7702 = true, // EIP-7702: EOA account abstraction
     .has_bls_precompiles = true, // EIP-2537: BLS12-381 curve operations
     .has_historical_block_hashes = true, // EIP-2935: 8192 block hashes
-};
+});
 
 // ============================================================================
 // Tests
