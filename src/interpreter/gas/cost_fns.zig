@@ -210,14 +210,27 @@ test "callBaseCost - evolution" {
 }
 
 test "sloadCost - evolution" {
+    const frontier_spec = Spec.forFork(.FRONTIER);
     const homestead_spec = Spec.forFork(.HOMESTEAD);
+    const tangerine_spec = Spec.forFork(.TANGERINE);
+    const istanbul_spec = Spec.forFork(.ISTANBUL);
     const berlin_spec = Spec.forFork(.BERLIN);
 
-    // Pre-Berlin: no cold/warm distinction
-    try expectEqual(200, sloadCost(homestead_spec, true));
-    try expectEqual(200, sloadCost(homestead_spec, false));
+    // Frontier/Homestead: 50 (no cold/warm distinction)
+    try expectEqual(50, sloadCost(frontier_spec, true));
+    try expectEqual(50, sloadCost(frontier_spec, false));
+    try expectEqual(50, sloadCost(homestead_spec, true));
+    try expectEqual(50, sloadCost(homestead_spec, false));
 
-    // Berlin+: 2100 (cold) or 100 (warm)
+    // Tangerine: 200 (EIP-150, no cold/warm distinction)
+    try expectEqual(200, sloadCost(tangerine_spec, true));
+    try expectEqual(200, sloadCost(tangerine_spec, false));
+
+    // Istanbul: 800 (EIP-1884, no cold/warm distinction)
+    try expectEqual(800, sloadCost(istanbul_spec, true));
+    try expectEqual(800, sloadCost(istanbul_spec, false));
+
+    // Berlin+: 2100 (cold) or 100 (warm) (EIP-2929)
     try expectEqual(2100, sloadCost(berlin_spec, true));
     try expectEqual(100, sloadCost(berlin_spec, false));
 }
