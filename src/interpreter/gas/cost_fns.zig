@@ -14,8 +14,7 @@
 //! magnitude beyond the block gas limit (~3*10^7) and indicates either a bug
 //! or malicious input. Saturating ensures such cases are safely rejected.
 
-const spec_mod = @import("../../hardfork/spec.zig");
-const Spec = spec_mod.Spec;
+const Spec = @import("../../hardfork.zig").Spec;
 const Costs = @import("costs.zig").Costs;
 
 /// Calculate total memory cost for given byte size.

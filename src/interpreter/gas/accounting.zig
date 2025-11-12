@@ -4,7 +4,7 @@
 //! All cost calculations are delegated to cost_fns.
 
 const std = @import("std");
-const Spec = @import("../../hardfork/spec.zig").Spec;
+const Spec = @import("../../hardfork.zig").Spec;
 const cost_fns = @import("cost_fns.zig");
 
 /// EVM gas accounting state.

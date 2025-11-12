@@ -151,7 +151,7 @@ test "PC" {
 }
 
 test "GAS" {
-    const Spec = @import("../../hardfork/spec.zig").Spec;
+    const Spec = @import("../../hardfork.zig").Spec;
     const test_cases = [_]struct {
         gas_limit: u64,
         gas_used: u64,

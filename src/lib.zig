@@ -3,7 +3,7 @@
 const std = @import("std");
 pub const primitives = @import("primitives/mod.zig");
 pub const interpreter = @import("interpreter/mod.zig");
-pub const hardfork = @import("hardfork/mod.zig");
+pub const hardfork = @import("hardfork.zig");
 
 pub fn add(a: i32, b: i32) i32 {
     return a + b;

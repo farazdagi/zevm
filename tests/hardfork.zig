@@ -15,7 +15,7 @@ const expectEqualStrings = std.testing.expectEqualStrings;
 // Fork Refund Behavior Tests (EIP-3529)
 // ============================================================================
 
-test "Hardfork: pre-EIP-3529 refund cap (used/2)" {
+test "Pre-EIP-3529 refund cap (used/2)" {
     // Berlin and earlier: refund cap is used/2
     const spec = Spec.forFork(.BERLIN);
     var gas = Gas.init(10000, spec);
@@ -27,7 +27,7 @@ test "Hardfork: pre-EIP-3529 refund cap (used/2)" {
     try expectEqual(2500, gas.finalRefund()); // But capped at 2500
 }
 
-test "Hardfork: post-EIP-3529 refund cap (used/5)" {
+test "Post-EIP-3529 refund cap (used/5)" {
     // London and later: refund cap is used/5
     const spec = Spec.forFork(.LONDON);
     var gas = Gas.init(10000, spec);
@@ -39,7 +39,7 @@ test "Hardfork: post-EIP-3529 refund cap (used/5)" {
     try expectEqual(1000, gas.finalRefund()); // But capped at 1000
 }
 
-test "Hardfork: refund evolution across forks" {
+test "Refund evolution across forks" {
     const test_cases = [_]struct {
         fork: Hardfork,
         divisor: u64,
@@ -69,7 +69,7 @@ test "Hardfork: refund evolution across forks" {
 // Storage Access Costs (EIP-2929)
 // ============================================================================
 
-test "Hardfork: SLOAD costs pre-EIP-2929" {
+test "SLOAD costs pre-EIP-2929" {
     // Before Berlin, no cold/warm distinction - test various forks
 
     // Frontier/Homestead: 50
@@ -88,7 +88,7 @@ test "Hardfork: SLOAD costs pre-EIP-2929" {
     try expectEqual(800, istanbul_spec.cold_sload_cost);
 }
 
-test "Hardfork: SLOAD costs post-EIP-2929" {
+test "SLOAD costs post-EIP-2929" {
     // Berlin introduces cold/warm access
     const spec = Spec.forFork(.BERLIN);
     const gas = Gas.init(100000, spec);
@@ -97,7 +97,7 @@ test "Hardfork: SLOAD costs post-EIP-2929" {
     try expectEqual(100, gas.spec.warm_storage_read_cost);
 }
 
-test "Hardfork: cold account access costs" {
+test "Cold account access costs" {
     const pre_berlin = Spec.forFork(.HOMESTEAD);
     const post_berlin = Spec.forFork(.BERLIN);
 
@@ -115,7 +115,7 @@ test "Hardfork: cold account access costs" {
 // Storage Refund Amounts
 // ============================================================================
 
-test "Hardfork: SSTORE clear refund across forks" {
+test "SSTORE clear refund across forks" {
     const test_cases = [_]struct {
         fork: Hardfork,
         expected: u64,
@@ -134,7 +134,7 @@ test "Hardfork: SSTORE clear refund across forks" {
     }
 }
 
-test "Hardfork: SELFDESTRUCT refund removal" {
+test "SELFDESTRUCT refund removal" {
     // Pre-EIP-3529: 24000 gas refund
     const berlin = Spec.forFork(.BERLIN);
     const gas_berlin = Gas.init(100000, berlin);
@@ -150,7 +150,7 @@ test "Hardfork: SELFDESTRUCT refund removal" {
 // EIP Availability Tests
 // ============================================================================
 
-test "Hardfork: PUSH0 availability (EIP-3855)" {
+test "PUSH0 availability (EIP-3855)" {
     // PUSH0 introduced in Shanghai
     try expect(!Spec.forFork(.BERLIN).has_push0);
     try expect(!Spec.forFork(.LONDON).has_push0);
@@ -159,7 +159,7 @@ test "Hardfork: PUSH0 availability (EIP-3855)" {
     try expect(Spec.forFork(.CANCUN).has_push0);
 }
 
-test "Hardfork: BASEFEE availability (EIP-3198)" {
+test "BASEFEE availability (EIP-3198)" {
     // BASEFEE introduced in London
     try expect(!Spec.forFork(.BERLIN).has_basefee);
     try expect(Spec.forFork(.LONDON).has_basefee);
@@ -167,26 +167,26 @@ test "Hardfork: BASEFEE availability (EIP-3198)" {
     try expect(Spec.forFork(.SHANGHAI).has_basefee);
 }
 
-test "Hardfork: PREVRANDAO availability (EIP-4399)" {
+test "PREVRANDAO availability (EIP-4399)" {
     // PREVRANDAO introduced in Merge
     try expect(!Spec.forFork(.LONDON).has_prevrandao);
     try expect(Spec.forFork(.MERGE).has_prevrandao);
     try expect(Spec.forFork(.SHANGHAI).has_prevrandao);
 }
 
-test "Hardfork: transient storage availability (EIP-1153)" {
+test "Transient storage availability (EIP-1153)" {
     // TLOAD/TSTORE introduced in Cancun
     try expect(!Spec.forFork(.SHANGHAI).has_tstore);
     try expect(Spec.forFork(.CANCUN).has_tstore);
 }
 
-test "Hardfork: blob operations availability (EIP-4844)" {
+test "Blob operations availability (EIP-4844)" {
     // Blob opcodes introduced in Cancun
     try expect(!Spec.forFork(.SHANGHAI).has_blob_opcodes);
     try expect(Spec.forFork(.CANCUN).has_blob_opcodes);
 }
 
-test "Hardfork: MCOPY availability (EIP-5656)" {
+test "MCOPY availability (EIP-5656)" {
     // MCOPY introduced in Cancun
     try expect(!Spec.forFork(.SHANGHAI).has_mcopy);
     try expect(Spec.forFork(.CANCUN).has_mcopy);
@@ -196,7 +196,7 @@ test "Hardfork: MCOPY availability (EIP-5656)" {
 // Code Size Limits
 // ============================================================================
 
-test "Hardfork: max code size (EIP-170)" {
+test "Max code size (EIP-170)" {
     // EIP-170 introduced 24576 byte limit in Spurious Dragon
     const frontier = Spec.forFork(.FRONTIER);
     const homestead = Spec.forFork(.HOMESTEAD);
@@ -208,7 +208,7 @@ test "Hardfork: max code size (EIP-170)" {
     try expectEqual(24576, cancun.max_code_size);
 }
 
-test "Hardfork: max initcode size (EIP-3860)" {
+test "Max initcode size (EIP-3860)" {
     // EIP-3860 introduced 49152 byte limit for initcode in Shanghai
     const london = Spec.forFork(.LONDON);
     const shanghai = Spec.forFork(.SHANGHAI);
@@ -218,10 +218,10 @@ test "Hardfork: max initcode size (EIP-3860)" {
 }
 
 // ============================================================================
-// Integration Tests: Gas with Different Forks
+// Gas with Different Forks
 // ============================================================================
 
-test "Hardfork: integration - same code, different fork costs" {
+test "Gas - same code, different fork costs" {
     // Simulate SSTORE clear operation across forks
 
     // Berlin: higher refund
@@ -251,7 +251,7 @@ test "Hardfork: integration - same code, different fork costs" {
     }
 }
 
-test "Hardfork: integration - fork comparison for storage" {
+test "Gas - fork comparison for storage" {
     // Compare total gas cost for storage operations across forks
 
     const forks = [_]Hardfork{ .HOMESTEAD, .BERLIN, .LONDON, .SHANGHAI };
@@ -275,31 +275,10 @@ test "Hardfork: integration - fork comparison for storage" {
 }
 
 // ============================================================================
-// Fork Comparison and Ordering
-// ============================================================================
-
-test "Hardfork: fork ordering and comparison" {
-    try expect(Hardfork.FRONTIER.isAtLeast(.FRONTIER));
-    try expect(Hardfork.LONDON.isAtLeast(.BERLIN));
-    try expect(Hardfork.CANCUN.isAtLeast(.SHANGHAI));
-    try expect(!Hardfork.BERLIN.isAtLeast(.LONDON));
-
-    try expect(Hardfork.BERLIN.isBefore(.LONDON));
-    try expect(Hardfork.SHANGHAI.isBefore(.CANCUN));
-    try expect(!Hardfork.LONDON.isBefore(.BERLIN));
-}
-
-test "Hardfork: fork names" {
-    try expectEqualStrings("Frontier", Hardfork.FRONTIER.name());
-    try expectEqualStrings("London", Hardfork.LONDON.name());
-    try expectEqualStrings("Cancun", Hardfork.CANCUN.name());
-}
-
-// ============================================================================
 // Edge Cases
 // ============================================================================
 
-test "Hardfork: zero gas used with refunds" {
+test "Zero gas used with refunds" {
     const spec = Spec.forFork(.LONDON);
     var gas = Gas.init(10000, spec);
 
@@ -309,7 +288,7 @@ test "Hardfork: zero gas used with refunds" {
     try expectEqual(0, gas.finalRefund()); // Cap is 0/5 = 0
 }
 
-test "Hardfork: refund within cap" {
+test "Refund within cap" {
     const spec = Spec.forFork(.LONDON);
     var gas = Gas.init(10000, spec);
     try gas.consume(5000);
@@ -323,7 +302,7 @@ test "Hardfork: refund within cap" {
 // Prague Fork Tests (May 2025)
 // ============================================================================
 
-test "Hardfork: Prague - blob capacity doubled (EIP-7691)" {
+test "Prague - blob capacity doubled (EIP-7691)" {
     const cancun = Spec.forFork(.CANCUN);
     const prague = Spec.forFork(.PRAGUE);
 
@@ -336,25 +315,25 @@ test "Hardfork: Prague - blob capacity doubled (EIP-7691)" {
     try expectEqual(9, prague.max_blobs_per_block);
 }
 
-test "Hardfork: Prague - EIP-7702 availability" {
+test "Prague - EIP-7702 availability" {
     // EIP-7702: EOA account abstraction
     try expect(!Spec.forFork(.CANCUN).has_eip7702);
     try expect(Spec.forFork(.PRAGUE).has_eip7702);
 }
 
-test "Hardfork: Prague - EIP-2537 BLS precompiles" {
+test "Prague - EIP-2537 BLS precompiles" {
     // BLS12-381 curve operations
     try expect(!Spec.forFork(.CANCUN).has_bls_precompiles);
     try expect(Spec.forFork(.PRAGUE).has_bls_precompiles);
 }
 
-test "Hardfork: Prague - EIP-2935 historical block hashes" {
+test "Prague - EIP-2935 historical block hashes" {
     // Extended from 256 to 8192 blocks
     try expect(!Spec.forFork(.CANCUN).has_historical_block_hashes);
     try expect(Spec.forFork(.PRAGUE).has_historical_block_hashes);
 }
 
-test "Hardfork: Prague inherits all Cancun features" {
+test "Prague inherits all Cancun features" {
     const prague = Spec.forFork(.PRAGUE);
 
     // Should have all Cancun features
@@ -371,18 +350,18 @@ test "Hardfork: Prague inherits all Cancun features" {
     try expect(prague.has_historical_block_hashes);
 }
 
-test "Hardfork: Prague is latest fork" {
+test "Prague is latest fork" {
     try expectEqual(Hardfork.PRAGUE, Hardfork.LATEST);
 }
 
-test "Hardfork: Prague fork ordering" {
+test "Prague fork ordering" {
     try expect(Hardfork.PRAGUE.isAtLeast(.CANCUN));
     try expect(Hardfork.PRAGUE.isAtLeast(.SHANGHAI));
     try expect(Hardfork.PRAGUE.isAtLeast(.LONDON));
     try expect(!Hardfork.CANCUN.isAtLeast(.PRAGUE));
 }
 
-test "Hardfork: Prague fork name" {
+test "Prague fork name" {
     try expectEqualStrings("Prague", Hardfork.PRAGUE.name());
 }
 
@@ -390,130 +369,103 @@ test "Hardfork: Prague fork name" {
 // Fork Chain Inheritance Tests (Byzantium -> Constantinople -> Petersburg -> Istanbul)
 // ============================================================================
 
-test "Hardfork: Byzantium opcodes" {
-    const costs = FixedGasCosts.forFork(.BYZANTIUM);
+test "Fork chain: opcode introduction and inheritance" {
+    // Table of opcode lifecycle across the fork chain
+    const test_cases = [_]struct {
+        opcode: Opcode,
+        introduced: Hardfork,
+        initial_cost: u64,
+        cost_change_fork: ?Hardfork = null,
+        cost_change_value: ?u64 = null,
+    }{
+        // Byzantium opcodes
+        .{
+            .opcode = .REVERT,
+            .introduced = .BYZANTIUM,
+            .initial_cost = FixedGasCosts.ZERO,
+        },
+        .{
+            .opcode = .RETURNDATASIZE,
+            .introduced = .BYZANTIUM,
+            .initial_cost = FixedGasCosts.BASE,
+        },
+        .{
+            .opcode = .RETURNDATACOPY,
+            .introduced = .BYZANTIUM,
+            .initial_cost = FixedGasCosts.VERYLOW,
+        },
+        .{
+            .opcode = .STATICCALL,
+            .introduced = .BYZANTIUM,
+            .initial_cost = 700,
+        },
 
-    // Byzantium introduced these opcodes (EIP-140, EIP-211, EIP-214)
-    try expectEqual(FixedGasCosts.ZERO, costs.costs[@intFromEnum(Opcode.REVERT)]);
-    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
-    try expectEqual(700, costs.costs[@intFromEnum(Opcode.STATICCALL)]);
-}
+        // Constantinople opcodes
+        .{
+            .opcode = .SHL,
+            .introduced = .CONSTANTINOPLE,
+            .initial_cost = FixedGasCosts.VERYLOW,
+        },
+        .{
+            .opcode = .SHR,
+            .introduced = .CONSTANTINOPLE,
+            .initial_cost = FixedGasCosts.VERYLOW,
+        },
+        .{
+            .opcode = .SAR,
+            .introduced = .CONSTANTINOPLE,
+            .initial_cost = FixedGasCosts.VERYLOW,
+        },
+        .{
+            .opcode = .CREATE2,
+            .introduced = .CONSTANTINOPLE,
+            .initial_cost = 32000,
+        },
+        .{
+            .opcode = .EXTCODEHASH,
+            .introduced = .CONSTANTINOPLE,
+            .initial_cost = 400,
+            .cost_change_fork = .ISTANBUL,
+            .cost_change_value = 700,
+        },
 
-test "Hardfork: Byzantium does NOT have Constantinople opcodes" {
-    const costs = FixedGasCosts.forFork(.BYZANTIUM);
+        // Istanbul opcodes
+        .{
+            .opcode = .CHAINID,
+            .introduced = .ISTANBUL,
+            .initial_cost = FixedGasCosts.BASE,
+        },
+        .{
+            .opcode = .SELFBALANCE,
+            .introduced = .ISTANBUL,
+            .initial_cost = FixedGasCosts.LOW,
+        },
+    };
 
-    // These were introduced in Constantinople, should be 0 (undefined) in Byzantium
-    try expectEqual(0, costs.costs[@intFromEnum(Opcode.SHL)]);
-    try expectEqual(0, costs.costs[@intFromEnum(Opcode.SHR)]);
-    try expectEqual(0, costs.costs[@intFromEnum(Opcode.SAR)]);
-    try expectEqual(0, costs.costs[@intFromEnum(Opcode.CREATE2)]);
-    try expectEqual(0, costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
-}
+    // Test across the fork chain
+    const fork_chain = [_]Hardfork{ .BYZANTIUM, .CONSTANTINOPLE, .PETERSBURG, .ISTANBUL };
 
-test "Hardfork: Constantinople inherits Byzantium opcodes" {
-    const costs = FixedGasCosts.forFork(.CONSTANTINOPLE);
+    for (test_cases) |tc| {
+        for (fork_chain) |fork| {
+            const costs = FixedGasCosts.forFork(fork);
+            const opcode_idx = @intFromEnum(tc.opcode);
+            const actual_cost = costs.costs[opcode_idx];
 
-    // Should have Byzantium opcodes
-    try expectEqual(FixedGasCosts.ZERO, costs.costs[@intFromEnum(Opcode.REVERT)]);
-    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
-    try expectEqual(700, costs.costs[@intFromEnum(Opcode.STATICCALL)]);
-}
-
-test "Hardfork: Constantinople adds new opcodes" {
-    const costs = FixedGasCosts.forFork(.CONSTANTINOPLE);
-
-    // EIP-145: Bitwise shifting instructions
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHL)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHR)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SAR)]);
-
-    // EIP-1014: CREATE2 opcode
-    try expectEqual(32000, costs.costs[@intFromEnum(Opcode.CREATE2)]);
-
-    // EIP-1052: EXTCODEHASH opcode
-    try expectEqual(400, costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
-}
-
-test "Hardfork: Petersburg is identical to Constantinople" {
-    const constantinople_costs = FixedGasCosts.forFork(.CONSTANTINOPLE);
-    const petersburg_costs = FixedGasCosts.forFork(.PETERSBURG);
-
-    // Petersburg = Constantinople (EIP-1283 was never implemented in this codebase)
-    // Verify key opcodes have same costs
-
-    // Byzantium opcodes
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.REVERT)], petersburg_costs.costs[@intFromEnum(Opcode.REVERT)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)], petersburg_costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)], petersburg_costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.STATICCALL)], petersburg_costs.costs[@intFromEnum(Opcode.STATICCALL)]);
-
-    // Constantinople opcodes
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.SHL)], petersburg_costs.costs[@intFromEnum(Opcode.SHL)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.SHR)], petersburg_costs.costs[@intFromEnum(Opcode.SHR)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.SAR)], petersburg_costs.costs[@intFromEnum(Opcode.SAR)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.CREATE2)], petersburg_costs.costs[@intFromEnum(Opcode.CREATE2)]);
-    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)], petersburg_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
-}
-
-test "Hardfork: Istanbul inherits Petersburg opcodes" {
-    const costs = FixedGasCosts.forFork(.ISTANBUL);
-
-    // Should have Byzantium opcodes
-    try expectEqual(FixedGasCosts.ZERO, costs.costs[@intFromEnum(Opcode.REVERT)]);
-    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
-    try expectEqual(700, costs.costs[@intFromEnum(Opcode.STATICCALL)]);
-
-    // Should have Constantinople opcodes
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHL)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHR)]);
-    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SAR)]);
-    try expectEqual(32000, costs.costs[@intFromEnum(Opcode.CREATE2)]);
-}
-
-test "Hardfork: Istanbul adjusts EXTCODEHASH cost" {
-    const petersburg_costs = FixedGasCosts.forFork(.PETERSBURG);
-    const istanbul_costs = FixedGasCosts.forFork(.ISTANBUL);
-
-    // EXTCODEHASH cost increased from 400 to 700 in Istanbul (EIP-1884)
-    try expectEqual(400, petersburg_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
-    try expectEqual(700, istanbul_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
-}
-
-test "Hardfork: Istanbul adds new opcodes" {
-    const costs = FixedGasCosts.forFork(.ISTANBUL);
-
-    // EIP-1344: CHAINID opcode
-    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.CHAINID)]);
-
-    // EIP-1884: SELFBALANCE opcode
-    try expectEqual(FixedGasCosts.LOW, costs.costs[@intFromEnum(Opcode.SELFBALANCE)]);
-}
-
-test "Hardfork: fork chain completeness" {
-    // Verify the complete chain: Byzantium -> Constantinople -> Petersburg -> Istanbul
-
-    const byzantium = FixedGasCosts.forFork(.BYZANTIUM);
-    const constantinople = FixedGasCosts.forFork(.CONSTANTINOPLE);
-    const petersburg = FixedGasCosts.forFork(.PETERSBURG);
-    const istanbul = FixedGasCosts.forFork(.ISTANBUL);
-
-    // Byzantium: has REVERT, does NOT have SHL
-    try expect(byzantium.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
-    try expect(byzantium.costs[@intFromEnum(Opcode.SHL)] == 0);
-
-    // Constantinople: has both REVERT and SHL
-    try expect(constantinople.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
-    try expect(constantinople.costs[@intFromEnum(Opcode.SHL)] == FixedGasCosts.VERYLOW);
-
-    // Petersburg: same as Constantinople
-    try expect(petersburg.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
-    try expect(petersburg.costs[@intFromEnum(Opcode.SHL)] == FixedGasCosts.VERYLOW);
-
-    // Istanbul: has all previous opcodes plus CHAINID
-    try expect(istanbul.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
-    try expect(istanbul.costs[@intFromEnum(Opcode.SHL)] == FixedGasCosts.VERYLOW);
-    try expect(istanbul.costs[@intFromEnum(Opcode.CHAINID)] == FixedGasCosts.BASE);
+            if (fork.isBefore(tc.introduced)) {
+                // Opcode doesn't exist before introduction
+                try expectEqual(0, actual_cost);
+            } else if (tc.cost_change_fork) |change_fork| {
+                if (fork.isAtLeast(change_fork)) {
+                    // Cost changed at this fork or later
+                    try expectEqual(tc.cost_change_value.?, actual_cost);
+                } else {
+                    // After introduction but before cost change
+                    try expectEqual(tc.initial_cost, actual_cost);
+                }
+            } else {
+                // After introduction, no cost change - should have initial cost
+                try expectEqual(tc.initial_cost, actual_cost);
+            }
+        }
+    }
 }
