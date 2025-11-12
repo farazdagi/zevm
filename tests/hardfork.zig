@@ -4,6 +4,8 @@ const zevm = @import("zevm");
 const Hardfork = zevm.hardfork.Hardfork;
 const Spec = zevm.hardfork.Spec;
 const Gas = zevm.interpreter.Gas;
+const Opcode = zevm.interpreter.Opcode;
+const FixedGasCosts = zevm.interpreter.gas.FixedGasCosts;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -68,12 +70,22 @@ test "Hardfork: refund evolution across forks" {
 // ============================================================================
 
 test "Hardfork: SLOAD costs pre-EIP-2929" {
-    // Before Berlin, no cold/warm distinction
-    const spec = Spec.forFork(.HOMESTEAD);
-    const gas = Gas.init(100000, spec);
+    // Before Berlin, no cold/warm distinction - test various forks
 
-    // Pre-EIP-2929: cold_sload_cost is same as old cost (200 for Homestead)
-    try expectEqual(200, gas.spec.cold_sload_cost);
+    // Frontier/Homestead: 50
+    const frontier_spec = Spec.forFork(.FRONTIER);
+    try expectEqual(50, frontier_spec.cold_sload_cost);
+
+    const homestead_spec = Spec.forFork(.HOMESTEAD);
+    try expectEqual(50, homestead_spec.cold_sload_cost);
+
+    // Tangerine: 200 (EIP-150)
+    const tangerine_spec = Spec.forFork(.TANGERINE);
+    try expectEqual(200, tangerine_spec.cold_sload_cost);
+
+    // Istanbul: 800 (EIP-1884)
+    const istanbul_spec = Spec.forFork(.ISTANBUL);
+    try expectEqual(800, istanbul_spec.cold_sload_cost);
 }
 
 test "Hardfork: SLOAD costs post-EIP-2929" {
@@ -372,4 +384,136 @@ test "Hardfork: Prague fork ordering" {
 
 test "Hardfork: Prague fork name" {
     try expectEqualStrings("Prague", Hardfork.PRAGUE.name());
+}
+
+// ============================================================================
+// Fork Chain Inheritance Tests (Byzantium -> Constantinople -> Petersburg -> Istanbul)
+// ============================================================================
+
+test "Hardfork: Byzantium opcodes" {
+    const costs = FixedGasCosts.forFork(.BYZANTIUM);
+
+    // Byzantium introduced these opcodes (EIP-140, EIP-211, EIP-214)
+    try expectEqual(FixedGasCosts.ZERO, costs.costs[@intFromEnum(Opcode.REVERT)]);
+    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
+    try expectEqual(700, costs.costs[@intFromEnum(Opcode.STATICCALL)]);
+}
+
+test "Hardfork: Byzantium does NOT have Constantinople opcodes" {
+    const costs = FixedGasCosts.forFork(.BYZANTIUM);
+
+    // These were introduced in Constantinople, should be 0 (undefined) in Byzantium
+    try expectEqual(0, costs.costs[@intFromEnum(Opcode.SHL)]);
+    try expectEqual(0, costs.costs[@intFromEnum(Opcode.SHR)]);
+    try expectEqual(0, costs.costs[@intFromEnum(Opcode.SAR)]);
+    try expectEqual(0, costs.costs[@intFromEnum(Opcode.CREATE2)]);
+    try expectEqual(0, costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
+}
+
+test "Hardfork: Constantinople inherits Byzantium opcodes" {
+    const costs = FixedGasCosts.forFork(.CONSTANTINOPLE);
+
+    // Should have Byzantium opcodes
+    try expectEqual(FixedGasCosts.ZERO, costs.costs[@intFromEnum(Opcode.REVERT)]);
+    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
+    try expectEqual(700, costs.costs[@intFromEnum(Opcode.STATICCALL)]);
+}
+
+test "Hardfork: Constantinople adds new opcodes" {
+    const costs = FixedGasCosts.forFork(.CONSTANTINOPLE);
+
+    // EIP-145: Bitwise shifting instructions
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHL)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHR)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SAR)]);
+
+    // EIP-1014: CREATE2 opcode
+    try expectEqual(32000, costs.costs[@intFromEnum(Opcode.CREATE2)]);
+
+    // EIP-1052: EXTCODEHASH opcode
+    try expectEqual(400, costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
+}
+
+test "Hardfork: Petersburg is identical to Constantinople" {
+    const constantinople_costs = FixedGasCosts.forFork(.CONSTANTINOPLE);
+    const petersburg_costs = FixedGasCosts.forFork(.PETERSBURG);
+
+    // Petersburg = Constantinople (EIP-1283 was never implemented in this codebase)
+    // Verify key opcodes have same costs
+
+    // Byzantium opcodes
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.REVERT)], petersburg_costs.costs[@intFromEnum(Opcode.REVERT)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)], petersburg_costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)], petersburg_costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.STATICCALL)], petersburg_costs.costs[@intFromEnum(Opcode.STATICCALL)]);
+
+    // Constantinople opcodes
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.SHL)], petersburg_costs.costs[@intFromEnum(Opcode.SHL)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.SHR)], petersburg_costs.costs[@intFromEnum(Opcode.SHR)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.SAR)], petersburg_costs.costs[@intFromEnum(Opcode.SAR)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.CREATE2)], petersburg_costs.costs[@intFromEnum(Opcode.CREATE2)]);
+    try expectEqual(constantinople_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)], petersburg_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
+}
+
+test "Hardfork: Istanbul inherits Petersburg opcodes" {
+    const costs = FixedGasCosts.forFork(.ISTANBUL);
+
+    // Should have Byzantium opcodes
+    try expectEqual(FixedGasCosts.ZERO, costs.costs[@intFromEnum(Opcode.REVERT)]);
+    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.RETURNDATASIZE)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.RETURNDATACOPY)]);
+    try expectEqual(700, costs.costs[@intFromEnum(Opcode.STATICCALL)]);
+
+    // Should have Constantinople opcodes
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHL)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SHR)]);
+    try expectEqual(FixedGasCosts.VERYLOW, costs.costs[@intFromEnum(Opcode.SAR)]);
+    try expectEqual(32000, costs.costs[@intFromEnum(Opcode.CREATE2)]);
+}
+
+test "Hardfork: Istanbul adjusts EXTCODEHASH cost" {
+    const petersburg_costs = FixedGasCosts.forFork(.PETERSBURG);
+    const istanbul_costs = FixedGasCosts.forFork(.ISTANBUL);
+
+    // EXTCODEHASH cost increased from 400 to 700 in Istanbul (EIP-1884)
+    try expectEqual(400, petersburg_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
+    try expectEqual(700, istanbul_costs.costs[@intFromEnum(Opcode.EXTCODEHASH)]);
+}
+
+test "Hardfork: Istanbul adds new opcodes" {
+    const costs = FixedGasCosts.forFork(.ISTANBUL);
+
+    // EIP-1344: CHAINID opcode
+    try expectEqual(FixedGasCosts.BASE, costs.costs[@intFromEnum(Opcode.CHAINID)]);
+
+    // EIP-1884: SELFBALANCE opcode
+    try expectEqual(FixedGasCosts.LOW, costs.costs[@intFromEnum(Opcode.SELFBALANCE)]);
+}
+
+test "Hardfork: fork chain completeness" {
+    // Verify the complete chain: Byzantium -> Constantinople -> Petersburg -> Istanbul
+
+    const byzantium = FixedGasCosts.forFork(.BYZANTIUM);
+    const constantinople = FixedGasCosts.forFork(.CONSTANTINOPLE);
+    const petersburg = FixedGasCosts.forFork(.PETERSBURG);
+    const istanbul = FixedGasCosts.forFork(.ISTANBUL);
+
+    // Byzantium: has REVERT, does NOT have SHL
+    try expect(byzantium.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
+    try expect(byzantium.costs[@intFromEnum(Opcode.SHL)] == 0);
+
+    // Constantinople: has both REVERT and SHL
+    try expect(constantinople.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
+    try expect(constantinople.costs[@intFromEnum(Opcode.SHL)] == FixedGasCosts.VERYLOW);
+
+    // Petersburg: same as Constantinople
+    try expect(petersburg.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
+    try expect(petersburg.costs[@intFromEnum(Opcode.SHL)] == FixedGasCosts.VERYLOW);
+
+    // Istanbul: has all previous opcodes plus CHAINID
+    try expect(istanbul.costs[@intFromEnum(Opcode.REVERT)] == FixedGasCosts.ZERO);
+    try expect(istanbul.costs[@intFromEnum(Opcode.SHL)] == FixedGasCosts.VERYLOW);
+    try expect(istanbul.costs[@intFromEnum(Opcode.CHAINID)] == FixedGasCosts.BASE);
 }
