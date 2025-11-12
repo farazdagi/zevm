@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const FixedGasCosts = @import("../interpreter/gas/FixedGasCosts.zig");
+const Opcode = @import("../interpreter/opcode.zig").Opcode;
+
 /// Ethereum hard fork identifier.
 ///
 /// A fork determines which rules, gas costs, and opcodes are active.
@@ -75,6 +78,13 @@ pub const Hardfork = enum(u8) {
 pub const Spec = struct {
     /// Fork
     fork: Hardfork,
+
+    /// Base fork this fork is built upon (null only for FRONTIER)
+    base_fork: ?Hardfork,
+
+    /// Optional function to update gas costs for this fork.
+    /// If null, this fork introduces no gas cost changes from its base.
+    updateCosts: ?*const fn (*FixedGasCosts, Spec) void,
 
     /// EIP-3529: Reduction in refunds
     /// Pre-London: 2 (50%), Post-London: 5 (20%)
@@ -230,6 +240,7 @@ fn forkSpec(
 ) Spec {
     var result = base;
     result.fork = fork;
+    result.base_fork = base.fork;
 
     // Apply all field overrides from the changes struct
     inline for (std.meta.fields(@TypeOf(changes))) |field| {
@@ -244,6 +255,127 @@ fn forkSpec(
 /// Genesis fork
 pub const FRONTIER = Spec{
     .fork = .FRONTIER,
+    .base_fork = null, // Genesis fork, no base
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // Frontier base costs - all opcodes that existed in the genesis fork
+
+            // 0x00-0x0B: Arithmetic Operations
+            table.costs[@intFromEnum(Opcode.STOP)] = FixedGasCosts.ZERO;
+            table.costs[@intFromEnum(Opcode.ADD)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.MUL)] = FixedGasCosts.LOW;
+            table.costs[@intFromEnum(Opcode.SUB)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.DIV)] = FixedGasCosts.LOW;
+            table.costs[@intFromEnum(Opcode.SDIV)] = FixedGasCosts.LOW;
+            table.costs[@intFromEnum(Opcode.MOD)] = FixedGasCosts.LOW;
+            table.costs[@intFromEnum(Opcode.SMOD)] = FixedGasCosts.LOW;
+            table.costs[@intFromEnum(Opcode.ADDMOD)] = FixedGasCosts.MID;
+            table.costs[@intFromEnum(Opcode.MULMOD)] = FixedGasCosts.MID;
+            table.costs[@intFromEnum(Opcode.EXP)] = FixedGasCosts.HIGH;
+            table.costs[@intFromEnum(Opcode.SIGNEXTEND)] = FixedGasCosts.LOW;
+
+            // 0x10-0x1A: Comparison & Bitwise Operations (excluding SHL/SHR/SAR)
+            table.costs[@intFromEnum(Opcode.LT)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.GT)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.SLT)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.SGT)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.EQ)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.ISZERO)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.AND)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.OR)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.XOR)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.NOT)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.BYTE)] = FixedGasCosts.VERYLOW;
+            // Note: SHL, SHR, SAR added in Constantinople
+
+            // 0x20: Cryptographic Operations
+            table.costs[@intFromEnum(Opcode.KECCAK256)] = 30;
+
+            // 0x30-0x3D: Environmental Information (excluding RETURNDATASIZE/COPY, EXTCODEHASH)
+            table.costs[@intFromEnum(Opcode.ADDRESS)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.BALANCE)] = 20;
+            table.costs[@intFromEnum(Opcode.ORIGIN)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.CALLER)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.CALLVALUE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.CALLDATALOAD)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.CALLDATASIZE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.CALLDATACOPY)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.CODESIZE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.CODECOPY)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.GASPRICE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.EXTCODESIZE)] = 20;
+            table.costs[@intFromEnum(Opcode.EXTCODECOPY)] = 20;
+            // Note: RETURNDATASIZE, RETURNDATACOPY added in Byzantium
+            // Note: EXTCODEHASH added in Istanbul
+
+            // 0x40-0x45: Block Information (excluding CHAINID, SELFBALANCE, BASEFEE, BLOBHASH, BLOBBASEFEE)
+            table.costs[@intFromEnum(Opcode.BLOCKHASH)] = 20;
+            table.costs[@intFromEnum(Opcode.COINBASE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.TIMESTAMP)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.NUMBER)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.PREVRANDAO)] = FixedGasCosts.BASE; // Was DIFFICULTY
+            table.costs[@intFromEnum(Opcode.GASLIMIT)] = FixedGasCosts.BASE;
+            // Note: CHAINID, SELFBALANCE added in Istanbul
+            // Note: BASEFEE added in London
+            // Note: BLOBHASH, BLOBBASEFEE added in Cancun
+
+            // 0x50-0x5B: Stack, Memory, Storage & Flow (excluding TLOAD/TSTORE/MCOPY)
+            table.costs[@intFromEnum(Opcode.POP)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.MLOAD)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.MSTORE)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.MSTORE8)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.SLOAD)] = 50;
+            table.costs[@intFromEnum(Opcode.SSTORE)] = 100; // Base cost, actual is dynamic
+            table.costs[@intFromEnum(Opcode.JUMP)] = FixedGasCosts.MID;
+            table.costs[@intFromEnum(Opcode.JUMPI)] = FixedGasCosts.HIGH;
+            table.costs[@intFromEnum(Opcode.PC)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.MSIZE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.GAS)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.JUMPDEST)] = FixedGasCosts.JUMPDEST;
+            // Note: TLOAD, TSTORE added in Cancun
+            // Note: MCOPY added in Cancun
+            // Note: PUSH0 added in Shanghai
+
+            // 0x60-0x7F: PUSH1-PUSH32
+            var i: u8 = @intFromEnum(Opcode.PUSH1);
+            while (i <= @intFromEnum(Opcode.PUSH32)) : (i += 1) {
+                table.costs[i] = FixedGasCosts.VERYLOW;
+            }
+
+            // 0x80-0x8F: DUP1-DUP16
+            i = @intFromEnum(Opcode.DUP1);
+            while (i <= @intFromEnum(Opcode.DUP16)) : (i += 1) {
+                table.costs[i] = FixedGasCosts.VERYLOW;
+            }
+
+            // 0x90-0x9F: SWAP1-SWAP16
+            i = @intFromEnum(Opcode.SWAP1);
+            while (i <= @intFromEnum(Opcode.SWAP16)) : (i += 1) {
+                table.costs[i] = FixedGasCosts.VERYLOW;
+            }
+
+            // 0xA0-0xA4: Logging Operations
+            table.costs[@intFromEnum(Opcode.LOG0)] = 375;
+            table.costs[@intFromEnum(Opcode.LOG1)] = 375 + 375;
+            table.costs[@intFromEnum(Opcode.LOG2)] = 375 + 2 * 375;
+            table.costs[@intFromEnum(Opcode.LOG3)] = 375 + 3 * 375;
+            table.costs[@intFromEnum(Opcode.LOG4)] = 375 + 4 * 375;
+
+            // 0xF0-0xFF: System Operations (excluding DELEGATECALL, CREATE2, STATICCALL, REVERT)
+            table.costs[@intFromEnum(Opcode.CREATE)] = 32000;
+            table.costs[@intFromEnum(Opcode.CALL)] = 40;
+            table.costs[@intFromEnum(Opcode.CALLCODE)] = 40;
+            table.costs[@intFromEnum(Opcode.RETURN)] = FixedGasCosts.ZERO;
+            // Note: DELEGATECALL added in Homestead
+            // Note: CREATE2 added in Constantinople
+            // Note: STATICCALL added in Byzantium
+            // Note: REVERT added in Byzantium
+            table.costs[@intFromEnum(Opcode.INVALID)] = FixedGasCosts.ZERO; // Consumes all gas, but base is 0
+            table.costs[@intFromEnum(Opcode.SELFDESTRUCT)] = FixedGasCosts.ZERO;
+        }
+    }.f,
+    // TODO: review and prune, base cost is calculated in updateCosts.
     .max_refund_quotient = 2,
     .sstore_clears_schedule = 15000,
     .selfdestruct_refund = 24000,
@@ -281,6 +413,13 @@ pub const FRONTIER_THAWING = FRONTIER;
 /// EIP-8: introduces devp2p forward compatibility requirements
 pub const HOMESTEAD = forkSpec(.HOMESTEAD, FRONTIER, .{
     .cold_account_access_cost = 700, // Pre-EIP-2929 flat cost
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-7: DELEGATECALL opcode
+            table.costs[@intFromEnum(Opcode.DELEGATECALL)] = 40;
+        }
+    }.f,
 });
 
 /// DAO Fork (July 2016)
@@ -293,7 +432,22 @@ pub const DAO_FORK = HOMESTEAD;
 /// EIP-150: increases gas costs of opcodes that can be used in spam attacks.
 /// EIP-158: reduces state size by removing a large number of empty accounts.
 pub const TANGERINE = forkSpec(.TANGERINE, HOMESTEAD, .{
+    .cold_sload_cost = 200, // EIP-150
     .cold_account_access_cost = 0,
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-150: Increase gas costs for state access opcodes to prevent DOS attacks
+            table.costs[@intFromEnum(Opcode.BALANCE)] = 400; // Was 20
+            table.costs[@intFromEnum(Opcode.EXTCODESIZE)] = 700; // Was 20
+            table.costs[@intFromEnum(Opcode.EXTCODECOPY)] = 700; // Was 20
+            table.costs[@intFromEnum(Opcode.SLOAD)] = 200; // Was 50
+            table.costs[@intFromEnum(Opcode.CALL)] = 700; // Was 40
+            table.costs[@intFromEnum(Opcode.CALLCODE)] = 700; // Was 40
+            table.costs[@intFromEnum(Opcode.DELEGATECALL)] = 700; // Was 40 (Homestead introduced it)
+            table.costs[@intFromEnum(Opcode.SELFDESTRUCT)] = 5000; // Was 0
+        }
+    }.f,
 });
 
 /// Spurious Dragon (November, 2016)
@@ -314,7 +468,20 @@ pub const SPURIOUS_DRAGON = forkSpec(.SPURIOUS_DRAGON, TANGERINE, .{});
 /// EIP-214: adds STATICCALL opcode, allowing non-state-changing calls to other contracts.
 /// EIP-100: changes difficulty adjustment formula.
 /// EIP-649: delays difficulty bomb by 1 year and reduces block reward from 5 to 3 ETH.
-pub const BYZANTIUM = SPURIOUS_DRAGON;
+pub const BYZANTIUM = forkSpec(.BYZANTIUM, SPURIOUS_DRAGON, .{
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-211: RETURNDATASIZE and RETURNDATACOPY
+            table.costs[@intFromEnum(Opcode.RETURNDATASIZE)] = FixedGasCosts.BASE;
+            table.costs[@intFromEnum(Opcode.RETURNDATACOPY)] = FixedGasCosts.VERYLOW;
+            // EIP-214: STATICCALL opcode
+            table.costs[@intFromEnum(Opcode.STATICCALL)] = 700;
+            // EIP-140: REVERT opcode
+            table.costs[@intFromEnum(Opcode.REVERT)] = FixedGasCosts.ZERO;
+        }
+    }.f,
+});
 
 /// Constantinople (February, 2019)
 ///
@@ -323,7 +490,19 @@ pub const BYZANTIUM = SPURIOUS_DRAGON;
 /// EIP-1052: introduces the EXTCODEHASH instruction to retrieve the hash of another contract's code.
 /// EIP-1234: makes sure the blockchain doesn't freeze before proof-of-stake and reduces block reward from 3 to 2 ETH.
 /// EIP-1283: Net gas metering for SSTORE without dirty maps
-pub const CONSTANTINOPLE = SPURIOUS_DRAGON;
+pub const CONSTANTINOPLE = forkSpec(.CONSTANTINOPLE, SPURIOUS_DRAGON, .{
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-145: Bitwise shifting instructions
+            table.costs[@intFromEnum(Opcode.SHL)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.SHR)] = FixedGasCosts.VERYLOW;
+            table.costs[@intFromEnum(Opcode.SAR)] = FixedGasCosts.VERYLOW;
+            // EIP-1014: CREATE2 opcode
+            table.costs[@intFromEnum(Opcode.CREATE2)] = 32000;
+        }
+    }.f,
+});
 
 /// Petersburg (February 2019)
 ///
@@ -338,7 +517,23 @@ pub const PETERSBURG = SPURIOUS_DRAGON;
 /// EIP-1884: optimising opcode gas prices based on consumption.
 /// EIP-2028: reduces the cost of CallData to allow more data in blocks - good for Layer 2 scaling.
 /// EIP-2200: other opcode gas price alterations.
-pub const ISTANBUL = forkSpec(.ISTANBUL, SPURIOUS_DRAGON, .{});
+pub const ISTANBUL = forkSpec(.ISTANBUL, SPURIOUS_DRAGON, .{
+    .cold_sload_cost = 800, // EIP-1884
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-1884: Increase cost of SLOAD and adjust costs
+            table.costs[@intFromEnum(Opcode.SLOAD)] = 800; // Was 200
+            table.costs[@intFromEnum(Opcode.BALANCE)] = 700; // Was 400
+            // EIP-1052: EXTCODEHASH opcode (new opcode + cost adjustment)
+            table.costs[@intFromEnum(Opcode.EXTCODEHASH)] = 700;
+            // EIP-1344: CHAINID opcode
+            table.costs[@intFromEnum(Opcode.CHAINID)] = FixedGasCosts.BASE;
+            // EIP-1884: SELFBALANCE opcode
+            table.costs[@intFromEnum(Opcode.SELFBALANCE)] = FixedGasCosts.LOW;
+        }
+    }.f,
+});
 
 /// Muir Glacier (January, 2020)
 ///
@@ -355,6 +550,21 @@ pub const BERLIN = forkSpec(.BERLIN, ISTANBUL, .{
     .cold_sload_cost = 2100, // EIP-2929
     .cold_account_access_cost = 2600, // EIP-2929
     .warm_storage_read_cost = 100, // EIP-2929
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            // EIP-2929: Warm/cold storage access costs
+            // These are the warm (already accessed) costs
+            table.costs[@intFromEnum(Opcode.BALANCE)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.EXTCODESIZE)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.EXTCODECOPY)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.EXTCODEHASH)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.SLOAD)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.CALL)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.CALLCODE)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.DELEGATECALL)] = spec.warm_storage_read_cost; // 100
+            table.costs[@intFromEnum(Opcode.STATICCALL)] = spec.warm_storage_read_cost; // 100
+        }
+    }.f,
 });
 
 /// London (August, 2021)
@@ -370,6 +580,13 @@ pub const LONDON = forkSpec(.LONDON, BERLIN, .{
     .selfdestruct_refund = 0, // EIP-3529: Removed
     .has_basefee = true, // EIP-3198
     .has_base_fee = true, // EIP-1559
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-3198: BASEFEE opcode
+            table.costs[@intFromEnum(Opcode.BASEFEE)] = FixedGasCosts.BASE;
+        }
+    }.f,
 });
 
 /// Arrow Glacier (December, 2021)
@@ -401,6 +618,13 @@ pub const SHANGHAI = forkSpec(.SHANGHAI, MERGE, .{
     .max_initcode_size = 49152, // EIP-3860: 2 * max_code_size
     .initcode_word_cost = 2, // EIP-3860
     .has_push0 = true, // EIP-3855
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-3855: PUSH0 instruction
+            table.costs[@intFromEnum(Opcode.PUSH0)] = FixedGasCosts.BASE;
+        }
+    }.f,
 });
 
 /// Cancun (March, 2024)
@@ -418,6 +642,20 @@ pub const CANCUN = forkSpec(.CANCUN, SHANGHAI, .{
     .has_blob_gas = true, // EIP-4844
     .target_blobs_per_block = 3, // EIP-4844
     .max_blobs_per_block = 6, // EIP-4844
+    .updateCosts = struct {
+        fn f(table: *FixedGasCosts, spec: Spec) void {
+            _ = spec;
+            // EIP-1153: Transient storage opcodes
+            table.costs[@intFromEnum(Opcode.TLOAD)] = 100;
+            table.costs[@intFromEnum(Opcode.TSTORE)] = 100;
+            // EIP-5656: MCOPY instruction
+            table.costs[@intFromEnum(Opcode.MCOPY)] = FixedGasCosts.VERYLOW;
+            // EIP-4844: Blob opcodes
+            table.costs[@intFromEnum(Opcode.BLOBHASH)] = FixedGasCosts.VERYLOW;
+            // EIP-7516: BLOBBASEFEE opcode
+            table.costs[@intFromEnum(Opcode.BLOBBASEFEE)] = FixedGasCosts.BASE;
+        }
+    }.f,
 });
 
 /// Prague (May, 2025)
@@ -516,10 +754,17 @@ test "Spec: refund changes across forks" {
 }
 
 test "Spec: SLOAD cost changes" {
-    // Homestead: flat 200
-    try expectEqual(200, HOMESTEAD.cold_sload_cost);
+    // Frontier/Homestead: 50
+    try expectEqual(50, FRONTIER.cold_sload_cost);
+    try expectEqual(50, HOMESTEAD.cold_sload_cost);
 
-    // Berlin: 2100 cold, 100 warm
+    // Tangerine: 200 (EIP-150)
+    try expectEqual(200, TANGERINE.cold_sload_cost);
+
+    // Istanbul: 800 (EIP-1884)
+    try expectEqual(800, ISTANBUL.cold_sload_cost);
+
+    // Berlin: 2100 cold, 100 warm (EIP-2929)
     try expectEqual(2100, BERLIN.cold_sload_cost);
     try expectEqual(100, BERLIN.warm_storage_read_cost);
 }
