@@ -379,9 +379,9 @@ pub const FRONTIER = Spec{
     .max_refund_quotient = 2,
     .sstore_clears_schedule = 15000,
     .selfdestruct_refund = 24000,
-    .cold_sload_cost = 200,
+    .cold_sload_cost = 50,
     .cold_account_access_cost = 0,
-    .warm_storage_read_cost = 200,
+    .warm_storage_read_cost = 50,
     .max_initcode_size = null,
     .initcode_word_cost = 0,
     .max_code_size = 24576,
@@ -490,7 +490,7 @@ pub const BYZANTIUM = forkSpec(.BYZANTIUM, SPURIOUS_DRAGON, .{
 /// EIP-1052: introduces the EXTCODEHASH instruction to retrieve the hash of another contract's code.
 /// EIP-1234: makes sure the blockchain doesn't freeze before proof-of-stake and reduces block reward from 3 to 2 ETH.
 /// EIP-1283: Net gas metering for SSTORE without dirty maps
-pub const CONSTANTINOPLE = forkSpec(.CONSTANTINOPLE, SPURIOUS_DRAGON, .{
+pub const CONSTANTINOPLE = forkSpec(.CONSTANTINOPLE, BYZANTIUM, .{
     .updateCosts = struct {
         fn f(table: *FixedGasCosts, spec: Spec) void {
             _ = spec;
@@ -500,14 +500,19 @@ pub const CONSTANTINOPLE = forkSpec(.CONSTANTINOPLE, SPURIOUS_DRAGON, .{
             table.costs[@intFromEnum(Opcode.SAR)] = FixedGasCosts.VERYLOW;
             // EIP-1014: CREATE2 opcode
             table.costs[@intFromEnum(Opcode.CREATE2)] = 32000;
+            // EIP-1052: EXTCODEHASH opcode
+            table.costs[@intFromEnum(Opcode.EXTCODEHASH)] = 400;
         }
     }.f,
 });
 
 /// Petersburg (February 2019)
 ///
-/// Removed EIP-1283
-pub const PETERSBURG = SPURIOUS_DRAGON;
+/// Constantinople with EIP-1283 removed.
+/// Includes: EIP-145 (SHL/SHR/SAR), EIP-1014 (CREATE2), EIP-1052 (EXTCODEHASH)
+/// Note: Since EIP-1283 is not implemented in this codebase, Petersburg is
+/// functionally identical to Constantinople.
+pub const PETERSBURG = CONSTANTINOPLE;
 
 /// Istanbul (December, 2019)
 ///
@@ -517,7 +522,7 @@ pub const PETERSBURG = SPURIOUS_DRAGON;
 /// EIP-1884: optimising opcode gas prices based on consumption.
 /// EIP-2028: reduces the cost of CallData to allow more data in blocks - good for Layer 2 scaling.
 /// EIP-2200: other opcode gas price alterations.
-pub const ISTANBUL = forkSpec(.ISTANBUL, SPURIOUS_DRAGON, .{
+pub const ISTANBUL = forkSpec(.ISTANBUL, PETERSBURG, .{
     .cold_sload_cost = 800, // EIP-1884
     .updateCosts = struct {
         fn f(table: *FixedGasCosts, spec: Spec) void {
