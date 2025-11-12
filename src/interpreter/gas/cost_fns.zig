@@ -100,6 +100,19 @@ pub fn expCost(spec: Spec, exponent_byte_size: u8) u64 {
     return per_byte *| @as(u64, exponent_byte_size);
 }
 
+/// Calculate MCOPY dynamic gas cost (per-word copy cost only).
+///
+/// Returns ONLY the dynamic portion. The base cost (VERYLOW = 3 gas) is charged
+/// separately via opcode.baseCost().
+///
+/// Formula: 3 gas per word
+///
+/// EIPs: EIP-5656 (Cancun)
+pub fn mcopyDynamicCost(length: usize) u64 {
+    // 3 gas per word, no additional base cost
+    return copyCost(0, 3, length);
+}
+
 /// Calculate calldata gas cost for given data.
 ///
 /// Handles EIP-2028 change:

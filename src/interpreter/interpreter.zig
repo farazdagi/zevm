@@ -412,7 +412,21 @@ pub const Interpreter = struct {
             },
 
             .MSIZE => try handlers.opMsize(&self.ctx.stack, &self.ctx.memory),
-            .MCOPY => try handlers.opMcopy(&self.ctx.stack, &self.ctx.memory),
+
+            .MCOPY => {
+                const length_u256 = try self.ctx.stack.peek(2);
+                const length = length_u256.toUsize() orelse return error.InvalidOffset;
+
+                // Charge memory expansion for both source and dest regions.
+                try self.chargeMemoryExpansionDualRegion(0, 1, 2);
+
+                // Charge per-word copy cost (base VERYLOW=3 already charged)
+                try self.gas.consume(cost_fns.mcopyDynamicCost(length));
+
+                try handlers.opMcopy(&self.ctx.stack, &self.ctx.memory);
+
+                self.gas.updateMemoryCost(self.ctx.memory.len());
+            },
 
             // ================================================================
             // Storage Operations
@@ -525,6 +539,36 @@ pub const Interpreter = struct {
 
         // Charge memory expansion gas
         const expansion_gas = self.gas.memoryExpansionCost(old_size, new_size);
+        try self.gas.consume(expansion_gas);
+    }
+
+    /// Charge gas for memory expansion with two regions (e.g., MCOPY source and dest).
+    ///
+    /// Calculates the maximum memory size needed for both regions and charges
+    /// expansion cost accordingly. Handles zero-length case (no charge).
+    fn chargeMemoryExpansionDualRegion(
+        self: *Self,
+        offset1_from_stack_top: usize,
+        offset2_from_stack_top: usize,
+        length_from_stack_top: usize,
+    ) !void {
+        const offset1_u256 = try self.ctx.stack.peek(offset1_from_stack_top);
+        const offset2_u256 = try self.ctx.stack.peek(offset2_from_stack_top);
+        const length_u256 = try self.ctx.stack.peek(length_from_stack_top);
+
+        const offset1 = offset1_u256.toUsize() orelse return error.InvalidOffset;
+        const offset2 = offset2_u256.toUsize() orelse return error.InvalidOffset;
+        const length = length_u256.toUsize() orelse return error.InvalidOffset;
+
+        // No expansion needed for zero-length
+        if (length == 0) return;
+
+        const old_size = self.ctx.memory.len();
+        const end1 = offset1 +| length; // Saturating add
+        const end2 = offset2 +| length;
+        const max_end = @max(end1, end2);
+
+        const expansion_gas = self.gas.memoryExpansionCost(old_size, max_end);
         try self.gas.consume(expansion_gas);
     }
 
