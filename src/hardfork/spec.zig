@@ -191,6 +191,11 @@ pub const Spec = struct {
         };
     }
 
+    /// Get base gas costs for all defined opcodes.
+    pub fn gasCosts(self: Spec) FixedGasCosts {
+        return FixedGasCosts.forFork(self.fork);
+    }
+
     /// Check if a specific EIP is active in this fork
     pub fn hasEIP(self: Spec, comptime eip: u16) bool {
         return switch (eip) {
