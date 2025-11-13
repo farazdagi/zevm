@@ -95,22 +95,3 @@ fn computeCostsForSpec(comptime spec: Spec) FixedGasCosts {
 
     return table;
 }
-
-/// Pre-computed gas cost tables for each fork.
-pub const FRONTIER: FixedGasCosts = computeCostsForSpec(hardfork.FRONTIER);
-pub const HOMESTEAD: FixedGasCosts = computeCostsForSpec(hardfork.HOMESTEAD);
-pub const TANGERINE: FixedGasCosts = computeCostsForSpec(hardfork.TANGERINE);
-pub const SPURIOUS_DRAGON: FixedGasCosts = computeCostsForSpec(hardfork.SPURIOUS_DRAGON);
-pub const BYZANTIUM: FixedGasCosts = computeCostsForSpec(hardfork.BYZANTIUM);
-pub const CONSTANTINOPLE: FixedGasCosts = computeCostsForSpec(hardfork.CONSTANTINOPLE);
-pub const PETERSBURG: FixedGasCosts = computeCostsForSpec(hardfork.PETERSBURG);
-pub const ISTANBUL: FixedGasCosts = computeCostsForSpec(hardfork.ISTANBUL);
-pub const MUIR_GLACIER: FixedGasCosts = computeCostsForSpec(hardfork.MUIR_GLACIER);
-pub const BERLIN: FixedGasCosts = computeCostsForSpec(hardfork.BERLIN);
-pub const LONDON: FixedGasCosts = computeCostsForSpec(hardfork.LONDON);
-pub const ARROW_GLACIER: FixedGasCosts = computeCostsForSpec(hardfork.ARROW_GLACIER);
-pub const GRAY_GLACIER: FixedGasCosts = computeCostsForSpec(hardfork.GRAY_GLACIER);
-pub const MERGE: FixedGasCosts = computeCostsForSpec(hardfork.MERGE);
-pub const SHANGHAI: FixedGasCosts = computeCostsForSpec(hardfork.SHANGHAI);
-pub const CANCUN: FixedGasCosts = computeCostsForSpec(hardfork.CANCUN);
-pub const PRAGUE: FixedGasCosts = computeCostsForSpec(hardfork.PRAGUE);
