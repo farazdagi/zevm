@@ -2,40 +2,40 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
-const Stack = @import("../stack.zig").Stack;
+const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Bitwise AND.
 ///
 /// Stack: [a, b, ...] -> [a & b, ...]
-pub inline fn opAnd(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opAnd(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.bitAnd(b.*);
 }
 
 /// Bitwise OR.
 ///
 /// Stack: [a, b, ...] -> [a | b, ...]
-pub inline fn opOr(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opOr(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.bitOr(b.*);
 }
 
 /// Bitwise XOR.
 ///
 /// Stack: [a, b, ...] -> [a ^ b, ...]
-pub inline fn opXor(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opXor(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.bitXor(b.*);
 }
 
 /// Bitwise NOT.
 ///
 /// Stack: [a, ...] -> [~a, ...]
-pub inline fn opNot(stack: *Stack) !void {
-    const a = try stack.peekMut(0);
+pub fn opNot(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.peekMut(0);
     a.* = a.bitNot();
 }
 
@@ -44,9 +44,9 @@ pub inline fn opNot(stack: *Stack) !void {
 /// Stack: [i, x, ...] -> [byte_i(x), ...]
 /// Returns the i-th byte of x (index 0 is most significant byte, big-endian).
 /// Returns 0 if i >= 32.
-pub inline fn opByte(stack: *Stack) !void {
-    const i_u256 = try stack.pop();
-    const x = try stack.peekMut(0);
+pub fn opByte(interp: *Interpreter) !void {
+    const i_u256 = try interp.ctx.stack.pop();
+    const x = try interp.ctx.stack.peekMut(0);
 
     // Convert index to u8, handling out of bounds
     const i_u8: u8 = if (i_u256.toU64()) |val|
@@ -63,9 +63,9 @@ pub inline fn opByte(stack: *Stack) !void {
 /// Stack: [shift, value, ...] -> [value << shift, ...]
 /// All values treated as unsigned.
 /// If shift >= 256, result is 0.
-pub inline fn opShl(stack: *Stack) !void {
-    const shift_u256 = try stack.pop();
-    const value = try stack.peekMut(0);
+pub fn opShl(interp: *Interpreter) !void {
+    const shift_u256 = try interp.ctx.stack.pop();
+    const value = try interp.ctx.stack.peekMut(0);
 
     // Convert shift to u32, capping at 256
     const shift: u32 = if (shift_u256.toU64()) |val|
@@ -81,9 +81,9 @@ pub inline fn opShl(stack: *Stack) !void {
 /// Stack: [shift, value, ...] -> [value >> shift, ...]
 /// Zero-fills on the left (logical shift).
 /// If shift >= 256, result is 0.
-pub inline fn opShr(stack: *Stack) !void {
-    const shift_u256 = try stack.pop();
-    const value = try stack.peekMut(0);
+pub fn opShr(interp: *Interpreter) !void {
+    const shift_u256 = try interp.ctx.stack.pop();
+    const value = try interp.ctx.stack.peekMut(0);
 
     const shift: u32 = if (shift_u256.toU64()) |val|
         if (val <= 256) @intCast(val) else 256
@@ -100,9 +100,9 @@ pub inline fn opShr(stack: *Stack) !void {
 /// If shift >= 256:
 ///   - Returns 0 if value >= 0 (MSB = 0)
 ///   - Returns MAX if value < 0 (MSB = 1)
-pub inline fn opSar(stack: *Stack) !void {
-    const shift_u256 = try stack.pop();
-    const value = try stack.peekMut(0);
+pub fn opSar(interp: *Interpreter) !void {
+    const shift_u256 = try interp.ctx.stack.pop();
+    const value = try interp.ctx.stack.peekMut(0);
 
     const shift: u32 = if (shift_u256.toU64()) |val|
         if (val <= 256) @intCast(val) else 256
@@ -172,8 +172,8 @@ test "NOT" {
 }
 
 test "BYTE" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
+    var interp = try test_helpers.createTestInterpreter();
+    defer interp.deinit();
 
     // Create a known value: 0x0102030405060708...
     const val = U256{
@@ -186,31 +186,31 @@ test "BYTE" {
     };
 
     // Extract byte 0 (most significant) = 0x07
-    try stack.push(val); // x first
-    try stack.push(U256.fromU64(0)); // i second (on top)
-    try opByte(&stack);
-    const result0 = try stack.pop();
+    try interp.ctx.stack.push(val); // x first
+    try interp.ctx.stack.push(U256.fromU64(0)); // i second (on top)
+    try opByte(&interp);
+    const result0 = try interp.ctx.stack.pop();
     try expectEqual(0x07, result0.toU64().?);
 
     // Extract byte 1 = 0x06
-    try stack.push(val);
-    try stack.push(U256.fromU64(1));
-    try opByte(&stack);
-    const result1 = try stack.pop();
+    try interp.ctx.stack.push(val);
+    try interp.ctx.stack.push(U256.fromU64(1));
+    try opByte(&interp);
+    const result1 = try interp.ctx.stack.pop();
     try expectEqual(0x06, result1.toU64().?);
 
     // Extract byte 31 (least significant) = 0x18
-    try stack.push(val);
-    try stack.push(U256.fromU64(31));
-    try opByte(&stack);
-    const result31 = try stack.pop();
+    try interp.ctx.stack.push(val);
+    try interp.ctx.stack.push(U256.fromU64(31));
+    try opByte(&interp);
+    const result31 = try interp.ctx.stack.pop();
     try expectEqual(0x18, result31.toU64().?);
 
     // Extract byte 32 (out of bounds) = 0
-    try stack.push(val);
-    try stack.push(U256.fromU64(32));
-    try opByte(&stack);
-    const result_oob = try stack.pop();
+    try interp.ctx.stack.push(val);
+    try interp.ctx.stack.push(U256.fromU64(32));
+    try opByte(&interp);
+    const result_oob = try interp.ctx.stack.pop();
     try expectEqual(0, result_oob.toU64().?);
 }
 
@@ -239,8 +239,8 @@ test "SHR" {
 }
 
 test "SAR" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
+    var interp = try test_helpers.createTestInterpreter();
+    defer interp.deinit();
 
     // Positive values (like SHR)
     const positive_cases = [_]struct {
@@ -253,34 +253,34 @@ test "SAR" {
     };
 
     for (positive_cases) |tc| {
-        try stack.push(U256.fromU64(tc.value));
-        try stack.push(U256.fromU64(tc.shift));
-        try opSar(&stack);
-        const result = try stack.pop();
+        try interp.ctx.stack.push(U256.fromU64(tc.value));
+        try interp.ctx.stack.push(U256.fromU64(tc.shift));
+        try opSar(&interp);
+        const result = try interp.ctx.stack.pop();
         try expectEqual(tc.expected, result.toU64().?);
-        try expectEqual(0, stack.len);
+        try expectEqual(0, interp.ctx.stack.len);
     }
 
     // Negative value - sign extension
     const MIN_I256 = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } };
-    try stack.push(MIN_I256);
-    try stack.push(U256.fromU64(8));
-    try opSar(&stack);
-    const result_neg = try stack.pop();
+    try interp.ctx.stack.push(MIN_I256);
+    try interp.ctx.stack.push(U256.fromU64(8));
+    try opSar(&interp);
+    const result_neg = try interp.ctx.stack.pop();
     try expectEqual(0xFF80000000000000, result_neg.limbs[3]);
 
     // Overflow cases
     // Positive value shifted by >= 256 = 0
-    try stack.push(U256.fromU64(123));
-    try stack.push(U256.fromU64(300));
-    try opSar(&stack);
-    const result_pos_overflow = try stack.pop();
+    try interp.ctx.stack.push(U256.fromU64(123));
+    try interp.ctx.stack.push(U256.fromU64(300));
+    try opSar(&interp);
+    const result_pos_overflow = try interp.ctx.stack.pop();
     try expect(result_pos_overflow.isZero());
 
     // Negative value shifted by >= 256 = MAX
-    try stack.push(U256.MAX);
-    try stack.push(U256.fromU64(300));
-    try opSar(&stack);
-    const result_neg_overflow = try stack.pop();
+    try interp.ctx.stack.push(U256.MAX);
+    try interp.ctx.stack.push(U256.fromU64(300));
+    try opSar(&interp);
+    const result_neg_overflow = try interp.ctx.stack.pop();
     try expect(result_neg_overflow.eql(U256.MAX));
 }

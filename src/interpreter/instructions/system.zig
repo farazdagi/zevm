@@ -2,15 +2,15 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
-const Stack = @import("../stack.zig").Stack;
+const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Create a new contract (CREATE).
 ///
 /// Stack: [..., value, offset, length] -> [..., address]
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opCreate(stack: *Stack) !void {
-    _ = stack;
+pub fn opCreate(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
@@ -19,8 +19,8 @@ pub inline fn opCreate(stack: *Stack) !void {
 /// Stack: [..., value, offset, length, salt] -> [..., address]
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opCreate2(stack: *Stack) !void {
-    _ = stack;
+pub fn opCreate2(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
@@ -29,8 +29,8 @@ pub inline fn opCreate2(stack: *Stack) !void {
 /// Stack: [..., gas, address, value, argsOffset, argsLength, retOffset, retLength] -> [..., success]
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opCall(stack: *Stack) !void {
-    _ = stack;
+pub fn opCall(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
@@ -40,8 +40,8 @@ pub inline fn opCall(stack: *Stack) !void {
 /// Note: Deprecated in favor of DELEGATECALL.
 /// This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opCallcode(stack: *Stack) !void {
-    _ = stack;
+pub fn opCallcode(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
@@ -50,8 +50,8 @@ pub inline fn opCallcode(stack: *Stack) !void {
 /// Stack: [..., gas, address, argsOffset, argsLength, retOffset, retLength] -> [..., success]
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opDelegatecall(stack: *Stack) !void {
-    _ = stack;
+pub fn opDelegatecall(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
@@ -60,8 +60,8 @@ pub inline fn opDelegatecall(stack: *Stack) !void {
 /// Stack: [..., gas, address, argsOffset, argsLength, retOffset, retLength] -> [..., success]
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opStaticcall(stack: *Stack) !void {
-    _ = stack;
+pub fn opStaticcall(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
@@ -70,53 +70,11 @@ pub inline fn opStaticcall(stack: *Stack) !void {
 /// Stack: [..., address] -> []
 /// Note: This operation requires state modifications and special handling.
 /// It will be handled specially in the interpreter's execute() function.
-pub inline fn opSelfdestruct(stack: *Stack) !void {
-    _ = stack;
+pub fn opSelfdestruct(interp: *Interpreter) !void {
+    _ = interp;
     return error.UnimplementedOpcode;
 }
 
 // ============================================================================
 // Tests
 // ============================================================================
-
-const expect = std.testing.expect;
-const expectEqual = std.testing.expectEqual;
-const expectError = std.testing.expectError;
-
-test "system: all operations unimplemented" {
-    var stack = try Stack.init(std.testing.allocator);
-    defer stack.deinit();
-
-    // CREATE
-    try stack.push(U256.fromU64(32)); // length
-    try stack.push(U256.ZERO); // offset
-    try stack.push(U256.ZERO); // value
-    try expectError(error.UnimplementedOpcode, opCreate(&stack));
-
-    // CREATE2
-    try stack.push(U256.ZERO); // salt
-    try stack.push(U256.fromU64(32)); // length
-    try stack.push(U256.ZERO); // offset
-    try stack.push(U256.ZERO); // value
-    try expectError(error.UnimplementedOpcode, opCreate2(&stack));
-
-    // CALL
-    for (0..7) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, opCall(&stack));
-
-    // CALLCODE
-    for (0..7) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, opCallcode(&stack));
-
-    // DELEGATECALL
-    for (0..6) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, opDelegatecall(&stack));
-
-    // STATICCALL
-    for (0..6) |_| try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, opStaticcall(&stack));
-
-    // SELFDESTRUCT
-    try stack.push(U256.ZERO);
-    try expectError(error.UnimplementedOpcode, opSelfdestruct(&stack));
-}

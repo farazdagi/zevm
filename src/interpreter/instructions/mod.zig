@@ -10,6 +10,7 @@ const logging = @import("logging.zig");
 const memory = @import("memory.zig");
 const storage = @import("storage.zig");
 const system = @import("system.zig");
+const stack = @import("stack.zig");
 const test_helpers = @import("test_helpers.zig");
 
 // ============================================================================
@@ -124,6 +125,13 @@ pub const opDelegatecall = system.opDelegatecall;
 pub const opStaticcall = system.opStaticcall;
 pub const opSelfdestruct = system.opSelfdestruct;
 
+// Stack operations
+pub const opPushN = stack.opPushN;
+pub const opDupN = stack.opDupN;
+pub const opSwapN = stack.opSwapN;
+pub const opPop = stack.opPop;
+pub const opPush0 = stack.opPush0;
+
 test {
     std.testing.refAllDecls(@This());
     _ = arithmetic;
@@ -136,5 +144,6 @@ test {
     _ = memory;
     _ = storage;
     _ = system;
+    _ = stack;
     _ = test_helpers;
 }

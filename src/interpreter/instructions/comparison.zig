@@ -2,58 +2,58 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
-const Stack = @import("../stack.zig").Stack;
+const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Less than (LT) - unsigned comparison.
 ///
 /// Stack: [a, b, ...] -> [a < b ? 1 : 0, ...]
-pub inline fn opLt(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opLt(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.set(a.lt(b.*));
 }
 
 /// Greater than (GT) - unsigned comparison.
 ///
 /// Stack: [a, b, ...] -> [a > b ? 1 : 0, ...]
-pub inline fn opGt(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opGt(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.set(a.gt(b.*));
 }
 
 /// Signed less than (SLT) - signed comparison.
 ///
 /// Stack: [a, b, ...] -> [a < b ? 1 : 0, ...] (signed)
-pub inline fn opSlt(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opSlt(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.set(a.slt(b.*));
 }
 
 /// Signed greater than (SGT) - signed comparison.
 ///
 /// Stack: [a, b, ...] -> [a > b ? 1 : 0, ...] (signed)
-pub inline fn opSgt(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opSgt(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.set(a.sgt(b.*));
 }
 
 /// Equality (EQ).
 ///
 /// Stack: [a, b, ...] -> [a == b ? 1 : 0, ...]
-pub inline fn opEq(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opEq(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.set(a.eql(b.*));
 }
 
 /// Is zero (ISZERO).
 ///
 /// Stack: [a, ...] -> [a == 0 ? 1 : 0, ...]
-pub inline fn opIszero(stack: *Stack) !void {
-    const a = try stack.peekMut(0);
+pub fn opIszero(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.peekMut(0);
     a.set(a.isZero());
 }
 

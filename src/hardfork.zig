@@ -443,7 +443,7 @@ pub const FRONTIER = Spec{
             // Note: SHL(0x1B), SHR(0x1C), SAR(0x1D) added in Constantinople
 
             // 0x20: Crypto operations
-            t[@intFromEnum(Opcode.KECCAK256)] = .{ .execute = handlers.crypto.opKeccak256 }; // TODO: dynamic gas for memory
+            t[@intFromEnum(Opcode.KECCAK256)] = .{ .execute = handlers.opKeccak256 }; // TODO: dynamic gas for memory
 
             // 0x30-0x3F: Environmental information
             t[@intFromEnum(Opcode.ADDRESS)] = .{ .execute = handlers.opAddress };
@@ -524,7 +524,7 @@ pub const FRONTIER = Spec{
             // Note: STATICCALL(0xFA) added in Byzantium
             // Note: REVERT(0xFD) added in Byzantium
             t[@intFromEnum(Opcode.INVALID)] = .{ .execute = InstructionTable.opInvalid, .is_control_flow = true };
-            t[@intFromEnum(Opcode.SELFDESTRUCT)] = .{ .execute = handlers.system.opSelfdestruct, .is_control_flow = true };
+            t[@intFromEnum(Opcode.SELFDESTRUCT)] = .{ .execute = handlers.opSelfdestruct, .is_control_flow = true };
         }
     }.f,
     // TODO: review and prune, base cost is calculated in updateCosts.

@@ -2,15 +2,15 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
-const Stack = @import("../stack.zig").Stack;
+const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Addition (ADD).
 ///
 /// Stack: [a, b, ...] -> [a + b, ...]
 /// Wraps on overflow (modulo 2^256)
-pub inline fn opAdd(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opAdd(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.add(b.*);
 }
 
@@ -18,9 +18,9 @@ pub inline fn opAdd(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a * b, ...]
 /// Wraps on overflow (modulo 2^256)
-pub inline fn opMul(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opMul(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.mul(b.*);
 }
 
@@ -28,9 +28,9 @@ pub inline fn opMul(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a - b, ...]
 /// Wraps on underflow (modulo 2^256)
-pub inline fn opSub(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opSub(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.sub(b.*);
 }
 
@@ -38,9 +38,9 @@ pub inline fn opSub(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a // b, ...]
 /// Division by zero returns 0 (EVM spec)
-pub inline fn opDiv(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opDiv(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.div(b.*);
 }
 
@@ -48,9 +48,9 @@ pub inline fn opDiv(stack: *Stack) !void {
 ///
 /// Stack: [a, b, ...] -> [a % b, ...]
 /// Modulo by zero returns 0 (EVM spec)
-pub inline fn opMod(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opMod(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.rem(b.*);
 }
 
@@ -61,9 +61,9 @@ pub inline fn opMod(stack: *Stack) !void {
 /// Gas must be charged BEFORE calling this function:
 /// - Base gas is charged in interpreter.step()
 /// - Dynamic gas (based on exponent byte length) must be charged in execute()
-pub inline fn opExp(stack: *Stack) !void {
-    const base = try stack.pop();
-    const exponent = try stack.peekMut(0);
+pub fn opExp(interp: *Interpreter) !void {
+    const base = try interp.ctx.stack.pop();
+    const exponent = try interp.ctx.stack.peekMut(0);
     exponent.* = base.exp(exponent.*);
 }
 
@@ -74,9 +74,9 @@ pub inline fn opExp(stack: *Stack) !void {
 /// - byte_num: position of the sign byte (0 = rightmost/LSB, 31 = leftmost/MSB)
 /// - If byte_num >= 31, returns value unchanged
 /// - Otherwise, extends the sign bit at position (byte_num * 8 + 7) to all higher bits
-pub inline fn opSignextend(stack: *Stack) !void {
-    const value = try stack.pop();
-    const byte_num_u256 = try stack.peekMut(0);
+pub fn opSignextend(interp: *Interpreter) !void {
+    const value = try interp.ctx.stack.pop();
+    const byte_num_u256 = try interp.ctx.stack.peekMut(0);
 
     // If byte_num doesn't fit in u64, return value unchanged
     const byte_num_u64 = byte_num_u256.toU64() orelse {
@@ -97,9 +97,9 @@ pub inline fn opSignextend(stack: *Stack) !void {
 /// - MIN_I256 / -1 returns MIN_I256 (overflow wraps)
 ///
 /// Stack: [a, b, ...] -> [a / b, ...]
-pub fn opSdiv(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opSdiv(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.sdiv(b.*);
 }
 
@@ -112,9 +112,9 @@ pub fn opSdiv(stack: *Stack) !void {
 /// - Result takes the sign of the dividend
 ///
 /// Stack: [a, b, ...] -> [a % b, ...]
-pub fn opSmod(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.peekMut(0);
+pub fn opSmod(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.peekMut(0);
     b.* = a.srem(b.*);
 }
 
@@ -123,10 +123,10 @@ pub fn opSmod(stack: *Stack) !void {
 /// Computes (a + b) % N with proper overflow handling.
 ///
 /// Stack: [a, b, N, ...] -> [(a + b) % N, ...]
-pub fn opAddmod(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.pop();
-    const n = try stack.peekMut(0);
+pub fn opAddmod(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.pop();
+    const n = try interp.ctx.stack.peekMut(0);
     n.* = a.addmod(b, n.*);
 }
 
@@ -136,10 +136,10 @@ pub fn opAddmod(stack: *Stack) !void {
 /// Uses widening multiplication or reduction to avoid overflow.
 ///
 /// Stack: [a, b, N, ...] -> [(a * b) % N, ...]
-pub fn opMulmod(stack: *Stack) !void {
-    const a = try stack.pop();
-    const b = try stack.pop();
-    const n = try stack.peekMut(0);
+pub fn opMulmod(interp: *Interpreter) !void {
+    const a = try interp.ctx.stack.pop();
+    const b = try interp.ctx.stack.pop();
+    const n = try interp.ctx.stack.peekMut(0);
     n.* = a.mulmod(b, n.*);
 }
 

@@ -2,9 +2,24 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
-const Stack = @import("../stack.zig").Stack;
+const Interpreter = @import("../interpreter.zig").Interpreter;
 
 const expectEqual = std.testing.expectEqual;
+
+/// Create a minimal test interpreter with default bytecode (STOP).
+pub fn createTestInterpreter() !Interpreter {
+    const Spec = @import("../../hardfork.zig").Spec;
+    const spec = Spec.forFork(.CANCUN);
+    const bytecode = [_]u8{0x00}; // STOP
+    return try Interpreter.init(std.testing.allocator, &bytecode, spec, 1000000);
+}
+
+/// Create a test interpreter with custom bytecode.
+pub fn createTestInterpreterWithBytecode(bytecode: []const u8) !Interpreter {
+    const Spec = @import("../../hardfork.zig").Spec;
+    const spec = Spec.forFork(.CANCUN);
+    return try Interpreter.init(std.testing.allocator, bytecode, spec, 1000000);
+}
 
 /// Test case for stack operations with varying arity.
 pub const TestCase = union(enum) {
@@ -82,36 +97,36 @@ pub fn testOp(
     test_cases: []const TestCase,
 ) !void {
     for (test_cases) |tc| {
-        var stack = try Stack.init(std.testing.allocator);
-        defer stack.deinit();
+        var interp = try createTestInterpreter();
+        defer interp.deinit();
 
         switch (tc) {
             .unary => |case| {
-                try stack.push(case.value);
-                try op_fn(&stack);
+                try interp.ctx.stack.push(case.value);
+                try op_fn(&interp);
 
-                const result = try stack.pop();
+                const result = try interp.ctx.stack.pop();
                 try std.testing.expect(case.expected.eql(result));
             },
             .binary => |case| {
-                try stack.push(case.b); // second operand (pushed first, bottom)
-                try stack.push(case.a); // first operand (pushed second, on top)
-                try op_fn(&stack);
+                try interp.ctx.stack.push(case.b); // second operand (pushed first, bottom)
+                try interp.ctx.stack.push(case.a); // first operand (pushed second, on top)
+                try op_fn(&interp);
 
-                const result = try stack.pop();
+                const result = try interp.ctx.stack.pop();
                 try std.testing.expect(case.expected.eql(result));
             },
             .ternary => |case| {
-                try stack.push(case.c); // third operand (pushed first, bottom)
-                try stack.push(case.b); // second operand
-                try stack.push(case.a); // first operand (pushed last, on top)
-                try op_fn(&stack);
+                try interp.ctx.stack.push(case.c); // third operand (pushed first, bottom)
+                try interp.ctx.stack.push(case.b); // second operand
+                try interp.ctx.stack.push(case.a); // first operand (pushed last, on top)
+                try op_fn(&interp);
 
-                const result = try stack.pop();
+                const result = try interp.ctx.stack.pop();
                 try std.testing.expect(case.expected.eql(result));
             },
         }
 
-        try expectEqual(0, stack.len);
+        try expectEqual(0, interp.ctx.stack.len);
     }
 }
