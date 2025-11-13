@@ -11,7 +11,7 @@ const FixedGasCosts = @import("interpreter/gas/FixedGasCosts.zig");
 const Opcode = @import("interpreter/opcode.zig").Opcode;
 const InstructionTable = @import("interpreter/InstructionTable.zig");
 const handlers = @import("interpreter/instructions/mod.zig");
-const DynamicGasCosts = @import("interpreter/gas/dynamic_gas.zig");
+const DynamicGasCosts = @import("interpreter/gas/DynamicGasCosts.zig");
 
 /// Ethereum hard fork identifier.
 ///
@@ -425,7 +425,7 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.SMOD)] = .{ .execute = handlers.opSmod };
             t[@intFromEnum(Opcode.ADDMOD)] = .{ .execute = handlers.opAddmod };
             t[@intFromEnum(Opcode.MULMOD)] = .{ .execute = handlers.opMulmod };
-            t[@intFromEnum(Opcode.EXP)] = .{ .execute = handlers.opExp, .dynamicGasCost = DynamicGasCosts.expDynamicGas };
+            t[@intFromEnum(Opcode.EXP)] = .{ .execute = handlers.opExp, .dynamicGasCost = DynamicGasCosts.opExp };
             t[@intFromEnum(Opcode.SIGNEXTEND)] = .{ .execute = handlers.opSignextend };
 
             // 0x10-0x1A: Comparison & bitwise operations
@@ -474,9 +474,9 @@ pub const FRONTIER = Spec{
 
             // 0x50-0x5B: Stack, memory, storage & flow operations
             t[@intFromEnum(Opcode.POP)] = .{ .execute = handlers.opPop };
-            t[@intFromEnum(Opcode.MLOAD)] = .{ .execute = handlers.opMload, .dynamicGasCost = DynamicGasCosts.mloadDynamicGas };
-            t[@intFromEnum(Opcode.MSTORE)] = .{ .execute = handlers.opMstore, .dynamicGasCost = DynamicGasCosts.mstoreDynamicGas };
-            t[@intFromEnum(Opcode.MSTORE8)] = .{ .execute = handlers.opMstore8, .dynamicGasCost = DynamicGasCosts.mstore8DynamicGas };
+            t[@intFromEnum(Opcode.MLOAD)] = .{ .execute = handlers.opMload, .dynamicGasCost = DynamicGasCosts.opMload };
+            t[@intFromEnum(Opcode.MSTORE)] = .{ .execute = handlers.opMstore, .dynamicGasCost = DynamicGasCosts.opMstore };
+            t[@intFromEnum(Opcode.MSTORE8)] = .{ .execute = handlers.opMstore8, .dynamicGasCost = DynamicGasCosts.opMstore8 };
             t[@intFromEnum(Opcode.SLOAD)] = .{ .execute = handlers.opSload };
             t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore }; // TODO: dynamic gas
             t[@intFromEnum(Opcode.JUMP)] = .{ .execute = handlers.opJump, .is_control_flow = true };
@@ -518,7 +518,7 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.CREATE)] = .{ .execute = handlers.opCreate }; // TODO: dynamic gas
             t[@intFromEnum(Opcode.CALL)] = .{ .execute = handlers.opCall }; // TODO: dynamic gas
             t[@intFromEnum(Opcode.CALLCODE)] = .{ .execute = handlers.opCallcode }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.RETURN)] = .{ .execute = handlers.opReturn, .dynamicGasCost = DynamicGasCosts.returnDynamicGas, .is_control_flow = true };
+            t[@intFromEnum(Opcode.RETURN)] = .{ .execute = handlers.opReturn, .dynamicGasCost = DynamicGasCosts.opReturn, .is_control_flow = true };
             // Note: DELEGATECALL(0xF4) added in Homestead
             // Note: CREATE2(0xF5) added in Constantinople
             // Note: STATICCALL(0xFA) added in Byzantium
@@ -645,7 +645,7 @@ pub const BYZANTIUM = forkSpec(.BYZANTIUM, SPURIOUS_DRAGON, .{
             t[@intFromEnum(Opcode.RETURNDATASIZE)] = .{ .execute = handlers.opReturndatasize };
             t[@intFromEnum(Opcode.RETURNDATACOPY)] = .{ .execute = handlers.opReturndatacopy }; // TODO: dynamic gas
             t[@intFromEnum(Opcode.STATICCALL)] = .{ .execute = handlers.opStaticcall }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.REVERT)] = .{ .execute = handlers.opRevert, .dynamicGasCost = DynamicGasCosts.revertDynamicGas, .is_control_flow = true };
+            t[@intFromEnum(Opcode.REVERT)] = .{ .execute = handlers.opRevert, .dynamicGasCost = DynamicGasCosts.opRevert, .is_control_flow = true };
         }
     }.f,
 });
@@ -862,7 +862,7 @@ pub const CANCUN = forkSpec(.CANCUN, SHANGHAI, .{
             const t = &table.table;
             t[@intFromEnum(Opcode.TLOAD)] = .{ .execute = handlers.opTload };
             t[@intFromEnum(Opcode.TSTORE)] = .{ .execute = handlers.opTstore };
-            t[@intFromEnum(Opcode.MCOPY)] = .{ .execute = handlers.opMcopy, .dynamicGasCost = DynamicGasCosts.mcopyDynamicGas };
+            t[@intFromEnum(Opcode.MCOPY)] = .{ .execute = handlers.opMcopy, .dynamicGasCost = DynamicGasCosts.opMcopy };
             t[@intFromEnum(Opcode.BLOBHASH)] = .{ .execute = handlers.opBlobhash };
             t[@intFromEnum(Opcode.BLOBBASEFEE)] = .{ .execute = handlers.opBlobbasefee };
         }

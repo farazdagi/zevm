@@ -11,7 +11,6 @@ const Gas = @import("gas/accounting.zig").Gas;
 const Spec = @import("../hardfork.zig").Spec;
 const Opcode = @import("opcode.zig").Opcode;
 const U256 = @import("../primitives/big.zig").U256;
-const cost_fns = @import("gas/cost_fns.zig");
 const Bytecode = @import("bytecode.zig").Bytecode;
 const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 const InstructionTable = @import("InstructionTable.zig");

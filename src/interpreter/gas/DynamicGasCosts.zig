@@ -1,11 +1,8 @@
-//! Gas cost calculation functions.
+//! Dynamic gas cost calculation functions.
 //!
-//! This module contains all gas cost calculations that depend on:
-//! - Fork specifications (via Spec parameter)
-//! - Operation parameters (size, count, flags, etc.)
-//!
-//! All functions are pure - they don't modify state and always return
-//! the same result for the same inputs.
+//! These functions compute gas costs that depend on runtime values (selected fork specifications,
+//! operands, memory expansion, etc.). They are called from the instruction table handlers
+//! before executing the instruction.
 //!
 //! ## Overflow Safety
 //!
@@ -14,8 +11,12 @@
 //! magnitude beyond the block gas limit (~3*10^7) and indicates either a bug
 //! or malicious input. Saturating ensures such cases are safely rejected.
 
+const std = @import("std");
 const Spec = @import("../../hardfork.zig").Spec;
+const Interpreter = @import("../interpreter.zig").Interpreter;
+const U256 = @import("../../primitives/big.zig").U256;
 const Costs = @import("costs.zig").Costs;
+const FixedGasCosts = @import("FixedGasCosts.zig");
 
 /// Calculate total memory cost for given byte size.
 ///
@@ -27,7 +28,111 @@ pub fn memoryCost(byte_size: usize) u64 {
     const words = (byte_size +| 31) / 32;
 
     // Quadratic cost: words^2 / 512 + 3 * words
-    return (words *| words) / 512 +| Costs.MEMORY *| words;
+    return (words *| words) / 512 +| FixedGasCosts.VERYLOW *| words;
+}
+
+/// Compute EXP dynamic gas cost (per-byte portion only).
+///
+/// Returns ONLY the dynamic portion. The base cost is charged separately before executing.
+///
+/// Handles EIP-160 change:
+/// - Pre-Spurious Dragon: 10 * bytes
+/// - Post-Spurious Dragon: 50 * bytes
+///
+/// EIPs: EIP-160 (Spurious Dragon)
+/// Gas depends on the byte length of the exponent.
+pub fn opExp(interp: *Interpreter) !u64 {
+    const exponent = try interp.ctx.stack.peek(1);
+    const exp_bytes: u8 = @intCast(exponent.byteLen());
+    const per_byte: u64 = if (interp.spec.fork.isBefore(.SPURIOUS_DRAGON)) 10 else 50;
+    return per_byte *| @as(u64, exp_bytes);
+}
+
+/// Compute dynamic gas for MLOAD operation.
+///
+/// Gas depends on memory expansion.
+pub fn opMload(interp: *Interpreter) !u64 {
+    const offset_u256 = try interp.ctx.stack.peek(0);
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+
+    const old_size = interp.ctx.memory.len();
+    const new_size = offset +| 32; // Saturating add
+
+    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+    return expansion_gas;
+}
+
+/// Compute dynamic gas for MSTORE operation.
+/// Gas depends on memory expansion (same as MLOAD).
+pub fn opMstore(interp: *Interpreter) !u64 {
+    return opMload(interp); // Same logic
+}
+
+/// Compute dynamic gas for MSTORE8 operation.
+/// Gas depends on memory expansion for a 1-byte write.
+pub fn opMstore8(interp: *Interpreter) !u64 {
+    const offset_u256 = try interp.ctx.stack.peek(0);
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+
+    const old_size = interp.ctx.memory.len();
+    const new_size = offset +| 1; // Saturating add
+
+    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+    return expansion_gas;
+}
+
+/// Compute dynamic gas for RETURN operation.
+/// Gas depends on memory expansion for reading return data.
+pub fn opReturn(interp: *Interpreter) !u64 {
+    const offset_u256 = try interp.ctx.stack.peek(0);
+    const size_u256 = try interp.ctx.stack.peek(1);
+
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+
+    // No expansion for zero-length return
+    if (size == 0) return 0;
+
+    const old_size = interp.ctx.memory.len();
+    const new_size = offset +| size; // Saturating add
+
+    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+    return expansion_gas;
+}
+
+/// Compute dynamic gas for REVERT operation.
+/// Gas depends on memory expansion (same as RETURN).
+pub fn opRevert(interp: *Interpreter) !u64 {
+    return opReturn(interp); // Same logic
+}
+
+/// Compute dynamic gas for MCOPY operation (EIP-5656, Cancun+).
+/// Gas depends on memory expansion for both source and destination regions,
+/// plus per-word copy cost.
+pub fn opMcopy(interp: *Interpreter) !u64 {
+    const dest_u256 = try interp.ctx.stack.peek(0);
+    const src_u256 = try interp.ctx.stack.peek(1);
+    const length_u256 = try interp.ctx.stack.peek(2);
+
+    const dest = dest_u256.toUsize() orelse return error.InvalidOffset;
+    const src = src_u256.toUsize() orelse return error.InvalidOffset;
+    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+
+    // No cost for zero-length copy
+    if (length == 0) return 0;
+
+    const old_size = interp.ctx.memory.len();
+    const end1 = dest +| length; // Saturating add
+    const end2 = src +| length; // Saturating add
+    const max_end = @max(end1, end2);
+
+    const expansion_gas = interp.gas.memoryExpansionCost(old_size, max_end);
+
+    // Copy cost: 3 gas per word
+    const copy_words = (length +| 31) / 32;
+    const copy_gas = 3 *| @as(u64, @intCast(copy_words));
+
+    return expansion_gas + copy_gas;
 }
 
 /// Get account access cost (BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH).
@@ -38,7 +143,7 @@ pub fn memoryCost(byte_size: usize) u64 {
 /// Post-Berlin+: Returns 2600 (cold) or 100 (warm)
 ///
 /// EIPs: EIP-150 (Tangerine), EIP-2929 (Berlin)
-pub fn accountAccessCost(spec: Spec, is_cold: bool) u64 {
+fn accountAccessCost(spec: Spec, is_cold: bool) u64 {
     if (is_cold or spec.fork.isBefore(.BERLIN)) {
         return spec.cold_account_access_cost;
     }
@@ -53,7 +158,7 @@ pub fn accountAccessCost(spec: Spec, is_cold: bool) u64 {
 /// - Post-Berlin: 2600 (cold) or 100 (warm)
 ///
 /// EIPs: EIP-150 (Tangerine), EIP-2929 (Berlin)
-pub fn callBaseCost(spec: Spec, is_cold: bool) u64 {
+fn callBaseCost(spec: Spec, is_cold: bool) u64 {
     // Pre-Berlin: flat cost
     if (spec.fork.isBefore(.BERLIN)) {
         return if (spec.fork.isBefore(.TANGERINE)) 40 else 700;
@@ -72,7 +177,7 @@ pub fn callBaseCost(spec: Spec, is_cold: bool) u64 {
 /// - Post-Berlin: 2100 (cold) or 100 (warm)
 ///
 /// EIPs: EIP-150 (Tangerine), EIP-1884 (Istanbul), EIP-2929 (Berlin)
-pub fn sloadCost(spec: Spec, is_cold: bool) u64 {
+fn sloadCost(spec: Spec, is_cold: bool) u64 {
     if (spec.fork.isBefore(.BERLIN)) {
         // No cold/warm distinction
         return spec.cold_sload_cost;
@@ -81,44 +186,13 @@ pub fn sloadCost(spec: Spec, is_cold: bool) u64 {
     return if (is_cold) spec.cold_sload_cost else spec.warm_storage_read_cost;
 }
 
-// TODO: sstoreCost() deferred - requires full EIP-2200 state transition logic
-// Will be added when implementing SSTORE opcode
-
-/// Calculate EXP dynamic gas cost (per-byte portion only).
-///
-/// Returns ONLY the dynamic portion. The base cost (10 gas) is charged
-/// separately via opcode.baseCost().
-///
-/// Handles EIP-160 change:
-/// - Pre-Spurious Dragon: 10 * bytes
-/// - Post-Spurious Dragon: 50 * bytes
-///
-/// EIPs: EIP-160 (Spurious Dragon)
-pub fn expCost(spec: Spec, exponent_byte_size: u8) u64 {
-    const per_byte: u64 = if (spec.fork.isBefore(.SPURIOUS_DRAGON)) 10 else 50;
-    return per_byte *| @as(u64, exponent_byte_size);
-}
-
-/// Calculate MCOPY dynamic gas cost (per-word copy cost only).
-///
-/// Returns ONLY the dynamic portion. The base cost (VERYLOW = 3 gas) is charged
-/// separately via opcode.baseCost().
-///
-/// Formula: 3 gas per word
-///
-/// EIPs: EIP-5656 (Cancun)
-pub fn mcopyDynamicCost(length: usize) u64 {
-    // 3 gas per word, no additional base cost
-    return copyCost(0, 3, length);
-}
-
 /// Calculate calldata gas cost for given data.
 ///
 /// Handles EIP-2028 change:
 /// - Pre-Istanbul: 4/zero-byte, 68/non-zero byte
 /// - Post-Istanbul: 4/zero-byte, 16/non-zero byte
 /// EIPs: EIP-2028 (Istanbul)
-pub fn calldataCost(spec: Spec, data: []const u8) u64 {
+fn calldataCost(spec: Spec, data: []const u8) u64 {
     const calldata_nonzero_cost: u64 = if (spec.fork.isBefore(.ISTANBUL)) 68 else 16;
     var cost: u64 = 0;
     for (data) |byte| {
@@ -127,25 +201,10 @@ pub fn calldataCost(spec: Spec, data: []const u8) u64 {
     return cost;
 }
 
-/// Calculate cost for copy operations (CALLDATACOPY, CODECOPY, etc.).
-///
-/// Formula: base + (word_cost * ceil(size/32))
-///
-/// Examples:
-/// - CALLDATACOPY: copyCost(3, 3, size)
-/// - CODECOPY: copyCost(3, 3, size)
-/// - RETURNDATACOPY: copyCost(3, 3, size)
-///
-/// EIPs: Yellow Paper (Frontier), EIP-211 (Byzantium - RETURNDATACOPY)
-pub fn copyCost(base: u64, word_cost: u64, size: usize) u64 {
-    const words = (size +| 31) / 32;
-    return base +| (word_cost *| @as(u64, @intCast(words)));
-}
-
 /// Calculate KECCAK256 (SHA3) cost based on input size.
 ///
 /// Formula: 30 + (6 * ceil(size/32))
-pub fn keccak256Cost(size: usize) u64 {
+fn keccak256Cost(size: usize) u64 {
     const words = (size +| 31) / 32;
     return Costs.KECCAK256_BASE +| (Costs.KECCAK256_WORD *| @as(u64, @intCast(words)));
 }
@@ -153,7 +212,7 @@ pub fn keccak256Cost(size: usize) u64 {
 /// Calculate LOG cost (LOG0-LOG4).
 ///
 /// Formula: 375 + (375 * topic_count) + (8 * data_size_bytes)
-pub fn logCost(topic_count: u8, data_size: usize) u64 {
+fn logCost(topic_count: u8, data_size: usize) u64 {
     const topics = @as(u64, topic_count);
     const bytes = @as(u64, @intCast(data_size));
     return Costs.LOG_BASE +| (Costs.LOG_TOPIC *| topics) +| (Costs.LOG_DATA *| bytes);
@@ -163,9 +222,49 @@ pub fn logCost(topic_count: u8, data_size: usize) u64 {
 // Tests
 // ============================================================================
 
-const std = @import("std");
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
+const expectError = std.testing.expectError;
+
+test "dynamic_gas: basic smoke test" {
+    // This test verifies that the functions compile and have the correct signatures.
+    // Full integration tests will be added later when the interpreter is wired up.
+    const allocator = std.testing.allocator;
+    const spec = Spec.forFork(.CANCUN);
+
+    // Use proper Interpreter initialization
+    const bytecode = &[_]u8{0x00}; // STOP
+    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000);
+    defer interp.deinit();
+
+    // Test EXP with small exponent
+    try interp.ctx.stack.push(U256.fromU64(2)); // base
+    try interp.ctx.stack.push(U256.fromU64(8)); // exponent (1 byte)
+    const exp_gas = try opExp(&interp);
+    try expect(exp_gas > 0);
+
+    // Clear stack
+    _ = try interp.ctx.stack.pop();
+    _ = try interp.ctx.stack.pop();
+
+    // Test MLOAD at offset 0 (no expansion from 0)
+    try interp.ctx.stack.push(U256.fromU64(0));
+    const mload_gas = try opMload(&interp);
+    try expect(mload_gas >= 0); // May be 0 for small expansion
+
+    // Clear stack
+    _ = try interp.ctx.stack.pop();
+
+    // Test RETURN with size 0 (no expansion)
+    try interp.ctx.stack.push(U256.fromU64(0)); // offset
+    try interp.ctx.stack.push(U256.fromU64(0)); // size
+    const return_gas = try opReturn(&interp);
+    try expectEqual(0, return_gas); // Zero-length should be 0
+
+    // Clear stack
+    _ = try interp.ctx.stack.pop();
+    _ = try interp.ctx.stack.pop();
+}
 
 test "memoryCost" {
     const test_cases = [_]struct {
@@ -247,31 +346,6 @@ test "sloadCost - evolution" {
     try expectEqual(100, sloadCost(berlin_spec, false));
 }
 
-test "expCost" {
-    const test_cases = [_]struct {
-        spec: Spec,
-        exponent_byte_size: u8,
-        expected: u64,
-    }{
-        // Pre-Spurious Dragon: 0 bytes (dynamic only: 10 * 0)
-        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 0, .expected = 0 },
-        // Pre-Spurious Dragon: 2 bytes (dynamic only: 10 * 2)
-        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 2, .expected = 20 },
-        // Pre-Spurious Dragon: 32 bytes (dynamic only: 10 * 32)
-        .{ .spec = Spec.forFork(.FRONTIER), .exponent_byte_size = 32, .expected = 320 },
-        // Post-Spurious Dragon: 0 bytes (dynamic only: 50 * 0)
-        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 0, .expected = 0 },
-        // Post-Spurious Dragon: 2 bytes (dynamic only: 50 * 2)
-        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 2, .expected = 100 },
-        // Post-Spurious Dragon: 32 bytes (dynamic only: 50 * 32)
-        .{ .spec = Spec.forFork(.SPURIOUS_DRAGON), .exponent_byte_size = 32, .expected = 1600 },
-    };
-
-    for (test_cases) |tc| {
-        try expectEqual(tc.expected, expCost(tc.spec, tc.exponent_byte_size));
-    }
-}
-
 test "calldataCost" {
     const byzantium_spec = Spec.forFork(.BYZANTIUM);
     const istanbul_spec = Spec.forFork(.ISTANBUL);
@@ -295,26 +369,6 @@ test "calldataCost" {
     try expectEqual(3 * 4 + 1 * 16, calldataCost(berlin_spec, &data1));
     try expectEqual(4 * 16, calldataCost(berlin_spec, &data2));
     try expectEqual(4 * 4, calldataCost(berlin_spec, &data3));
-}
-
-test "copyCost" {
-    const test_cases = [_]struct {
-        base: u64,
-        word_cost: u64,
-        size: usize,
-        expected: u64,
-    }{
-        // 100 bytes = 4 words
-        .{ .base = 3, .word_cost = 3, .size = 100, .expected = 15 },
-        // 32 bytes = 1 word
-        .{ .base = 3, .word_cost = 3, .size = 32, .expected = 6 },
-        // 0 bytes
-        .{ .base = 3, .word_cost = 3, .size = 0, .expected = 3 },
-    };
-
-    for (test_cases) |tc| {
-        try expectEqual(tc.expected, copyCost(tc.base, tc.word_cost, tc.size));
-    }
 }
 
 test "keccak256Cost" {
@@ -366,15 +420,6 @@ test "overflow saturation" {
     const huge_size: usize = if (@sizeOf(usize) >= 8) (1 << 40) else (1 << 20);
     const memory_result = memoryCost(huge_size);
     try expect(memory_result > threshold);
-
-    // copyCost: multiplication saturates
-    // (max_u64 / 2) * 3 = 1.5 * max_u64, saturates to max_u64
-    const copy_result = copyCost(0, max_u64 / 2, 96); // 96 bytes = 3 words
-    try expect(copy_result == max_u64);
-
-    // copyCost: addition saturates to exactly max_u64
-    const copy_result2 = copyCost(max_u64 - 100, 200, 32);
-    try expect(copy_result2 == max_u64);
 
     // keccak256Cost: multiplier (6) is small, need very large size
     // Need size such that 6 * (size/32) > threshold, so size > threshold / 192

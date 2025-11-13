@@ -1,11 +1,11 @@
 //! Runtime gas accounting for EVM execution.
 //!
 //! Tracks gas limit, consumption, refunds, and memory costs during execution.
-//! All cost calculations are delegated to cost_fns.
+//! All cost calculations are delegated to DynamicGasCosts.
 
 const std = @import("std");
 const Spec = @import("../../hardfork.zig").Spec;
-const cost_fns = @import("cost_fns.zig");
+const DynamicGasCosts = @import("DynamicGasCosts.zig");
 
 /// EVM gas accounting state.
 ///
@@ -97,14 +97,14 @@ pub const Gas = struct {
             return 0;
         }
 
-        return cost_fns.memoryCost(new_size) - self.last_memory_cost;
+        return DynamicGasCosts.memoryCost(new_size) - self.last_memory_cost;
     }
 
     /// Update last memory cost after successful expansion.
     ///
     /// Called by interpreter after gas is charged and memory expanded.
     pub fn updateMemoryCost(self: *Self, memory_size: usize) void {
-        self.last_memory_cost = cost_fns.memoryCost(memory_size);
+        self.last_memory_cost = DynamicGasCosts.memoryCost(memory_size);
     }
 };
 
