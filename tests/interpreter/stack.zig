@@ -88,7 +88,7 @@ test "PUSH operations" {
             },
             // Stack: [0]
             .expected_stack = &[_]U256{U256.ZERO},
-            .expected_gas = 3, // PUSH0(3 - VERYLOW) + STOP(0)
+            .expected_gas = 2, // PUSH0(2 - BASE per EIP-3855) + STOP(0)
             .spec = Spec.forFork(.SHANGHAI),
         },
     };

@@ -211,14 +211,14 @@ pub const Opcode = enum(u8) {
 
     /// Get the number of stack items this opcode pops.
     ///
-    /// O(1) lookup from precomputed table - zero runtime cost.
+    /// O(1) lookup from precomputed table.
     pub inline fn popCount(self: Opcode) u8 {
         return pop_count_table[@intFromEnum(self)];
     }
 
     /// Get the number of stack items this opcode pushes.
     ///
-    /// O(1) lookup from precomputed table - zero runtime cost.
+    /// O(1) lookup from precomputed table.
     pub inline fn pushCount(self: Opcode) u8 {
         return push_count_table[@intFromEnum(self)];
     }
@@ -226,7 +226,7 @@ pub const Opcode = enum(u8) {
     /// Get the number of immediate bytes following this opcode.
     ///
     /// Returns 1-32 for PUSH1-PUSH32, 0 for all other opcodes.
-    /// O(1) lookup from precomputed table - zero runtime cost.
+    /// O(1) lookup from precomputed table.
     pub inline fn immediateBytes(self: Opcode) u8 {
         return immediate_bytes_table[@intFromEnum(self)];
     }
@@ -243,6 +243,15 @@ pub const Opcode = enum(u8) {
     /// This is equivalent to immediateBytes() - both return the same values.
     pub inline fn pushSize(self: Opcode) usize {
         return self.immediateBytes();
+    }
+
+    /// Check if this opcode needs memory cost tracking update after execution.
+    ///
+    /// Memory operations (MLOAD, MSTORE, MSTORE8, MCOPY, RETURN, REVERT) need
+    /// the gas accounting's internal memory size tracker updated after execution.
+    /// O(1) lookup from precomputed table.
+    pub inline fn needsMemoryCostUpdate(self: Opcode) bool {
+        return needs_memory_update_table[@intFromEnum(self)];
     }
 };
 
@@ -263,7 +272,7 @@ const opcodes: [256]Opcode = blk: {
 
 /// Lookup table for stack pop counts (0-7).
 ///
-/// Built at compile time for O(1) lookup with zero runtime cost.
+/// Built at compile time for O(1) lookup.
 const pop_count_table: [256]u8 = blk: {
     @setEvalBranchQuota(5000);
     var arr = [_]u8{0} ** 256;
@@ -302,7 +311,7 @@ const pop_count_table: [256]u8 = blk: {
 
 /// Lookup table for stack push counts (0-17).
 ///
-/// Built at compile time for O(1) lookup with zero runtime cost.
+/// Built at compile time for O(1) lookup.
 const push_count_table: [256]u8 = blk: {
     @setEvalBranchQuota(5000);
     var arr = [_]u8{0} ** 256;
@@ -330,7 +339,7 @@ const push_count_table: [256]u8 = blk: {
 
 /// Lookup table for immediate byte counts (0-32).
 ///
-/// Built at compile time for O(1) lookup with zero runtime cost.
+/// Built at compile time for O(1) lookup.
 const immediate_bytes_table: [256]u8 = blk: {
     @setEvalBranchQuota(5000);
     var arr = [_]u8{0} ** 256;
@@ -346,6 +355,23 @@ const immediate_bytes_table: [256]u8 = blk: {
             else => 0,
         };
     }
+
+    break :blk arr;
+};
+
+/// Lookup table for opcodes that need memory cost tracking updates.
+///
+/// Built at compile time for O(1) lookup.
+const needs_memory_update_table: [256]bool = blk: {
+    var arr = [_]bool{false} ** 256;
+
+    // Only these memory-touching opcodes need updates.
+    arr[@intFromEnum(Opcode.MLOAD)] = true;
+    arr[@intFromEnum(Opcode.MSTORE)] = true;
+    arr[@intFromEnum(Opcode.MSTORE8)] = true;
+    arr[@intFromEnum(Opcode.MCOPY)] = true;
+    arr[@intFromEnum(Opcode.RETURN)] = true;
+    arr[@intFromEnum(Opcode.REVERT)] = true;
 
     break :blk arr;
 };

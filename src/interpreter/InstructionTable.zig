@@ -25,10 +25,10 @@ const DynamicGasFn = ?*const fn (interp: *Interpreter) Interpreter.Error!u64;
 /// Metadata and dispatch information for a single instruction.
 const InstructionInfo = struct {
     /// Handler function to execute the instruction.
-    handler: *const fn (interp: *Interpreter) Interpreter.Error!void,
+    execute: *const fn (interp: *Interpreter) Interpreter.Error!void,
 
     /// Optional dynamic gas calculation function.
-    dynamic_gas: DynamicGasFn = null,
+    dynamicGasCost: DynamicGasFn = null,
 
     /// Whether this instruction performs control flow (affects PC directly).
     ///
@@ -36,7 +36,7 @@ const InstructionInfo = struct {
     ///
     /// Note: JUMPI is special - it's NOT marked as is_control_flow, but step() detects PC changes
     /// to handle it correctly.
-    is_control_flow: bool,
+    is_control_flow: bool = false,
 };
 
 /// Table of 256 instruction entries (one per possible opcode byte).
@@ -140,8 +140,8 @@ fn computeHandlersForSpec(comptime spec: Spec) InstructionTable {
     // Initialize all entries to invalid handler.
     for (&table) |*entry| {
         entry.* = InstructionInfo{
-            .handler = unimplementedOpcodeHandler,
-            .dynamic_gas = null,
+            .execute = unimplementedOpcodeHandler,
+            .dynamicGasCost = null,
             .is_control_flow = false,
         };
     }

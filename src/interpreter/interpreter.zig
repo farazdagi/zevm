@@ -14,6 +14,7 @@ const U256 = @import("../primitives/big.zig").U256;
 const cost_fns = @import("gas/cost_fns.zig");
 const Bytecode = @import("bytecode.zig").Bytecode;
 const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
+const InstructionTable = @import("InstructionTable.zig");
 
 // Instruction handlers
 const handlers = @import("instructions/mod.zig");
@@ -116,25 +117,28 @@ pub const Interpreter = struct {
         Revert,
     };
 
-    /// Call-scoped execution context (stack, memory, bytecode)
+    /// Call-scoped execution context (stack, memory, bytecode).
     ctx: CallContext,
 
-    /// Program counter (index into bytecode)
+    /// Program counter (index into bytecode).
     pc: usize,
 
-    /// Gas accounting
+    /// Gas accounting.
     gas: Gas,
 
-    /// Spec (fork-specific rules and costs)
+    /// Spec (fork-specific rules and costs).
     spec: Spec,
 
-    /// Allocator for dynamic memory
+    /// Instruction dispatch table (configured for this fork).
+    table: InstructionTable,
+
+    /// Allocator for dynamic memory.
     allocator: Allocator,
 
-    /// Return data (set by RETURN or REVERT)
+    /// Return data (set by RETURN or REVERT).
     return_data: ?[]const u8,
 
-    /// Whether execution has halted
+    /// Whether execution has halted.
     is_halted: bool,
 
     const Self = @This();
@@ -162,6 +166,7 @@ pub const Interpreter = struct {
             .pc = 0,
             .gas = Gas.init(gas_limit, spec),
             .spec = spec,
+            .table = spec.instructionTable(),
             .is_halted = false,
             .return_data = null,
         };
@@ -195,301 +200,48 @@ pub const Interpreter = struct {
             return error.InvalidProgramCounter;
         }
 
-        // Fetch and decode opcode byte
-        const opcode_byte = code[self.pc];
-        const opcode = try Opcode.fromByte(opcode_byte);
+        // Fetch opcode byte.
+        const opcode = Opcode.fromByte(code[self.pc]);
 
-        // Ensure there are enough bytes for this opcode's immediates.
-        const required_bytes = 1 + opcode.immediateBytes();
-        if (self.pc + required_bytes > code.len) {
+        // Validate immediate bytes (currently, only PUSH operations have non-zero immediate bytes).
+        if (self.pc + opcode.immediateBytes() + 1 > code.len) {
             return error.InvalidProgramCounter;
         }
 
-        // Charge *base* gas, some instructions may require additional dynamically calculated gas.
-        // CRITICAL: Gas MUST be charged before execution to prevent side effects (on out of gas).
-        try self.gas.consume(opcode.baseCost(self.spec));
+        // Look up instruction info from jump table.
+        const instruction = self.table.get(@intFromEnum(opcode));
 
-        // Execute instruction
-        try self.execute(opcode);
+        // Charge base gas cost for a given opcode in a given spec.
+        // CRITICAL: Gas MUST be charged before execution to prevent side effects on out of gas.
+        const base_gas = self.spec.gasCost(@intFromEnum(opcode));
+        try self.gas.consume(base_gas);
 
-        // Control flow opcodes (JUMP, RETURN, STOP, etc.) set is_halted or modify PC themselves.
-        // All other opcodes advance by 1 + immediate_bytes.
-        if (!self.is_halted and !opcode.isControlFlow()) {
-            self.pc += 1 + opcode.immediateBytes();
+        // Charge dynamic gas if present (e.g., EXP, memory expansion).
+        if (instruction.dynamicGasCost) |dynamicGasCost| {
+            const dynamic_gas = try dynamicGasCost(self);
+            try self.gas.consume(dynamic_gas);
         }
-    }
 
-    /// Execute the given opcode.
-    ///
-    /// This is the main dispatch table.
-    /// Special cases that need direct interpreter state access (e.g. PUSH) are handled inline.
-    fn execute(self: *Self, opcode: Opcode) !void {
-        switch (opcode) {
-            // ================================================================
-            // Control Flow
-            // ================================================================
+        // Save old PC to detect changes (needed for JUMPI).
+        const old_pc = self.pc;
 
-            .STOP => {
-                self.is_halted = true;
-            },
+        // Execute instruction handler.
+        try instruction.execute(self);
 
-            .JUMP => {
-                const new_pc = try handlers.opJump(&self.ctx.stack, &self.ctx.bytecode);
-                self.pc = new_pc;
-                return; // Don't increment PC - jump sets it directly
-            },
+        // Update memory cost tracker for operations that touch memory.
+        // This must happen after handler execution, when memory size is finalized.
+        if (opcode.needsMemoryCostUpdate()) {
+            self.gas.updateMemoryCost(self.ctx.memory.len());
+        }
 
-            .JUMPI => {
-                if (try handlers.opJumpi(&self.ctx.stack, &self.ctx.bytecode)) |new_pc| {
-                    self.pc = new_pc;
-                    return; // Don't increment PC - jump sets it directly
-                }
-                // Condition was false, don't jump - manually increment PC since JUMPI is a control flow opcode
-                self.pc += 1;
-            },
-
-            .JUMPDEST => {
-                // No-op at runtime - just a marker for valid jump destinations
-            },
-
-            .PC => try handlers.opPc(&self.ctx.stack, self.pc),
-
-            .GAS => try handlers.opGas(&self.ctx.stack, &self.gas),
-
-            .RETURN => {
-                // Charge memory expansion gas
-                try self.chargeMemoryExpansionDynamic(0, 1);
-
-                // Execute handler
-                const output = try handlers.opReturn(&self.ctx.stack, &self.ctx.memory);
-
-                // Update memory cost tracker
-                self.gas.updateMemoryCost(self.ctx.memory.len());
-
-                // Copy output (memory may be freed)
-                const owned_output = try self.allocator.dupe(u8, output);
-                self.return_data = owned_output;
-                self.is_halted = true;
-            },
-
-            .REVERT => { // Todo: enabled in EIP-140, validate
-                // Charge memory expansion gas
-                try self.chargeMemoryExpansionDynamic(0, 1);
-
-                // Execute handler
-                const output = try handlers.opRevert(&self.ctx.stack, &self.ctx.memory);
-
-                // Update memory cost tracker
-                self.gas.updateMemoryCost(self.ctx.memory.len());
-
-                // Copy output (memory may be freed)
-                const owned_output = try self.allocator.dupe(u8, output);
-                self.return_data = owned_output;
-                return error.Revert;
-            },
-
-            .INVALID => {
-                // Equivalent to REVERT (since Byzantium fork) with 0,0 as stack parameters,
-                // except that all the gas given to the current context is consumed.
-                try self.gas.consume(self.gas.remaining());
-                return error.InvalidOpcode;
-            },
-
-            // ================================================================
-            // Stack Operations
-            // ================================================================
-
-            .POP => {
-                _ = try self.ctx.stack.pop();
-            },
-
-            .PUSH0 => {
-                // EIP-3855: PUSH0 pushes 0 without reading immediates
-                if (!self.spec.has_push0) return error.InvalidOpcode;
-                try self.ctx.stack.push(U256.ZERO);
-            },
-
-            // PUSH1-PUSH32: Push 1-32 bytes onto stack
-            // With centralized PC management, we just read immediates and push
-            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => {
-                // Read immediate bytes (bounds are already checked in step())
-                const num_bytes = opcode.immediateBytes();
-                const bytes = self.ctx.bytecode.raw[self.pc + 1 ..][0..num_bytes];
-
-                const value = U256.fromBeBytesPadded(bytes);
-                try self.ctx.stack.push(value);
-            },
-
-            // DUP1-DUP16: Duplicate Nth stack item (N=1 is top)
-            // Opcode values are sequential: 0x80-0x8F
-            .DUP1, .DUP2, .DUP3, .DUP4, .DUP5, .DUP6, .DUP7, .DUP8, .DUP9, .DUP10, .DUP11, .DUP12, .DUP13, .DUP14, .DUP15, .DUP16 => {
-                const index = @intFromEnum(opcode) - @intFromEnum(Opcode.DUP1) + 1;
-                try self.ctx.stack.dup(index);
-            },
-
-            // SWAP1-SWAP16: Swap top with Nth item (N=1 is second item)
-            // Opcode values are sequential: 0x90-0x9F
-            .SWAP1, .SWAP2, .SWAP3, .SWAP4, .SWAP5, .SWAP6, .SWAP7, .SWAP8, .SWAP9, .SWAP10, .SWAP11, .SWAP12, .SWAP13, .SWAP14, .SWAP15, .SWAP16 => {
-                const index = @intFromEnum(opcode) - @intFromEnum(Opcode.SWAP1) + 1;
-                try self.ctx.stack.swap(index);
-            },
-
-            // ================================================================
-            // Arithmetic Operations
-            // ================================================================
-
-            .ADD => try handlers.opAdd(&self.ctx.stack),
-            .MUL => try handlers.opMul(&self.ctx.stack),
-            .SUB => try handlers.opSub(&self.ctx.stack),
-            .DIV => try handlers.opDiv(&self.ctx.stack),
-            .MOD => try handlers.opMod(&self.ctx.stack),
-            .SDIV => try handlers.opSdiv(&self.ctx.stack),
-            .SMOD => try handlers.opSmod(&self.ctx.stack),
-            .ADDMOD => try handlers.opAddmod(&self.ctx.stack),
-            .MULMOD => try handlers.opMulmod(&self.ctx.stack),
-
-            .EXP => {
-                // EXP has dynamic gas based on exponent byte length
-                const exponent = try self.ctx.stack.peek(0);
-                const exp_bytes: u8 = @intCast(exponent.byteLen());
-                try self.gas.consume(cost_fns.expCost(self.spec, exp_bytes));
-
-                try handlers.opExp(&self.ctx.stack);
-            },
-
-            .SIGNEXTEND => try handlers.opSignextend(&self.ctx.stack),
-
-            // ================================================================
-            // Comparison Operations
-            // ================================================================
-
-            .LT => try handlers.opLt(&self.ctx.stack),
-            .GT => try handlers.opGt(&self.ctx.stack),
-            .SLT => try handlers.opSlt(&self.ctx.stack),
-            .SGT => try handlers.opSgt(&self.ctx.stack),
-            .EQ => try handlers.opEq(&self.ctx.stack),
-            .ISZERO => try handlers.opIszero(&self.ctx.stack),
-
-            // ================================================================
-            // Bitwise Operations
-            // ================================================================
-
-            .AND => try handlers.opAnd(&self.ctx.stack),
-            .OR => try handlers.opOr(&self.ctx.stack),
-            .XOR => try handlers.opXor(&self.ctx.stack),
-            .NOT => try handlers.opNot(&self.ctx.stack),
-            .BYTE => try handlers.opByte(&self.ctx.stack),
-            .SHL => try handlers.opShl(&self.ctx.stack),
-            .SHR => try handlers.opShr(&self.ctx.stack),
-            .SAR => try handlers.opSar(&self.ctx.stack),
-
-            // ================================================================
-            // Cryptographic Operations
-            // ================================================================
-
-            .KECCAK256 => try handlers.opKeccak256(&self.ctx.stack, &self.ctx.memory),
-
-            // ================================================================
-            // Memory Operations
-            // ================================================================
-
-            .MLOAD => {
-                try self.chargeMemoryExpansionFixed(0, 32);
-                try handlers.opMload(&self.ctx.stack, &self.ctx.memory);
-                self.gas.updateMemoryCost(self.ctx.memory.len());
-            },
-
-            .MSTORE => {
-                try self.chargeMemoryExpansionFixed(0, 32);
-                try handlers.opMstore(&self.ctx.stack, &self.ctx.memory);
-                self.gas.updateMemoryCost(self.ctx.memory.len());
-            },
-
-            .MSTORE8 => {
-                try self.chargeMemoryExpansionFixed(0, 1);
-                try handlers.opMstore8(&self.ctx.stack, &self.ctx.memory);
-                self.gas.updateMemoryCost(self.ctx.memory.len());
-            },
-
-            .MSIZE => try handlers.opMsize(&self.ctx.stack, &self.ctx.memory),
-
-            .MCOPY => {
-                const length_u256 = try self.ctx.stack.peek(2);
-                const length = length_u256.toUsize() orelse return error.InvalidOffset;
-
-                // Charge memory expansion for both source and dest regions.
-                try self.chargeMemoryExpansionDualRegion(0, 1, 2);
-
-                // Charge per-word copy cost (base VERYLOW=3 already charged)
-                try self.gas.consume(cost_fns.mcopyDynamicCost(length));
-
-                try handlers.opMcopy(&self.ctx.stack, &self.ctx.memory);
-
-                self.gas.updateMemoryCost(self.ctx.memory.len());
-            },
-
-            // ================================================================
-            // Storage Operations
-            // ================================================================
-
-            .SLOAD => try handlers.opSload(&self.ctx.stack),
-            .SSTORE => try handlers.opSstore(&self.ctx.stack),
-            .TLOAD => try handlers.opTload(&self.ctx.stack),
-            .TSTORE => try handlers.opTstore(&self.ctx.stack),
-
-            // ================================================================
-            // System Operations
-            // ================================================================
-
-            .CREATE => try handlers.opCreate(&self.ctx.stack),
-            .CREATE2 => try handlers.opCreate2(&self.ctx.stack),
-            .CALL => try handlers.opCall(&self.ctx.stack),
-            .CALLCODE => try handlers.opCallcode(&self.ctx.stack),
-            .DELEGATECALL => try handlers.opDelegatecall(&self.ctx.stack),
-            .STATICCALL => try handlers.opStaticcall(&self.ctx.stack),
-            .SELFDESTRUCT => try handlers.opSelfdestruct(&self.ctx.stack),
-
-            // ================================================================
-            // Environmental Operations
-            // ================================================================
-
-            .ADDRESS => try handlers.opAddress(&self.ctx.stack),
-            .BALANCE => try handlers.opBalance(&self.ctx.stack),
-            .ORIGIN => try handlers.opOrigin(&self.ctx.stack),
-            .CALLER => try handlers.opCaller(&self.ctx.stack),
-            .CALLVALUE => try handlers.opCallvalue(&self.ctx.stack),
-            .CALLDATALOAD => try handlers.opCalldataload(&self.ctx.stack),
-            .CALLDATASIZE => try handlers.opCalldatasize(&self.ctx.stack),
-            .CALLDATACOPY => try handlers.opCalldatacopy(&self.ctx.stack),
-            .CODESIZE => try handlers.opCodesize(&self.ctx.stack),
-            .CODECOPY => try handlers.opCodecopy(&self.ctx.stack),
-            .GASPRICE => try handlers.opGasprice(&self.ctx.stack),
-            .EXTCODESIZE => try handlers.opExtcodesize(&self.ctx.stack),
-            .EXTCODECOPY => try handlers.opExtcodecopy(&self.ctx.stack),
-            .RETURNDATASIZE => try handlers.opReturndatasize(&self.ctx.stack),
-            .RETURNDATACOPY => try handlers.opReturndatacopy(&self.ctx.stack),
-            .EXTCODEHASH => try handlers.opExtcodehash(&self.ctx.stack),
-            .BLOCKHASH => try handlers.opBlockhash(&self.ctx.stack),
-            .COINBASE => try handlers.opCoinbase(&self.ctx.stack),
-            .TIMESTAMP => try handlers.opTimestamp(&self.ctx.stack),
-            .NUMBER => try handlers.opNumber(&self.ctx.stack),
-            .PREVRANDAO => try handlers.opPrevrandao(&self.ctx.stack),
-            .GASLIMIT => try handlers.opGaslimit(&self.ctx.stack),
-            .CHAINID => try handlers.opChainid(&self.ctx.stack),
-            .SELFBALANCE => try handlers.opSelfbalance(&self.ctx.stack),
-            .BASEFEE => try handlers.opBasefee(&self.ctx.stack),
-            .BLOBHASH => try handlers.opBlobhash(&self.ctx.stack),
-            .BLOBBASEFEE => try handlers.opBlobbasefee(&self.ctx.stack),
-
-            // ================================================================
-            // Logging Operations
-            // ================================================================
-
-            .LOG0 => try handlers.opLog0(&self.ctx.stack),
-            .LOG1 => try handlers.opLog1(&self.ctx.stack),
-            .LOG2 => try handlers.opLog2(&self.ctx.stack),
-            .LOG3 => try handlers.opLog3(&self.ctx.stack),
-            .LOG4 => try handlers.opLog4(&self.ctx.stack),
+        // Handle PC increment:
+        //
+        // If halted (STOP, RETURN, INVALID), no increment.
+        // If is_control_flow (JUMP, RETURN, REVERT, STOP, INVALID), no increment.
+        // If PC changed (JUMPI took the jump), no increment.
+        // Otherwise, increment by 1 + immediate bytes.
+        if (!self.is_halted and !instruction.is_control_flow and self.pc == old_pc) {
+            self.pc += 1 + opcode.immediateBytes();
         }
     }
 
