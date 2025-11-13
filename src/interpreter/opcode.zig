@@ -9,7 +9,6 @@ const Costs = @import("gas/costs.zig").Costs;
 /// EVM Opcode.
 ///
 /// Each opcode is mapped to its exact byte value as defined in the EVM spec.
-/// Only valid opcodes are defined; invalid bytes will return an error from fromByte().
 pub const Opcode = enum(u8) {
     /// Opcode errors.
     pub const Error = error{
@@ -188,9 +187,19 @@ pub const Opcode = enum(u8) {
     INVALID = 0xFE,
     SELFDESTRUCT = 0xFF,
 
-    /// Convert a byte to an Opcode.
-    pub fn fromByte(byte: u8) Error!Opcode {
-        return std.enums.fromInt(Opcode, byte) orelse error.InvalidOpcode;
+    /// Convert a byte to an Opcode. Infallible.
+    ///
+    /// Undefined bytes return .INVALID (0xFE), which is correct EVM semantics.
+    pub inline fn fromByte(byte: u8) Opcode {
+        return opcodes[byte];
+    }
+
+    /// Check if a byte represents a defined opcode.
+    ///
+    /// Returns false for undefined bytes that map to INVALID.
+    /// Returns true for 0xFE (the real INVALID opcode).
+    pub inline fn isDefined(byte: u8) bool {
+        return opcodes[byte] != .INVALID or byte == 0xFE;
     }
 
     /// Get the string name of the opcode.
@@ -201,92 +210,25 @@ pub const Opcode = enum(u8) {
     }
 
     /// Get the number of stack items this opcode pops.
+    ///
+    /// O(1) lookup from precomputed table - zero runtime cost.
     pub inline fn popCount(self: Opcode) u8 {
-        return switch (self) {
-            // 0 inputs
-            .STOP, .PC, .MSIZE, .GAS, .JUMPDEST, .PUSH0, .ADDRESS, .ORIGIN, .CALLER, .CALLVALUE, .CALLDATASIZE, .CODESIZE, .GASPRICE, .RETURNDATASIZE, .COINBASE, .TIMESTAMP, .NUMBER, .PREVRANDAO, .GASLIMIT, .CHAINID, .SELFBALANCE, .BASEFEE, .BLOBBASEFEE => 0,
-
-            // PUSH1-PUSH32: 0 inputs
-            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => 0,
-
-            // 1 input
-            .ISZERO, .NOT, .BALANCE, .CALLDATALOAD, .EXTCODESIZE, .EXTCODEHASH, .BLOCKHASH, .POP, .MLOAD, .SLOAD, .JUMP, .TLOAD, .BLOBHASH, .SELFDESTRUCT => 1,
-
-            // 2 inputs
-            .ADD, .MUL, .SUB, .DIV, .SDIV, .MOD, .SMOD, .EXP, .SIGNEXTEND, .LT, .GT, .SLT, .SGT, .EQ, .AND, .OR, .XOR, .BYTE, .SHL, .SHR, .SAR, .KECCAK256, .MSTORE, .MSTORE8, .SSTORE, .JUMPI, .TSTORE, .RETURN, .REVERT => 2,
-
-            // 3 inputs
-            .ADDMOD, .MULMOD, .CALLDATACOPY, .CODECOPY, .RETURNDATACOPY, .MCOPY, .CREATE => 3,
-
-            // 4 inputs
-            .EXTCODECOPY, .CREATE2 => 4,
-
-            // 6 inputs
-            .CALL, .CALLCODE => 7, // Actually 7 inputs
-
-            // 6 inputs
-            .DELEGATECALL, .STATICCALL => 6,
-
-            // LOG0-LOG4: 2 + topic count
-            .LOG0 => 2,
-            .LOG1 => 3,
-            .LOG2 => 4,
-            .LOG3 => 5,
-            .LOG4 => 6,
-
-            // DUP1-DUP16: n inputs (to read from)
-            .DUP1, .DUP2, .DUP3, .DUP4, .DUP5, .DUP6, .DUP7, .DUP8, .DUP9, .DUP10, .DUP11, .DUP12, .DUP13, .DUP14, .DUP15, .DUP16 => {
-                const n = @intFromEnum(self) - @intFromEnum(Opcode.DUP1) + 1;
-                return n;
-            },
-
-            // SWAP1-SWAP16: n+1 inputs
-            .SWAP1, .SWAP2, .SWAP3, .SWAP4, .SWAP5, .SWAP6, .SWAP7, .SWAP8, .SWAP9, .SWAP10, .SWAP11, .SWAP12, .SWAP13, .SWAP14, .SWAP15, .SWAP16 => {
-                const n = @intFromEnum(self) - @intFromEnum(Opcode.SWAP1) + 1;
-                return n + 1;
-            },
-
-            .INVALID => 0,
-        };
+        return pop_count_table[@intFromEnum(self)];
     }
 
     /// Get the number of stack items this opcode pushes.
+    ///
+    /// O(1) lookup from precomputed table - zero runtime cost.
     pub inline fn pushCount(self: Opcode) u8 {
-        return switch (self) {
-            // 0 outputs (halts or doesn't produce a value)
-            .STOP, .RETURN, .REVERT, .INVALID, .SELFDESTRUCT, .JUMP, .JUMPI, .JUMPDEST, .POP, .MSTORE, .MSTORE8, .SSTORE, .CALLDATACOPY, .CODECOPY, .EXTCODECOPY, .RETURNDATACOPY, .TSTORE, .MCOPY, .LOG0, .LOG1, .LOG2, .LOG3, .LOG4 => 0,
-
-            // 1 output (most instructions)
-            .ADD, .MUL, .SUB, .DIV, .SDIV, .MOD, .SMOD, .ADDMOD, .MULMOD, .EXP, .SIGNEXTEND, .LT, .GT, .SLT, .SGT, .EQ, .ISZERO, .AND, .OR, .XOR, .NOT, .BYTE, .SHL, .SHR, .SAR, .KECCAK256, .ADDRESS, .BALANCE, .ORIGIN, .CALLER, .CALLVALUE, .CALLDATALOAD, .CALLDATASIZE, .CODESIZE, .GASPRICE, .EXTCODESIZE, .RETURNDATASIZE, .EXTCODEHASH, .BLOCKHASH, .COINBASE, .TIMESTAMP, .NUMBER, .PREVRANDAO, .GASLIMIT, .CHAINID, .SELFBALANCE, .BASEFEE, .BLOBHASH, .BLOBBASEFEE, .MLOAD, .SLOAD, .PC, .MSIZE, .GAS, .PUSH0, .TLOAD, .CREATE, .CREATE2, .CALL, .CALLCODE, .DELEGATECALL, .STATICCALL => 1,
-
-            // PUSH1-PUSH32: 1 output
-            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => 1,
-
-            // DUP1-DUP16: n+1 outputs (original n + duplicate)
-            .DUP1, .DUP2, .DUP3, .DUP4, .DUP5, .DUP6, .DUP7, .DUP8, .DUP9, .DUP10, .DUP11, .DUP12, .DUP13, .DUP14, .DUP15, .DUP16 => {
-                const n = @intFromEnum(self) - @intFromEnum(Opcode.DUP1) + 1;
-                return n + 1;
-            },
-
-            // SWAP1-SWAP16: n+1 outputs (same as inputs)
-            .SWAP1, .SWAP2, .SWAP3, .SWAP4, .SWAP5, .SWAP6, .SWAP7, .SWAP8, .SWAP9, .SWAP10, .SWAP11, .SWAP12, .SWAP13, .SWAP14, .SWAP15, .SWAP16 => {
-                const n = @intFromEnum(self) - @intFromEnum(Opcode.SWAP1) + 1;
-                return n + 1;
-            },
-        };
+        return push_count_table[@intFromEnum(self)];
     }
 
     /// Get the number of immediate bytes following this opcode.
     ///
     /// Returns 1-32 for PUSH1-PUSH32, 0 for all other opcodes.
+    /// O(1) lookup from precomputed table - zero runtime cost.
     pub inline fn immediateBytes(self: Opcode) u8 {
-        return switch (self) {
-            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => {
-                // Use arithmetic: PUSH1 = 1 byte, PUSH2 = 2 bytes, etc.
-                return @intFromEnum(self) - @intFromEnum(Opcode.PUSH1) + 1;
-            },
-            else => 0,
-        };
+        return immediate_bytes_table[@intFromEnum(self)];
     }
 
     /// Check if this is a PUSH opcode (PUSH0-PUSH32).
@@ -298,141 +240,114 @@ pub const Opcode = enum(u8) {
     /// Get the number of immediate data bytes for a PUSH opcode.
     ///
     /// Returns 0 for PUSH0 and non-PUSH opcodes, 1-32 for PUSH1-PUSH32.
+    /// This is equivalent to immediateBytes() - both return the same values.
     pub inline fn pushSize(self: Opcode) usize {
-        if (!self.isPush()) return 0;
-        if (self == .PUSH0) return 0;
-        // PUSH1 = 1 byte, PUSH2 = 2 bytes, ..., PUSH32 = 32 bytes
-        return @intFromEnum(self) - @intFromEnum(Opcode.PUSH0);
+        return self.immediateBytes();
+    }
+};
+
+/// Lookup table mapping all 256 byte values to Opcode enum values.
+///
+/// Invalid/undefined bytes map to .INVALID (0xFE).
+const opcodes: [256]Opcode = blk: {
+    var arr = [_]Opcode{.INVALID} ** 256;
+
+    // Automatically populate from enum definition
+    for (@typeInfo(Opcode).@"enum".fields) |field| {
+        const opcode = @field(Opcode, field.name);
+        arr[@intFromEnum(opcode)] = opcode;
     }
 
-    /// Check if this is a control flow opcode that manages PC directly.
-    ///
-    /// These opcodes either halt execution or modify PC explicitly,
-    /// so the interpreter should not auto-increment PC after executing them.
-    pub inline fn isControlFlow(self: Opcode) bool {
-        return switch (self) {
-            .STOP, .JUMP, .JUMPI, .RETURN, .REVERT, .INVALID, .SELFDESTRUCT => true,
-            else => false,
+    break :blk arr;
+};
+
+/// Lookup table for stack pop counts (0-7).
+///
+/// Built at compile time for O(1) lookup with zero runtime cost.
+const pop_count_table: [256]u8 = blk: {
+    @setEvalBranchQuota(5000);
+    var arr = [_]u8{0} ** 256;
+
+    for (@typeInfo(Opcode).@"enum".fields) |field| {
+        const opcode: Opcode = @field(Opcode, field.name);
+        const byte = @intFromEnum(opcode);
+        arr[byte] = switch (opcode) {
+            .STOP, .PC, .MSIZE, .GAS, .JUMPDEST, .PUSH0, .ADDRESS, .ORIGIN, .CALLER, .CALLVALUE, .CALLDATASIZE, .CODESIZE, .GASPRICE, .RETURNDATASIZE, .COINBASE, .TIMESTAMP, .NUMBER, .PREVRANDAO, .GASLIMIT, .CHAINID, .SELFBALANCE, .BASEFEE, .BLOBBASEFEE => 0,
+            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => 0,
+            .ISZERO, .NOT, .BALANCE, .CALLDATALOAD, .EXTCODESIZE, .EXTCODEHASH, .BLOCKHASH, .POP, .MLOAD, .SLOAD, .JUMP, .TLOAD, .BLOBHASH, .SELFDESTRUCT => 1,
+            .ADD, .MUL, .SUB, .DIV, .SDIV, .MOD, .SMOD, .EXP, .SIGNEXTEND, .LT, .GT, .SLT, .SGT, .EQ, .AND, .OR, .XOR, .BYTE, .SHL, .SHR, .SAR, .KECCAK256, .MSTORE, .MSTORE8, .SSTORE, .JUMPI, .TSTORE, .RETURN, .REVERT => 2,
+            .ADDMOD, .MULMOD, .CALLDATACOPY, .CODECOPY, .RETURNDATACOPY, .MCOPY, .CREATE => 3,
+            .EXTCODECOPY, .CREATE2 => 4,
+            .CALL, .CALLCODE => 7,
+            .DELEGATECALL, .STATICCALL => 6,
+            .LOG0 => 2,
+            .LOG1 => 3,
+            .LOG2 => 4,
+            .LOG3 => 5,
+            .LOG4 => 6,
+            .DUP1, .DUP2, .DUP3, .DUP4, .DUP5, .DUP6, .DUP7, .DUP8, .DUP9, .DUP10, .DUP11, .DUP12, .DUP13, .DUP14, .DUP15, .DUP16 => blk2: {
+                const n = @intFromEnum(opcode) - @intFromEnum(Opcode.DUP1) + 1;
+                break :blk2 n;
+            },
+            .SWAP1, .SWAP2, .SWAP3, .SWAP4, .SWAP5, .SWAP6, .SWAP7, .SWAP8, .SWAP9, .SWAP10, .SWAP11, .SWAP12, .SWAP13, .SWAP14, .SWAP15, .SWAP16 => blk2: {
+                const n = @intFromEnum(opcode) - @intFromEnum(Opcode.SWAP1) + 1;
+                break :blk2 n + 1;
+            },
+            .INVALID => 0,
         };
     }
 
-    /// Get the base gas cost for this opcode.
-    ///
-    /// Some opcodes (like EXP, SLOAD, CALL) have additional dynamic costs
-    /// that must be computed and charged separately during execution.
-    pub fn baseCost(self: Opcode, spec: Spec) u64 {
-        return switch (self) {
-            // ZERO tier (0 gas)
-            .STOP, .RETURN, .REVERT => Costs.ZERO,
+    break :blk arr;
+};
 
-            // BASE tier (2 gas)
-            .ADDRESS, .ORIGIN, .CALLER, .CALLVALUE, .CALLDATASIZE, .CODESIZE, .GASPRICE, .RETURNDATASIZE, .COINBASE, .TIMESTAMP, .NUMBER, .PREVRANDAO, .GASLIMIT, .CHAINID, .BASEFEE, .BLOBBASEFEE, .PC, .MSIZE, .GAS, .POP => Costs.BASE,
+/// Lookup table for stack push counts (0-17).
+///
+/// Built at compile time for O(1) lookup with zero runtime cost.
+const push_count_table: [256]u8 = blk: {
+    @setEvalBranchQuota(5000);
+    var arr = [_]u8{0} ** 256;
 
-            // VERYLOW tier (3 gas)
-            .ADD, .SUB, .NOT, .LT, .GT, .SLT, .SGT, .EQ, .ISZERO, .AND, .OR, .XOR, .BYTE, .CALLDATALOAD, .MLOAD, .MSTORE, .MSTORE8, .PUSH0 => Costs.VERYLOW,
-
-            // PUSH1-PUSH32: VERYLOW (3 gas)
-            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => Costs.PUSH,
-
-            // DUP1-DUP16: VERYLOW (3 gas)
-            .DUP1, .DUP2, .DUP3, .DUP4, .DUP5, .DUP6, .DUP7, .DUP8, .DUP9, .DUP10, .DUP11, .DUP12, .DUP13, .DUP14, .DUP15, .DUP16 => Costs.DUP,
-
-            // SWAP1-SWAP16: VERYLOW (3 gas)
-            .SWAP1, .SWAP2, .SWAP3, .SWAP4, .SWAP5, .SWAP6, .SWAP7, .SWAP8, .SWAP9, .SWAP10, .SWAP11, .SWAP12, .SWAP13, .SWAP14, .SWAP15, .SWAP16 => Costs.SWAP,
-
-            // LOW tier (5 gas)
-            .MUL, .DIV, .SDIV, .MOD, .SMOD, .SIGNEXTEND, .SELFBALANCE => Costs.LOW,
-
-            // MID tier (8 gas)
-            .ADDMOD, .MULMOD, .JUMP => Costs.MID,
-
-            // HIGH tier (10 gas)
-            .JUMPI => Costs.HIGH,
-
-            // Special: EXP (base cost, dynamic cost charged separately)
-            .EXP => Costs.EXP_BASE,
-
-            // Shift operations (EIP-145, Constantinople+)
-            .SHL, .SHR, .SAR => Costs.VERYLOW,
-
-            // JUMPDEST
-            .JUMPDEST => Costs.JUMPDEST,
-
-            // Hashing
-            .KECCAK256 => Costs.KECCAK256_BASE, // + per-word cost
-
-            // Memory operations with expansion costs
-            .CALLDATACOPY, .CODECOPY, .RETURNDATACOPY => Costs.VERYLOW, // + expansion
-            .EXTCODECOPY => if (spec.fork.isAtLeast(.BERLIN)) Costs.EXTCODECOPY_BASE else 700,
-            .MCOPY => Costs.VERYLOW, // + per-word, Cancun+
-
-            // Environmental info with cold/warm costs
-            .BALANCE => if (spec.fork.isAtLeast(.BERLIN))
-                Costs.BALANCE // Warm, cold charged separately
-            else if (spec.fork.isAtLeast(.TANGERINE))
-                400
-            else
-                20,
-
-            .EXTCODESIZE => if (spec.fork.isAtLeast(.BERLIN))
-                Costs.EXTCODESIZE // Warm
-            else if (spec.fork.isAtLeast(.TANGERINE))
-                700
-            else
-                20,
-
-            .EXTCODEHASH => if (spec.fork.isAtLeast(.BERLIN))
-                Costs.EXTCODEHASH // Warm, Istanbul+
-            else
-                400,
-
-            .BLOCKHASH => Costs.BLOCKHASH,
-
-            // Storage operations (dynamic costs)
-            .SLOAD => if (spec.fork.isAtLeast(.BERLIN))
-                spec.warm_storage_read_cost // EIP-2929
-            else if (spec.fork.isAtLeast(.TANGERINE))
-                200
-            else
-                50,
-
-            .SSTORE => Costs.SSTORE_UNCHANGED, // Base cost, actual cost computed dynamically
-
-            // Transient storage (EIP-1153, Cancun+)
-            .TLOAD, .TSTORE => Costs.TLOAD,
-
-            // Blob operations (EIP-4844, Cancun+)
-            .BLOBHASH => Costs.BLOBHASH,
-
-            // Logging operations
-            .LOG0 => Costs.LOG_BASE,
-            .LOG1 => Costs.LOG_BASE + Costs.LOG_TOPIC,
-            .LOG2 => Costs.LOG_BASE + 2 * Costs.LOG_TOPIC,
-            .LOG3 => Costs.LOG_BASE + 3 * Costs.LOG_TOPIC,
-            .LOG4 => Costs.LOG_BASE + 4 * Costs.LOG_TOPIC,
-
-            // System operations (complex dynamic costs)
-            .CREATE => Costs.CREATE_BASE,
-            .CREATE2 => Costs.CREATE2_BASE,
-            .CALL, .CALLCODE => if (spec.fork.isAtLeast(.BERLIN))
-                Costs.CALL_BASE // Warm
-            else if (spec.fork.isAtLeast(.TANGERINE))
-                700
-            else
-                40,
-            .DELEGATECALL, .STATICCALL => if (spec.fork.isAtLeast(.BERLIN))
-                Costs.DELEGATECALL_BASE // Warm
-            else
-                700,
-
-            .SELFDESTRUCT => if (spec.fork.isAtLeast(.TANGERINE))
-                Costs.SELFDESTRUCT_BASE
-            else
-                0,
-
-            .INVALID => 0, // Consumes all gas, but base is 0
+    for (@typeInfo(Opcode).@"enum".fields) |field| {
+        const opcode: Opcode = @field(Opcode, field.name);
+        const byte = @intFromEnum(opcode);
+        arr[byte] = switch (opcode) {
+            .STOP, .RETURN, .REVERT, .INVALID, .SELFDESTRUCT, .JUMP, .JUMPI, .JUMPDEST, .POP, .MSTORE, .MSTORE8, .SSTORE, .CALLDATACOPY, .CODECOPY, .EXTCODECOPY, .RETURNDATACOPY, .TSTORE, .MCOPY, .LOG0, .LOG1, .LOG2, .LOG3, .LOG4 => 0,
+            .ADD, .MUL, .SUB, .DIV, .SDIV, .MOD, .SMOD, .ADDMOD, .MULMOD, .EXP, .SIGNEXTEND, .LT, .GT, .SLT, .SGT, .EQ, .ISZERO, .AND, .OR, .XOR, .NOT, .BYTE, .SHL, .SHR, .SAR, .KECCAK256, .ADDRESS, .BALANCE, .ORIGIN, .CALLER, .CALLVALUE, .CALLDATALOAD, .CALLDATASIZE, .CODESIZE, .GASPRICE, .EXTCODESIZE, .RETURNDATASIZE, .EXTCODEHASH, .BLOCKHASH, .COINBASE, .TIMESTAMP, .NUMBER, .PREVRANDAO, .GASLIMIT, .CHAINID, .SELFBALANCE, .BASEFEE, .BLOBHASH, .BLOBBASEFEE, .MLOAD, .SLOAD, .PC, .MSIZE, .GAS, .PUSH0, .TLOAD, .CREATE, .CREATE2, .CALL, .CALLCODE, .DELEGATECALL, .STATICCALL => 1,
+            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => 1,
+            .DUP1, .DUP2, .DUP3, .DUP4, .DUP5, .DUP6, .DUP7, .DUP8, .DUP9, .DUP10, .DUP11, .DUP12, .DUP13, .DUP14, .DUP15, .DUP16 => blk2: {
+                const n = @intFromEnum(opcode) - @intFromEnum(Opcode.DUP1) + 1;
+                break :blk2 n + 1;
+            },
+            .SWAP1, .SWAP2, .SWAP3, .SWAP4, .SWAP5, .SWAP6, .SWAP7, .SWAP8, .SWAP9, .SWAP10, .SWAP11, .SWAP12, .SWAP13, .SWAP14, .SWAP15, .SWAP16 => blk2: {
+                const n = @intFromEnum(opcode) - @intFromEnum(Opcode.SWAP1) + 1;
+                break :blk2 n + 1;
+            },
         };
     }
+
+    break :blk arr;
+};
+
+/// Lookup table for immediate byte counts (0-32).
+///
+/// Built at compile time for O(1) lookup with zero runtime cost.
+const immediate_bytes_table: [256]u8 = blk: {
+    @setEvalBranchQuota(5000);
+    var arr = [_]u8{0} ** 256;
+
+    for (@typeInfo(Opcode).@"enum".fields) |field| {
+        const opcode: Opcode = @field(Opcode, field.name);
+        const byte = @intFromEnum(opcode);
+        arr[byte] = switch (opcode) {
+            .PUSH1, .PUSH2, .PUSH3, .PUSH4, .PUSH5, .PUSH6, .PUSH7, .PUSH8, .PUSH9, .PUSH10, .PUSH11, .PUSH12, .PUSH13, .PUSH14, .PUSH15, .PUSH16, .PUSH17, .PUSH18, .PUSH19, .PUSH20, .PUSH21, .PUSH22, .PUSH23, .PUSH24, .PUSH25, .PUSH26, .PUSH27, .PUSH28, .PUSH29, .PUSH30, .PUSH31, .PUSH32 => blk2: {
+                const n = @intFromEnum(opcode) - @intFromEnum(Opcode.PUSH1) + 1;
+                break :blk2 n;
+            },
+            else => 0,
+        };
+    }
+
+    break :blk arr;
 };
 
 // ============================================================================
@@ -443,7 +358,7 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
-test "Opcode: fromByte - valid opcodes" {
+test "fromByte - valid opcodes" {
     const test_cases = [_]struct {
         byte: u8,
         expected: Opcode,
@@ -458,11 +373,11 @@ test "Opcode: fromByte - valid opcodes" {
     };
 
     for (test_cases) |tc| {
-        try expectEqual(tc.expected, try Opcode.fromByte(tc.byte));
+        try expectEqual(tc.expected, Opcode.fromByte(tc.byte));
     }
 }
 
-test "Opcode: fromByte - invalid opcodes" {
+test "fromByte - invalid opcodes" {
     const invalid_bytes = [_]u8{
         0x0C, // Gap in 0x0C-0x0F
         0x1E, // Gap after SAR
@@ -473,11 +388,13 @@ test "Opcode: fromByte - invalid opcodes" {
     };
 
     for (invalid_bytes) |byte| {
-        try expectError(error.InvalidOpcode, Opcode.fromByte(byte));
+        // Opcode default to invalid, use isDefined to distinguish between truly undefined and INVALID.
+        try expectEqual(.INVALID, Opcode.fromByte(byte));
+        try expect(!Opcode.isDefined(byte));
     }
 }
 
-test "Opcode: toString" {
+test "toString" {
     const test_cases = [_]struct {
         opcode: Opcode,
         expected: []const u8,
@@ -493,7 +410,7 @@ test "Opcode: toString" {
     }
 }
 
-test "Opcode: popCount" {
+test "popCount" {
     const test_cases = [_]struct {
         opcode: Opcode,
         expected: u8,
@@ -517,7 +434,7 @@ test "Opcode: popCount" {
     }
 }
 
-test "Opcode: pushCount" {
+test "pushCount" {
     const test_cases = [_]struct {
         opcode: Opcode,
         expected: u8,
@@ -538,7 +455,7 @@ test "Opcode: pushCount" {
     }
 }
 
-test "Opcode: immediateBytes" {
+test "immediateBytes" {
     const test_cases = [_]struct {
         opcode: Opcode,
         expected: u8,
@@ -556,60 +473,7 @@ test "Opcode: immediateBytes" {
     }
 }
 
-test "Opcode: isControlFlow" {
-    try expect(Opcode.STOP.isControlFlow());
-    try expect(Opcode.JUMP.isControlFlow());
-    try expect(Opcode.JUMPI.isControlFlow());
-    try expect(Opcode.RETURN.isControlFlow());
-    try expect(Opcode.REVERT.isControlFlow());
-    try expect(Opcode.INVALID.isControlFlow());
-    try expect(Opcode.SELFDESTRUCT.isControlFlow());
-
-    try expect(!Opcode.ADD.isControlFlow());
-    try expect(!Opcode.PUSH1.isControlFlow());
-    try expect(!Opcode.JUMPDEST.isControlFlow());
-}
-
-test "Opcode: baseCost" {
-    const spec_frontier = Spec.forFork(.FRONTIER);
-    const spec_berlin = Spec.forFork(.BERLIN);
-
-    // Zero tier
-    try expectEqual(0, Opcode.STOP.baseCost(spec_frontier));
-    try expectEqual(0, Opcode.RETURN.baseCost(spec_frontier));
-
-    // Base tier
-    try expectEqual(2, Opcode.ADDRESS.baseCost(spec_frontier));
-    try expectEqual(2, Opcode.POP.baseCost(spec_frontier));
-
-    // Verylow tier
-    try expectEqual(3, Opcode.ADD.baseCost(spec_frontier));
-    try expectEqual(3, Opcode.PUSH1.baseCost(spec_frontier));
-    try expectEqual(3, Opcode.PUSH32.baseCost(spec_frontier));
-
-    // Low tier
-    try expectEqual(5, Opcode.MUL.baseCost(spec_frontier));
-    try expectEqual(5, Opcode.DIV.baseCost(spec_frontier));
-
-    // Mid tier
-    try expectEqual(8, Opcode.ADDMOD.baseCost(spec_frontier));
-
-    // High tier
-    try expectEqual(10, Opcode.JUMPI.baseCost(spec_frontier));
-
-    // EXP base
-    try expectEqual(10, Opcode.EXP.baseCost(spec_frontier));
-
-    // Fork-specific: BALANCE changed in Tangerine and Berlin
-    try expectEqual(20, Opcode.BALANCE.baseCost(spec_frontier));
-    try expectEqual(100, Opcode.BALANCE.baseCost(spec_berlin)); // Warm cost
-
-    // Fork-specific: SLOAD changed in Tangerine and Berlin
-    try expectEqual(50, Opcode.SLOAD.baseCost(spec_frontier));
-    try expectEqual(100, Opcode.SLOAD.baseCost(spec_berlin)); // Warm cost
-}
-
-test "Opcode: isPush" {
+test "isPush" {
     // PUSH opcodes
     try expect(Opcode.PUSH0.isPush());
     try expect(Opcode.PUSH1.isPush());
@@ -625,7 +489,7 @@ test "Opcode: isPush" {
     try expect(!Opcode.DUP1.isPush());
 }
 
-test "Opcode: pushSize" {
+test "pushSize" {
     const test_cases = [_]struct {
         opcode: Opcode,
         expected: usize,

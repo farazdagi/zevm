@@ -23,12 +23,13 @@ pub const AnalyzedBytecode = struct {
 
         var i: usize = 0;
         while (i < bytecode.len) {
-            const opcode = Opcode.fromByte(bytecode[i]) catch {
-                // Invalid opcode - skip and continue
+            // Invalid opcode - skip and continue
+            if (!Opcode.isDefined(bytecode[i])) {
                 i += 1;
                 continue;
-            };
+            }
 
+            const opcode = Opcode.fromByte(bytecode[i]);
             if (opcode == .JUMPDEST) {
                 jumpdests.set(i);
             }
