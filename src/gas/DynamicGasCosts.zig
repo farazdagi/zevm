@@ -12,9 +12,9 @@
 //! or malicious input. Saturating ensures such cases are safely rejected.
 
 const std = @import("std");
-const Spec = @import("../../hardfork.zig").Spec;
-const Interpreter = @import("../interpreter.zig").Interpreter;
-const U256 = @import("../../primitives/big.zig").U256;
+const Spec = @import("../hardfork.zig").Spec;
+const Interpreter = @import("../interpreter/mod.zig").Interpreter;
+const U256 = @import("../primitives/big.zig").U256;
 const Costs = @import("costs.zig").Costs;
 const FixedGasCosts = @import("FixedGasCosts.zig");
 

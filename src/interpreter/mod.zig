@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const stack = @import("stack.zig");
 pub const memory = @import("memory.zig");
-pub const gas = @import("gas/mod.zig");
+pub const gas = @import("../gas/mod.zig");
 pub const hardfork = @import("../hardfork.zig");
 pub const opcode = @import("opcode.zig");
 pub const interpreter = @import("interpreter.zig");

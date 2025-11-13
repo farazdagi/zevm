@@ -3,7 +3,7 @@
 //! This provides O(1) lookup for base gas costs.
 
 const std = @import("std");
-const hardfork = @import("../../hardfork.zig");
+const hardfork = @import("../hardfork.zig");
 const Hardfork = hardfork.Hardfork;
 const Spec = hardfork.Spec;
 

@@ -7,11 +7,11 @@
 //! For dynamic costs see `DynamicGasCosts`.
 const std = @import("std");
 
-const FixedGasCosts = @import("interpreter/gas/FixedGasCosts.zig");
+const FixedGasCosts = @import("gas/FixedGasCosts.zig");
 const Opcode = @import("interpreter/opcode.zig").Opcode;
 const InstructionTable = @import("interpreter/InstructionTable.zig");
 const handlers = @import("interpreter/instructions/mod.zig");
-const DynamicGasCosts = @import("interpreter/gas/DynamicGasCosts.zig");
+const DynamicGasCosts = @import("gas/DynamicGasCosts.zig");
 
 /// Ethereum hard fork identifier.
 ///

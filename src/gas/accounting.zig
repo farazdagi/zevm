@@ -4,7 +4,7 @@
 //! All cost calculations are delegated to DynamicGasCosts.
 
 const std = @import("std");
-const Spec = @import("../../hardfork.zig").Spec;
+const Spec = @import("../hardfork.zig").Spec;
 const DynamicGasCosts = @import("DynamicGasCosts.zig");
 
 /// EVM gas accounting state.
