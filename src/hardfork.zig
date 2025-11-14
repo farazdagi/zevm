@@ -133,6 +133,9 @@ pub const Spec = struct {
     /// Cost per word of initcode
     initcode_word_cost: u64,
 
+    /// Cost per word (32 bytes) for KECCAK256 hashing.
+    keccak256_word_cost: u64 = 6,
+
     /// EIP-170: Contract code size limit
     /// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
     max_code_size: usize,
@@ -443,7 +446,10 @@ pub const FRONTIER = Spec{
             // Note: SHL(0x1B), SHR(0x1C), SAR(0x1D) added in Constantinople
 
             // 0x20: Crypto operations
-            t[@intFromEnum(Opcode.KECCAK256)] = .{ .execute = handlers.opKeccak256 }; // TODO: dynamic gas for memory
+            t[@intFromEnum(Opcode.KECCAK256)] = .{
+                .execute = handlers.opKeccak256,
+                .dynamicGasCost = DynamicGasCosts.opKeccak256,
+            };
 
             // 0x30-0x3F: Environmental information
             t[@intFromEnum(Opcode.ADDRESS)] = .{ .execute = handlers.opAddress };

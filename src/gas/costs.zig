@@ -56,10 +56,6 @@ pub const Costs = struct {
     pub const SHR: u64 = VERYLOW;
     pub const SAR: u64 = VERYLOW;
 
-    // Hashing Operations
-    pub const KECCAK256_BASE: u64 = 30;
-    pub const KECCAK256_WORD: u64 = 6; // Per word of data
-
     // Environmental Information
     pub const ADDRESS: u64 = BASE;
     pub const BALANCE: u64 = 100; // Warm access, cold is 2600

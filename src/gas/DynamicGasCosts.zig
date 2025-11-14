@@ -33,6 +33,7 @@ pub fn memoryCost(byte_size: usize) u64 {
 
 /// Compute EXP dynamic gas cost (per-byte portion only).
 ///
+/// Stack: [base, exponent, ...] (peek only, no modification)
 /// Returns ONLY the dynamic portion. The base cost is charged separately before executing.
 ///
 /// Handles EIP-160 change:
@@ -50,6 +51,7 @@ pub fn opExp(interp: *Interpreter) !u64 {
 
 /// Compute dynamic gas for MLOAD operation.
 ///
+/// Stack: [offset, ...] (peek only, no modification)
 /// Gas depends on memory expansion.
 pub fn opMload(interp: *Interpreter) !u64 {
     const offset_u256 = try interp.ctx.stack.peek(0);
@@ -63,12 +65,16 @@ pub fn opMload(interp: *Interpreter) !u64 {
 }
 
 /// Compute dynamic gas for MSTORE operation.
+///
+/// Stack: [offset, value, ...] (peek only, no modification)
 /// Gas depends on memory expansion (same as MLOAD).
 pub fn opMstore(interp: *Interpreter) !u64 {
     return opMload(interp); // Same logic
 }
 
 /// Compute dynamic gas for MSTORE8 operation.
+///
+/// Stack: [offset, value, ...] (peek only, no modification)
 /// Gas depends on memory expansion for a 1-byte write.
 pub fn opMstore8(interp: *Interpreter) !u64 {
     const offset_u256 = try interp.ctx.stack.peek(0);
@@ -82,6 +88,8 @@ pub fn opMstore8(interp: *Interpreter) !u64 {
 }
 
 /// Compute dynamic gas for RETURN operation.
+///
+/// Stack: [offset, size, ...] (peek only, no modification)
 /// Gas depends on memory expansion for reading return data.
 pub fn opReturn(interp: *Interpreter) !u64 {
     const offset_u256 = try interp.ctx.stack.peek(0);
@@ -101,12 +109,42 @@ pub fn opReturn(interp: *Interpreter) !u64 {
 }
 
 /// Compute dynamic gas for REVERT operation.
+///
+/// Stack: [offset, size, ...] (peek only, no modification)
 /// Gas depends on memory expansion (same as RETURN).
 pub fn opRevert(interp: *Interpreter) !u64 {
     return opReturn(interp); // Same logic
 }
 
+/// Compute dynamic gas for KECCAK256 operation.
+///
+/// Stack: [offset, size, ...] (peek only, no modification)
+/// Gas depends on memory expansion and input data size.
+pub fn opKeccak256(interp: *Interpreter) !u64 {
+    const offset_u256 = try interp.ctx.stack.peek(0);
+    const size_u256 = try interp.ctx.stack.peek(1);
+
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+
+    // No cost for zero-length hash
+    if (size == 0) return 0;
+
+    const old_size = interp.ctx.memory.len();
+    const new_size = offset +| size; // Saturating add
+
+    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+
+    // Hash cost: word_cost per 32-byte word
+    const words = (size +| 31) / 32;
+    const hash_gas = interp.spec.keccak256_word_cost *| @as(u64, @intCast(words));
+
+    return expansion_gas +| hash_gas;
+}
+
 /// Compute dynamic gas for MCOPY operation (EIP-5656, Cancun+).
+///
+/// Stack: [dest, src, size, ...] (peek only, no modification)
 /// Gas depends on memory expansion for both source and destination regions,
 /// plus per-word copy cost.
 pub fn opMcopy(interp: *Interpreter) !u64 {
@@ -201,14 +239,6 @@ fn calldataCost(spec: Spec, data: []const u8) u64 {
     return cost;
 }
 
-/// Calculate KECCAK256 (SHA3) cost based on input size.
-///
-/// Formula: 30 + (6 * ceil(size/32))
-fn keccak256Cost(size: usize) u64 {
-    const words = (size +| 31) / 32;
-    return Costs.KECCAK256_BASE +| (Costs.KECCAK256_WORD *| @as(u64, @intCast(words)));
-}
-
 /// Calculate LOG cost (LOG0-LOG4).
 ///
 /// Formula: 375 + (375 * topic_count) + (8 * data_size_bytes)
@@ -234,7 +264,13 @@ test "dynamic_gas: basic smoke test" {
 
     // Use proper Interpreter initialization
     const bytecode = &[_]u8{0x00}; // STOP
-    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000);
+    const Env = @import("../context.zig").Env;
+    const MockHost = @import("../host/mock.zig").MockHost;
+    const env = Env.default();
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+
+    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Test EXP with small exponent
@@ -371,24 +407,6 @@ test "calldataCost" {
     try expectEqual(4 * 4, calldataCost(berlin_spec, &data3));
 }
 
-test "keccak256Cost" {
-    const test_cases = [_]struct {
-        size: usize,
-        expected: u64,
-    }{
-        // 100 bytes = 4 words: 30 + 6*4 = 54
-        .{ .size = 100, .expected = 54 },
-        // 32 bytes = 1 word: 30 + 6 = 36
-        .{ .size = 32, .expected = 36 },
-        // 0 bytes: 30 + 0 = 30
-        .{ .size = 0, .expected = 30 },
-    };
-
-    for (test_cases) |tc| {
-        try expectEqual(tc.expected, keccak256Cost(tc.size));
-    }
-}
-
 test "logCost" {
     const test_cases = [_]struct {
         topic_count: u8,
@@ -408,6 +426,60 @@ test "logCost" {
     }
 }
 
+test "opKeccak256 dynamic gas" {
+    const allocator = std.testing.allocator;
+    const spec = Spec.forFork(.CANCUN);
+    const bytecode = &[_]u8{0x00}; // STOP
+    const Env = @import("../context.zig").Env;
+    const MockHost = @import("../host/mock.zig").MockHost;
+    const env = Env.default();
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+
+    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    defer interp.deinit();
+
+    // Test zero-length input (0 words, no memory expansion)
+    // Stack: [offset, size] with offset on top
+    try interp.ctx.stack.push(U256.fromU64(0)); // size (pushed first, will be second)
+    try interp.ctx.stack.push(U256.fromU64(0)); // offset (pushed second, will be on top)
+    var gas = try opKeccak256(&interp);
+    try expectEqual(0, gas); // Zero size = 0 gas
+    _ = try interp.ctx.stack.pop(); // Clear stack
+    _ = try interp.ctx.stack.pop();
+
+    // Test 32 bytes (1 word)
+    try interp.ctx.stack.push(U256.fromU64(32)); // size (pushed first, will be second)
+    try interp.ctx.stack.push(U256.fromU64(0)); // offset (pushed second, will be on top)
+    gas = try opKeccak256(&interp);
+    // 1 word = 6 gas (keccak256_word_cost), plus memory expansion
+    // Memory 0->32 expansion cost
+    const expected_32 = 6 + interp.gas.memoryExpansionCost(0, 32);
+    try expectEqual(expected_32, gas);
+    _ = try interp.ctx.stack.pop();
+    _ = try interp.ctx.stack.pop();
+
+    // Test 100 bytes (4 words: ceil(100/32) = 4)
+    try interp.ctx.stack.push(U256.fromU64(100)); // size (pushed first, will be second)
+    try interp.ctx.stack.push(U256.fromU64(0)); // offset (pushed second, will be on top)
+    gas = try opKeccak256(&interp);
+    // 4 words = 24 gas, plus memory expansion from 32->100
+    const expected_100 = 24 + interp.gas.memoryExpansionCost(32, 100);
+    try expectEqual(expected_100, gas);
+    _ = try interp.ctx.stack.pop();
+    _ = try interp.ctx.stack.pop();
+
+    // Test 64 bytes (2 words) at offset 32 (no additional expansion)
+    try interp.ctx.memory.ensureCapacity(0, 128); // Pre-expand
+    const old_size = interp.ctx.memory.len();
+    try interp.ctx.stack.push(U256.fromU64(64)); // size (pushed first, will be second)
+    try interp.ctx.stack.push(U256.fromU64(32)); // offset (pushed second, will be on top)
+    gas = try opKeccak256(&interp);
+    // 2 words = 12 gas, no expansion (memory already >= 96)
+    const expansion_cost = interp.gas.memoryExpansionCost(old_size, 96);
+    try expectEqual(12 + expansion_cost, gas);
+}
+
 test "overflow saturation" {
     // This test verifies that saturating arithmetic (+|, *|) prevents overflow.
     // If someone accidentally removes the | operators, these tests will catch it.
@@ -420,13 +492,6 @@ test "overflow saturation" {
     const huge_size: usize = if (@sizeOf(usize) >= 8) (1 << 40) else (1 << 20);
     const memory_result = memoryCost(huge_size);
     try expect(memory_result > threshold);
-
-    // keccak256Cost: multiplier (6) is small, need very large size
-    // Need size such that 6 * (size/32) > threshold, so size > threshold / 192
-    // Use max_u64 / 8 to ensure we exceed threshold
-    const keccak_huge: usize = if (@sizeOf(usize) >= 8) max_u64 / 8 else (1 << 28);
-    const keccak_result = keccak256Cost(keccak_huge);
-    try expect(keccak_result > threshold);
 
     // logCost: data size multiplication saturates
     // 8 * (max_u64 / 4) = 2 * max_u64, overflows to max_u64
