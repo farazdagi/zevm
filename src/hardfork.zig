@@ -10,7 +10,7 @@ const std = @import("std");
 const FixedGasCosts = @import("gas/FixedGasCosts.zig");
 const Opcode = @import("interpreter/opcode.zig").Opcode;
 const InstructionTable = @import("interpreter/InstructionTable.zig");
-const handlers = @import("interpreter/instructions/mod.zig");
+const handlers = @import("interpreter/handlers/mod.zig");
 const DynamicGasCosts = @import("gas/DynamicGasCosts.zig");
 
 /// Ethereum hard fork identifier.

@@ -6,7 +6,7 @@ pub const gas = @import("../gas/mod.zig");
 pub const hardfork = @import("../hardfork.zig");
 pub const opcode = @import("opcode.zig");
 pub const interpreter = @import("interpreter.zig");
-pub const instructions = @import("instructions/mod.zig");
+pub const handlers = @import("handlers/mod.zig");
 pub const bytecode = @import("bytecode.zig");
 
 // Re-exports
@@ -26,7 +26,7 @@ pub const InstructionTable = @import("InstructionTable.zig");
 
 test {
     std.testing.refAllDecls(@This());
-    _ = instructions;
+    _ = handlers;
     _ = stack;
     _ = memory;
     _ = gas;

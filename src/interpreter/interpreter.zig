@@ -16,7 +16,7 @@ const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 const InstructionTable = @import("InstructionTable.zig");
 
 // Instruction handlers
-const handlers = @import("instructions/mod.zig");
+const handlers = @import("handlers/mod.zig");
 
 /// Execution status after interpreter completes.
 pub const ExecutionStatus = enum {
