@@ -396,7 +396,7 @@ test "Eip7702Bytecode: parse valid delegation" {
     const eip7702 = try Eip7702Bytecode.parse(&raw);
 
     try expectEqual(Eip7702Bytecode.VERSION, eip7702.version);
-    try expectEqual(@as(usize, 23), eip7702.len());
+    try expectEqual(23, eip7702.len());
     try expect(!eip7702.isCleared());
 }
 
@@ -434,13 +434,13 @@ test "Eip7702Bytecode: create from address" {
     defer eip7702.deinit(std.testing.allocator);
 
     try expectEqual(Eip7702Bytecode.VERSION, eip7702.version);
-    try expectEqual(@as(usize, 23), eip7702.len());
+    try expectEqual(23, eip7702.len());
     try expect(addr.eql(eip7702.delegated_address));
 
     // Verify format
-    try expectEqual(@as(u8, 0xEF), eip7702.raw[0]);
-    try expectEqual(@as(u8, 0x01), eip7702.raw[1]);
-    try expectEqual(@as(u8, 0x00), eip7702.raw[2]);
+    try expectEqual(0xEF, eip7702.raw[0]);
+    try expectEqual(0x01, eip7702.raw[1]);
+    try expectEqual(0x00, eip7702.raw[2]);
 }
 
 test "Eip7702Bytecode: zero address (cleared delegation)" {
@@ -473,7 +473,7 @@ test "Bytecode: newDelegation convenience constructor" {
     defer bc.deinit(std.testing.allocator);
 
     try expect(bc.isEip7702());
-    try expectEqual(@as(usize, 23), bc.len());
+    try expectEqual(23, bc.len());
 
     // Verify we can access the delegation
     const eip7702 = bc.eip7702;

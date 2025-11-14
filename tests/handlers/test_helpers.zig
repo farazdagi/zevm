@@ -6,7 +6,15 @@ const zevm = @import("zevm");
 const Interpreter = zevm.interpreter.Interpreter;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
+const Hardfork = zevm.hardfork.Hardfork;
 const U256 = zevm.primitives.U256;
+const Address = zevm.primitives.Address;
+const B256 = zevm.primitives.B256;
+const Env = zevm.context.Env;
+const BlockEnv = zevm.context.BlockEnv;
+const TxEnv = zevm.context.TxEnv;
+const MockHost = zevm.host.MockHost;
+const Host = zevm.host.Host;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -25,15 +33,63 @@ pub const TestCase = struct {
     spec: Spec = Spec.forFork(.BERLIN),
 };
 
+/// Create test environment with optional customization
+pub fn createTestEnv(opts: struct {
+    block_number: u64 = 1,
+    timestamp: u64 = 0,
+    caller: Address = Address.zero(),
+    value: U256 = U256.ZERO,
+}) Env {
+    return .{
+        .block = BlockEnv{
+            .number = opts.block_number,
+            .coinbase = Address.zero(),
+            .timestamp = opts.timestamp,
+            .gas_limit = 30_000_000,
+            .basefee = U256.ZERO,
+            .prevrandao = B256.zero(),
+            .chain_id = 1,
+        },
+        .tx = TxEnv{
+            .caller = opts.caller,
+            .origin = opts.caller,
+            .gas_price = U256.fromU64(1),
+            .value = opts.value,
+            .data = &[_]u8{},
+        },
+    };
+}
+
+/// Create test interpreter with mock host
+pub fn createTestInterpreter(
+    allocator: std.mem.Allocator,
+    bytecode: []const u8,
+    fork: Hardfork,
+    gas_limit: u64,
+    env: *const Env,
+    mock_host: *MockHost,
+) !Interpreter {
+    const spec = Spec.forFork(fork);
+    const host = mock_host.host();
+    return try Interpreter.init(allocator, bytecode, spec, gas_limit, env, host);
+}
+
 /// Run a series of opcode tests using table-based test cases.
 pub fn runOpcodeTests(allocator: std.mem.Allocator, test_cases: []const TestCase) !void {
+    // Create default env and mock host for all tests
+    const env = createTestEnv(.{});
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+
     for (test_cases) |tc| {
         // Init interpreter with provided bytecode and spec.
-        var interpreter = try Interpreter.init(
+        var interpreter = try createTestInterpreter(
             allocator,
             tc.bytecode,
-            tc.spec,
+            tc.spec.fork,
             10000,
+            &env,
+            &mock,
         );
         defer interpreter.deinit();
 

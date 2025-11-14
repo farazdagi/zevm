@@ -172,8 +172,8 @@ test "NOT" {
 }
 
 test "BYTE" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // Create a known value: 0x0102030405060708...
     const val = U256{
@@ -186,31 +186,31 @@ test "BYTE" {
     };
 
     // Extract byte 0 (most significant) = 0x07
-    try interp.ctx.stack.push(val); // x first
-    try interp.ctx.stack.push(U256.fromU64(0)); // i second (on top)
-    try opByte(&interp);
-    const result0 = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(val); // x first
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // i second (on top)
+    try opByte(&ctx.interp);
+    const result0 = try ctx.interp.ctx.stack.pop();
     try expectEqual(0x07, result0.toU64().?);
 
     // Extract byte 1 = 0x06
-    try interp.ctx.stack.push(val);
-    try interp.ctx.stack.push(U256.fromU64(1));
-    try opByte(&interp);
-    const result1 = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(val);
+    try ctx.interp.ctx.stack.push(U256.fromU64(1));
+    try opByte(&ctx.interp);
+    const result1 = try ctx.interp.ctx.stack.pop();
     try expectEqual(0x06, result1.toU64().?);
 
     // Extract byte 31 (least significant) = 0x18
-    try interp.ctx.stack.push(val);
-    try interp.ctx.stack.push(U256.fromU64(31));
-    try opByte(&interp);
-    const result31 = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(val);
+    try ctx.interp.ctx.stack.push(U256.fromU64(31));
+    try opByte(&ctx.interp);
+    const result31 = try ctx.interp.ctx.stack.pop();
     try expectEqual(0x18, result31.toU64().?);
 
     // Extract byte 32 (out of bounds) = 0
-    try interp.ctx.stack.push(val);
-    try interp.ctx.stack.push(U256.fromU64(32));
-    try opByte(&interp);
-    const result_oob = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(val);
+    try ctx.interp.ctx.stack.push(U256.fromU64(32));
+    try opByte(&ctx.interp);
+    const result_oob = try ctx.interp.ctx.stack.pop();
     try expectEqual(0, result_oob.toU64().?);
 }
 
@@ -239,8 +239,8 @@ test "SHR" {
 }
 
 test "SAR" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // Positive values (like SHR)
     const positive_cases = [_]struct {
@@ -253,34 +253,34 @@ test "SAR" {
     };
 
     for (positive_cases) |tc| {
-        try interp.ctx.stack.push(U256.fromU64(tc.value));
-        try interp.ctx.stack.push(U256.fromU64(tc.shift));
-        try opSar(&interp);
-        const result = try interp.ctx.stack.pop();
+        try ctx.interp.ctx.stack.push(U256.fromU64(tc.value));
+        try ctx.interp.ctx.stack.push(U256.fromU64(tc.shift));
+        try opSar(&ctx.interp);
+        const result = try ctx.interp.ctx.stack.pop();
         try expectEqual(tc.expected, result.toU64().?);
-        try expectEqual(0, interp.ctx.stack.len);
+        try expectEqual(0, ctx.interp.ctx.stack.len);
     }
 
     // Negative value - sign extension
     const MIN_I256 = U256{ .limbs = .{ 0, 0, 0, 0x8000000000000000 } };
-    try interp.ctx.stack.push(MIN_I256);
-    try interp.ctx.stack.push(U256.fromU64(8));
-    try opSar(&interp);
-    const result_neg = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(MIN_I256);
+    try ctx.interp.ctx.stack.push(U256.fromU64(8));
+    try opSar(&ctx.interp);
+    const result_neg = try ctx.interp.ctx.stack.pop();
     try expectEqual(0xFF80000000000000, result_neg.limbs[3]);
 
     // Overflow cases
     // Positive value shifted by >= 256 = 0
-    try interp.ctx.stack.push(U256.fromU64(123));
-    try interp.ctx.stack.push(U256.fromU64(300));
-    try opSar(&interp);
-    const result_pos_overflow = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(U256.fromU64(123));
+    try ctx.interp.ctx.stack.push(U256.fromU64(300));
+    try opSar(&ctx.interp);
+    const result_pos_overflow = try ctx.interp.ctx.stack.pop();
     try expect(result_pos_overflow.isZero());
 
     // Negative value shifted by >= 256 = MAX
-    try interp.ctx.stack.push(U256.MAX);
-    try interp.ctx.stack.push(U256.fromU64(300));
-    try opSar(&interp);
-    const result_neg_overflow = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(U256.MAX);
+    try ctx.interp.ctx.stack.push(U256.fromU64(300));
+    try opSar(&ctx.interp);
+    const result_neg_overflow = try ctx.interp.ctx.stack.pop();
     try expect(result_neg_overflow.eql(U256.MAX));
 }

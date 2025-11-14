@@ -143,160 +143,160 @@ const test_helpers = @import("test_helpers.zig");
 
 test "PC returns current program counter" {
     const bytecode = [_]u8{0x00}; // STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
     // Set PC to 10
-    interp.pc = 10;
-    try opPc(&interp);
+    ctx.interp.pc = 10;
+    try opPc(&ctx.interp);
 
-    const result = try interp.ctx.stack.pop();
+    const result = try ctx.interp.ctx.stack.pop();
     try expectEqual(10, result.toU64().?);
 }
 
 test "GAS returns remaining gas" {
     const bytecode = [_]u8{0x00}; // STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
     // Consume some gas
-    try interp.gas.consume(30);
+    try ctx.interp.gas.consume(30);
 
     // GAS opcode should return remaining gas
-    try opGas(&interp);
+    try opGas(&ctx.interp);
 
-    const result = try interp.ctx.stack.pop();
+    const result = try ctx.interp.ctx.stack.pop();
     const expected = 1000000 - 30;
     try expectEqual(expected, result.toU64().?);
 }
 
 test "JUMP to valid JUMPDEST" {
     const bytecode = [_]u8{ 0x5B, 0x00 }; // JUMPDEST at 0, STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.fromU64(0)); // Jump to position 0
-    try opJump(&interp);
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // Jump to position 0
+    try opJump(&ctx.interp);
 
     // PC should be set to 0
-    try expectEqual(0, interp.pc);
+    try expectEqual(0, ctx.interp.pc);
 }
 
 test "JUMP to invalid destination fails" {
     const bytecode = [_]u8{ 0x00, 0x5B }; // STOP, JUMPDEST
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.fromU64(0)); // Try to jump to STOP (invalid)
-    try expectError(error.InvalidJump, opJump(&interp));
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // Try to jump to STOP (invalid)
+    try expectError(error.InvalidJump, opJump(&ctx.interp));
 }
 
 test "JUMP out of bounds fails" {
     const bytecode = [_]u8{0x5B}; // JUMPDEST
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.fromU64(100)); // Out of bounds
-    try expectError(error.InvalidJump, opJump(&interp));
+    try ctx.interp.ctx.stack.push(U256.fromU64(100)); // Out of bounds
+    try expectError(error.InvalidJump, opJump(&ctx.interp));
 }
 
 test "JUMPI with true condition jumps" {
     const bytecode = [_]u8{0x5B}; // JUMPDEST at 0
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.fromU64(1)); // condition = true
-    try interp.ctx.stack.push(U256.fromU64(0)); // destination = 0
+    try ctx.interp.ctx.stack.push(U256.fromU64(1)); // condition = true
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // destination = 0
 
-    interp.pc = 5; // Set PC to non-zero
-    try opJumpi(&interp);
+    ctx.interp.pc = 5; // Set PC to non-zero
+    try opJumpi(&ctx.interp);
 
     // PC should be set to 0 (jumped)
-    try expectEqual(0, interp.pc);
+    try expectEqual(0, ctx.interp.pc);
 }
 
 test "JUMPI with false condition doesn't jump" {
     const bytecode = [_]u8{0x5B}; // JUMPDEST at 0
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.fromU64(0)); // condition = false
-    try interp.ctx.stack.push(U256.fromU64(0)); // destination = 0
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // condition = false
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // destination = 0
 
-    interp.pc = 5; // Set PC to non-zero
-    try opJumpi(&interp);
+    ctx.interp.pc = 5; // Set PC to non-zero
+    try opJumpi(&ctx.interp);
 
     // PC should remain 5 (didn't jump)
-    try expectEqual(5, interp.pc);
+    try expectEqual(5, ctx.interp.pc);
 }
 
 test "JUMPI with true condition to invalid destination fails" {
     const bytecode = [_]u8{ 0x00, 0x5B }; // STOP, JUMPDEST
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.fromU64(1)); // condition = true
-    try interp.ctx.stack.push(U256.fromU64(0)); // destination = 0 (invalid)
+    try ctx.interp.ctx.stack.push(U256.fromU64(1)); // condition = true
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // destination = 0 (invalid)
 
-    try expectError(error.InvalidJump, opJumpi(&interp));
+    try expectError(error.InvalidJump, opJumpi(&ctx.interp));
 }
 
 test "RETURN with zero size" {
     const bytecode = [_]u8{0x00}; // STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.ZERO); // size = 0
-    try interp.ctx.stack.push(U256.ZERO); // offset = 0
+    try ctx.interp.ctx.stack.push(U256.ZERO); // size = 0
+    try ctx.interp.ctx.stack.push(U256.ZERO); // offset = 0
 
-    try opReturn(&interp);
+    try opReturn(&ctx.interp);
 
-    try expect(interp.is_halted);
-    try expectEqual(0, interp.return_data.?.len);
+    try expect(ctx.interp.is_halted);
+    try expectEqual(0, ctx.interp.return_data.?.len);
 }
 
 test "RETURN with data" {
     const bytecode = [_]u8{0x00}; // STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
-    defer if (interp.return_data) |data| interp.allocator.free(data);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
+    defer if (ctx.interp.return_data) |data| ctx.interp.allocator.free(data);
 
     // Store some data in memory
-    try interp.ctx.memory.mstore(0, U256.fromU64(0x42));
+    try ctx.interp.ctx.memory.mstore(0, U256.fromU64(0x42));
 
-    try interp.ctx.stack.push(U256.fromU64(32)); // size = 32 bytes
-    try interp.ctx.stack.push(U256.ZERO); // offset = 0
+    try ctx.interp.ctx.stack.push(U256.fromU64(32)); // size = 32 bytes
+    try ctx.interp.ctx.stack.push(U256.ZERO); // offset = 0
 
-    try opReturn(&interp);
+    try opReturn(&ctx.interp);
 
-    try expect(interp.is_halted);
-    try expectEqual(32, interp.return_data.?.len);
+    try expect(ctx.interp.is_halted);
+    try expectEqual(32, ctx.interp.return_data.?.len);
 }
 
 test "REVERT with zero size" {
     const bytecode = [_]u8{0x00}; // STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
 
-    try interp.ctx.stack.push(U256.ZERO); // size = 0
-    try interp.ctx.stack.push(U256.ZERO); // offset = 0
+    try ctx.interp.ctx.stack.push(U256.ZERO); // size = 0
+    try ctx.interp.ctx.stack.push(U256.ZERO); // offset = 0
 
-    try expectError(error.Revert, opRevert(&interp));
-    try expectEqual(0, interp.return_data.?.len);
+    try expectError(error.Revert, opRevert(&ctx.interp));
+    try expectEqual(0, ctx.interp.return_data.?.len);
 }
 
 test "REVERT with data" {
     const bytecode = [_]u8{0x00}; // STOP
-    var interp = try test_helpers.createTestInterpreterWithBytecode(&bytecode);
-    defer interp.deinit();
-    defer if (interp.return_data) |data| interp.allocator.free(data);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    defer ctx.destroy();
+    defer if (ctx.interp.return_data) |data| ctx.interp.allocator.free(data);
 
     // Store some data in memory
-    try interp.ctx.memory.mstore(0, U256.fromU64(0x99));
+    try ctx.interp.ctx.memory.mstore(0, U256.fromU64(0x99));
 
-    try interp.ctx.stack.push(U256.fromU64(32)); // size = 32 bytes
-    try interp.ctx.stack.push(U256.ZERO); // offset = 0
+    try ctx.interp.ctx.stack.push(U256.fromU64(32)); // size = 32 bytes
+    try ctx.interp.ctx.stack.push(U256.ZERO); // offset = 0
 
-    try expectError(error.Revert, opRevert(&interp));
-    try expectEqual(32, interp.return_data.?.len);
+    try expectError(error.Revert, opRevert(&ctx.interp));
+    try expectEqual(32, ctx.interp.return_data.?.len);
 }

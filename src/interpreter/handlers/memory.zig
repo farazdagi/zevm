@@ -101,86 +101,86 @@ const expectError = std.testing.expectError;
 const test_helpers = @import("test_helpers.zig");
 
 test "MSTORE and MLOAD basic operations" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // MSTORE: store 0x42 at offset 0
-    try interp.ctx.stack.push(U256.fromU64(0x42)); // value
-    try interp.ctx.stack.push(U256.fromU64(0)); // offset
-    try opMstore(&interp);
+    try ctx.interp.ctx.stack.push(U256.fromU64(0x42)); // value
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // offset
+    try opMstore(&ctx.interp);
 
     // MLOAD: load from offset 0
-    try interp.ctx.stack.push(U256.fromU64(0)); // offset
-    try opMload(&interp);
-    const loaded = try interp.ctx.stack.pop();
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // offset
+    try opMload(&ctx.interp);
+    const loaded = try ctx.interp.ctx.stack.pop();
     try expectEqual(U256.fromU64(0x42), loaded);
 }
 
 test "MSTORE8 byte storage" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // MSTORE8: store byte 0x42 at offset 5
-    try interp.ctx.stack.push(U256.fromU64(0x1234)); // value (only LSB 0x34 stored)
-    try interp.ctx.stack.push(U256.fromU64(5)); // offset
-    try opMstore8(&interp);
+    try ctx.interp.ctx.stack.push(U256.fromU64(0x1234)); // value (only LSB 0x34 stored)
+    try ctx.interp.ctx.stack.push(U256.fromU64(5)); // offset
+    try opMstore8(&ctx.interp);
 
     // Verify by loading the word containing it
-    const loaded_word = try interp.ctx.memory.mload(0);
+    const loaded_word = try ctx.interp.ctx.memory.mload(0);
     const loaded_bytes = loaded_word.toBeBytes();
     try expectEqual(0x34, loaded_bytes[5]);
 }
 
 test "MSIZE reports correct size" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // Initially empty
-    try opMsize(&interp);
-    try expectEqual(0, (try interp.ctx.stack.pop()).toU64().?);
+    try opMsize(&ctx.interp);
+    try expectEqual(0, (try ctx.interp.ctx.stack.pop()).toU64().?);
 
     // After storing at offset 0 (expands to 32 bytes)
-    try interp.ctx.memory.mstore(0, U256.fromU64(0x42));
-    try opMsize(&interp);
-    try expectEqual(32, (try interp.ctx.stack.pop()).toU64().?);
+    try ctx.interp.ctx.memory.mstore(0, U256.fromU64(0x42));
+    try opMsize(&ctx.interp);
+    try expectEqual(32, (try ctx.interp.ctx.stack.pop()).toU64().?);
 }
 
 test "MCOPY basic copy" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // Setup: store value at offset 0
-    try interp.ctx.memory.mstore(0, U256.fromU64(0x1234));
+    try ctx.interp.ctx.memory.mstore(0, U256.fromU64(0x1234));
 
     // MCOPY: copy from 0 to 32 for 32 bytes
-    try interp.ctx.stack.push(U256.fromU64(32)); // length
-    try interp.ctx.stack.push(U256.fromU64(0)); // src
-    try interp.ctx.stack.push(U256.fromU64(32)); // dest
-    try opMcopy(&interp);
+    try ctx.interp.ctx.stack.push(U256.fromU64(32)); // length
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // src
+    try ctx.interp.ctx.stack.push(U256.fromU64(32)); // dest
+    try opMcopy(&ctx.interp);
 
     // Verify the copy
-    const copied = try interp.ctx.memory.mload(32);
+    const copied = try ctx.interp.ctx.memory.mload(32);
     try expectEqual(U256.fromU64(0x1234), copied);
 }
 
 test "MCOPY overlapping regions" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // Setup: Store pattern [0xAA, 0xBB, 0xCC, 0xDD] at offset 0
-    try interp.ctx.memory.mstore8(0, 0xAA);
-    try interp.ctx.memory.mstore8(1, 0xBB);
-    try interp.ctx.memory.mstore8(2, 0xCC);
-    try interp.ctx.memory.mstore8(3, 0xDD);
+    try ctx.interp.ctx.memory.mstore8(0, 0xAA);
+    try ctx.interp.ctx.memory.mstore8(1, 0xBB);
+    try ctx.interp.ctx.memory.mstore8(2, 0xCC);
+    try ctx.interp.ctx.memory.mstore8(3, 0xDD);
 
     // Copy from offset 0 to offset 2 (overlapping, forward)
-    try interp.ctx.stack.push(U256.fromU64(2)); // length
-    try interp.ctx.stack.push(U256.fromU64(0)); // src
-    try interp.ctx.stack.push(U256.fromU64(2)); // dest
-    try opMcopy(&interp);
+    try ctx.interp.ctx.stack.push(U256.fromU64(2)); // length
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // src
+    try ctx.interp.ctx.stack.push(U256.fromU64(2)); // dest
+    try opMcopy(&ctx.interp);
 
     // Verify the copy
-    const slice = try interp.ctx.memory.getSlice(0, 4);
+    const slice = try ctx.interp.ctx.memory.getSlice(0, 4);
     try expectEqual(0xAA, slice[0]);
     try expectEqual(0xBB, slice[1]);
     try expectEqual(0xAA, slice[2]);
@@ -188,19 +188,19 @@ test "MCOPY overlapping regions" {
 }
 
 test "MCOPY zero-length is no-op" {
-    var interp = try test_helpers.createTestInterpreter();
-    defer interp.deinit();
+    var ctx = try test_helpers.TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
 
     // Store value at offset 0
-    try interp.ctx.memory.mstore(0, U256.fromU64(0x42));
-    const initial_size = interp.ctx.memory.len();
+    try ctx.interp.ctx.memory.mstore(0, U256.fromU64(0x42));
+    const initial_size = ctx.interp.ctx.memory.len();
 
     // Zero-length copy should be no-op
-    try interp.ctx.stack.push(U256.ZERO); // length = 0
-    try interp.ctx.stack.push(U256.fromU64(0)); // src
-    try interp.ctx.stack.push(U256.fromU64(32)); // dest
-    try opMcopy(&interp);
+    try ctx.interp.ctx.stack.push(U256.ZERO); // length = 0
+    try ctx.interp.ctx.stack.push(U256.fromU64(0)); // src
+    try ctx.interp.ctx.stack.push(U256.fromU64(32)); // dest
+    try opMcopy(&ctx.interp);
 
     // Memory size should not change
-    try expectEqual(initial_size, interp.ctx.memory.len());
+    try expectEqual(initial_size, ctx.interp.ctx.memory.len());
 }

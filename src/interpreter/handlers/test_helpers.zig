@@ -1,25 +1,56 @@
 //! Test helpers for instruction handler tests.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const U256 = @import("../../primitives/big.zig").U256;
 const Interpreter = @import("../interpreter.zig").Interpreter;
+const Env = @import("../../context.zig").Env;
+const MockHost = @import("../../host/mock.zig").MockHost;
+const Spec = @import("../../hardfork.zig").Spec;
 
 const expectEqual = std.testing.expectEqual;
 
-/// Create a minimal test interpreter with default bytecode (STOP).
-pub fn createTestInterpreter() !Interpreter {
-    const Spec = @import("../../hardfork.zig").Spec;
-    const spec = Spec.forFork(.CANCUN);
-    const bytecode = [_]u8{0x00}; // STOP
-    return try Interpreter.init(std.testing.allocator, &bytecode, spec, 1000000);
-}
+/// This ensures that pointers within the interpreter remain valid.
+pub const TestContext = struct {
+    env: Env,
+    mock: MockHost,
+    interp: Interpreter,
+    allocator: Allocator,
 
-/// Create a test interpreter with custom bytecode.
-pub fn createTestInterpreterWithBytecode(bytecode: []const u8) !Interpreter {
-    const Spec = @import("../../hardfork.zig").Spec;
-    const spec = Spec.forFork(.CANCUN);
-    return try Interpreter.init(std.testing.allocator, bytecode, spec, 1000000);
-}
+    /// Create test context with default bytecode (STOP).
+    pub fn create(allocator: Allocator) !*TestContext {
+        return createWithBytecode(allocator, &[_]u8{0x00});
+    }
+
+    /// Create test context with custom bytecode.
+    pub fn createWithBytecode(allocator: Allocator, bytecode: []const u8) !*TestContext {
+        const self = try allocator.create(TestContext);
+        errdefer allocator.destroy(self);
+
+        self.allocator = allocator;
+        self.env = Env.default();
+        self.mock = MockHost.init(allocator);
+        errdefer self.mock.deinit();
+
+        self.interp = try Interpreter.init(
+            allocator,
+            bytecode,
+            Spec.forFork(.CANCUN),
+            1000000,
+            &self.env,
+            self.mock.host(),
+        );
+
+        return self;
+    }
+
+    /// Clean up all resources and free the context.
+    pub fn destroy(self: *TestContext) void {
+        self.interp.deinit();
+        self.mock.deinit();
+        self.allocator.destroy(self);
+    }
+};
 
 /// Test case for stack operations with varying arity.
 pub const TestCase = union(enum) {
@@ -97,36 +128,36 @@ pub fn testOp(
     test_cases: []const TestCase,
 ) !void {
     for (test_cases) |tc| {
-        var interp = try createTestInterpreter();
-        defer interp.deinit();
+        var ctx = try TestContext.create(std.testing.allocator);
+        defer ctx.destroy();
 
         switch (tc) {
             .unary => |case| {
-                try interp.ctx.stack.push(case.value);
-                try op_fn(&interp);
+                try ctx.interp.ctx.stack.push(case.value);
+                try op_fn(&ctx.interp);
 
-                const result = try interp.ctx.stack.pop();
+                const result = try ctx.interp.ctx.stack.pop();
                 try std.testing.expect(case.expected.eql(result));
             },
             .binary => |case| {
-                try interp.ctx.stack.push(case.b); // second operand (pushed first, bottom)
-                try interp.ctx.stack.push(case.a); // first operand (pushed second, on top)
-                try op_fn(&interp);
+                try ctx.interp.ctx.stack.push(case.b); // second operand (pushed first, bottom)
+                try ctx.interp.ctx.stack.push(case.a); // first operand (pushed second, on top)
+                try op_fn(&ctx.interp);
 
-                const result = try interp.ctx.stack.pop();
+                const result = try ctx.interp.ctx.stack.pop();
                 try std.testing.expect(case.expected.eql(result));
             },
             .ternary => |case| {
-                try interp.ctx.stack.push(case.c); // third operand (pushed first, bottom)
-                try interp.ctx.stack.push(case.b); // second operand
-                try interp.ctx.stack.push(case.a); // first operand (pushed last, on top)
-                try op_fn(&interp);
+                try ctx.interp.ctx.stack.push(case.c); // third operand (pushed first, bottom)
+                try ctx.interp.ctx.stack.push(case.b); // second operand
+                try ctx.interp.ctx.stack.push(case.a); // first operand (pushed last, on top)
+                try op_fn(&ctx.interp);
 
-                const result = try interp.ctx.stack.pop();
+                const result = try ctx.interp.ctx.stack.pop();
                 try std.testing.expect(case.expected.eql(result));
             },
         }
 
-        try expectEqual(0, interp.ctx.stack.len);
+        try expectEqual(0, ctx.interp.ctx.stack.len);
     }
 }

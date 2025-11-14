@@ -8,6 +8,8 @@ const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const Hardfork = zevm.hardfork.Hardfork;
 const U256 = zevm.primitives.U256;
+const Env = zevm.context.Env;
+const MockHost = zevm.host.MockHost;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -24,11 +26,17 @@ test "JUMP: simple forward jump" {
         0x00, // STOP
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+        &env,
+        mock.host(),
     );
     defer interpreter.deinit();
 
@@ -36,9 +44,9 @@ test "JUMP: simple forward jump" {
 
     // Should have executed the jump and pushed 0x42
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
-    try expectEqual(@as(usize, 1), interpreter.ctx.stack.len);
+    try expectEqual(1, interpreter.ctx.stack.len);
     const value = try interpreter.ctx.stack.pop();
-    try expectEqual(@as(u64, 0x42), value.toU64().?);
+    try expectEqual(0x42, value.toU64().?);
 }
 
 test "JUMPI: conditional jump taken" {
@@ -55,11 +63,17 @@ test "JUMPI: conditional jump taken" {
         0x00, // STOP - pos 10
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -67,7 +81,7 @@ test "JUMPI: conditional jump taken" {
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.pop();
-    try expectEqual(@as(u64, 0x99), value.toU64().?);
+    try expectEqual(0x99, value.toU64().?);
 }
 
 test "JUMPI: conditional jump not taken" {
@@ -84,11 +98,17 @@ test "JUMPI: conditional jump not taken" {
         0x00, // STOP - pos 11
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -96,7 +116,7 @@ test "JUMPI: conditional jump not taken" {
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.pop();
-    try expectEqual(@as(u64, 0x77), value.toU64().?); // Not 0x99
+    try expectEqual(0x77, value.toU64().?); // Not 0x99
 }
 
 test "loop: simple counter loop" {
@@ -116,11 +136,17 @@ test "loop: simple counter loop" {
         0x00, // STOP - pos 12
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -129,7 +155,7 @@ test "loop: simple counter loop" {
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     // Final counter value should be 0
     const value = try interpreter.ctx.stack.pop();
-    try expectEqual(@as(u64, 0), value.toU64().?);
+    try expectEqual(0, value.toU64().?);
 }
 
 test "RETURN: empty return data" {
@@ -140,11 +166,17 @@ test "RETURN: empty return data" {
         0xF3, // RETURN
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -152,7 +184,7 @@ test "RETURN: empty return data" {
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expect(result.return_data != null);
-    try expectEqual(@as(usize, 0), result.return_data.?.len);
+    try expectEqual(0, result.return_data.?.len);
 }
 
 test "RETURN: with data in memory" {
@@ -167,11 +199,17 @@ test "RETURN: with data in memory" {
         0xF3, // RETURN
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -180,13 +218,13 @@ test "RETURN: with data in memory" {
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expect(result.return_data != null);
-    try expectEqual(@as(usize, 32), result.return_data.?.len);
+    try expectEqual(32, result.return_data.?.len);
 
     // Verify the data (0x1234 stored at offset 0, right-aligned in 32 bytes)
     // Last 2 bytes should be 0x12, 0x34
     const data = result.return_data.?;
-    try expectEqual(@as(u8, 0x12), data[30]);
-    try expectEqual(@as(u8, 0x34), data[31]);
+    try expectEqual(0x12, data[30]);
+    try expectEqual(0x34, data[31]);
 }
 
 test "REVERT: with error message" {
@@ -201,11 +239,17 @@ test "REVERT: with error message" {
         0xFD, // REVERT
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.BYZANTIUM), // REVERT added in Byzantium
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -214,8 +258,8 @@ test "REVERT: with error message" {
 
     try expectEqual(ExecutionStatus.REVERT, result.status);
     try expect(result.return_data != null);
-    try expectEqual(@as(usize, 1), result.return_data.?.len);
-    try expectEqual(@as(u8, 0xFF), result.return_data.?[0]);
+    try expectEqual(1, result.return_data.?.len);
+    try expectEqual(0xFF, result.return_data.?[0]);
 }
 
 test "PC and GAS opcodes" {
@@ -228,11 +272,17 @@ test "PC and GAS opcodes" {
         0x00, // STOP
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -240,17 +290,17 @@ test "PC and GAS opcodes" {
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     // Stack should have: [gas_remaining, 1 (PC==0)]
-    try expectEqual(@as(usize, 2), interpreter.ctx.stack.len);
+    try expectEqual(2, interpreter.ctx.stack.len);
 
     // Gas costs: PC(2) + PUSH1(3) + EQ(3) + GAS(2) + STOP(0) = 10 gas total
     const gas_val = try interpreter.ctx.stack.pop();
-    try expectEqual(@as(u64, 99990), gas_val.toU64().?); // 100000 - 10
+    try expectEqual(99990, gas_val.toU64().?); // 100000 - 10
 
     const eq_result = try interpreter.ctx.stack.pop();
-    try expectEqual(@as(u64, 1), eq_result.toU64().?); // PC was 0
+    try expectEqual(1, eq_result.toU64().?); // PC was 0
 
     // Verify total gas consumed
-    try expectEqual(@as(u64, 10), result.gas_used);
+    try expectEqual(10, result.gas_used);
 }
 
 test "INVALID: consumes all gas" {
@@ -261,11 +311,17 @@ test "INVALID: consumes all gas" {
         0x60, 0x99, // PUSH1 0x99 (never executed)
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 
@@ -273,9 +329,9 @@ test "INVALID: consumes all gas" {
 
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
     // Should have consumed all gas
-    try expectEqual(@as(u64, 100000), result.gas_used);
+    try expectEqual(100000, result.gas_used);
     // Stack should only have the first PUSH (0x42), not the second
-    try expectEqual(@as(usize, 1), interpreter.ctx.stack.len);
+    try expectEqual(1, interpreter.ctx.stack.len);
 }
 
 test "JUMP: invalid destination error" {
@@ -285,11 +341,17 @@ test "JUMP: invalid destination error" {
         0x56, // JUMP
     };
 
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
         Spec.forFork(.CANCUN),
         100000,
+            &env,
+            mock.host(),
     );
     defer interpreter.deinit();
 

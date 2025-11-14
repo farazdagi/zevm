@@ -13,17 +13,7 @@ Zevm is built from the ground up in Zig with the following goals:
 
 ## Status
 
-**Implementation progress: 104/149 opcodes (70%)**
-
-Currently implemented:
-- Stack operations (PUSH0-32, POP, DUP1-16, SWAP1-16) - 66 opcodes
-- Arithmetic operations (ADD, MUL, SUB, DIV, MOD, EXP, SIGNEXTEND, etc.) - 11 opcodes
-- Comparison & bitwise operations (LT, GT, EQ, AND, OR, XOR, SHL, SHR, SAR, etc.) - 14 opcodes
-- Memory operations (MLOAD, MSTORE, MSTORE8, MSIZE) - 4 opcodes
-- Control flow operations (JUMP, JUMPI, RETURN, REVERT, PC, GAS, STOP, JUMPDEST, INVALID) - 9 opcodes
-- All 20 Ethereum hardforks (FRONTIER through OSAKA)
-- Gas metering foundation with memory expansion costs
-- Comprehensive test coverage (393 tests)
+Building an EVM from scratch in Zig. Core interpreter is working great – you can run bytecode with loops, math, memory, and control flow. Just finished the host abstraction layer, which unblocks a ton of cool stuff (environmental opcodes, storage, contract calls).
 
 ## Quickstart
 
@@ -39,27 +29,6 @@ zig build bench
 ```
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed testing and benchmarking options.
-
-## Roadmap
-
-Development is organized into thematic sprints:
-
-- **Core opcodes** - Memory operations, environmental information, block context
-- **Hashing & cryptography** - KECCAK256, signature verification
-- **State management** - Storage operations (SLOAD/SSTORE), account handling
-- **External calls** - CALL, STATICCALL, DELEGATECALL, contract creation
-- **Multi-chain support** - Optimism-specific extensions (L1 data fees, system contracts)
-- **Testing & validation** - Ethereum official test suite, Optimism test suite
-
-## Architecture
-
-High-level components:
-
-- **Primitives** - Address, U256, B256, Bytes, Stack, Memory
-- **Interpreter** - Fetch-decode-execute loop, opcode handlers, PC management
-- **Spec Handler** - Hardfork management, fork-specific gas costs and features
-- **Gas System** - Base costs, memory expansion, fork-aware calculations
-- **Host** (planned) - Abstract interface between EVM and state backend
 
 ## References
 

@@ -14,6 +14,8 @@ const U256 = @import("../primitives/big.zig").U256;
 const Bytecode = @import("bytecode.zig").Bytecode;
 const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 const InstructionTable = @import("InstructionTable.zig");
+const Env = @import("../context.zig").Env;
+const Host = @import("../host/Host.zig");
 
 // Instruction handlers
 const handlers = @import("handlers/mod.zig");
@@ -140,10 +142,23 @@ pub const Interpreter = struct {
     /// Whether execution has halted.
     is_halted: bool,
 
+    /// Environmental context (block and transaction info).
+    env: *const Env,
+
+    /// Host interface for blockchain state access.
+    host: Host,
+
     const Self = @This();
 
     /// Initialize interpreter with bytecode and gas limit.
-    pub fn init(allocator: Allocator, raw_bytecode: []const u8, spec: Spec, gas_limit: u64) !Self {
+    pub fn init(
+        allocator: Allocator,
+        raw_bytecode: []const u8,
+        spec: Spec,
+        gas_limit: u64,
+        env: *const Env,
+        host: Host,
+    ) !Self {
         // Analyze bytecode (detects format automatically)
         var bytecode = try Bytecode.analyze(allocator, raw_bytecode);
         errdefer bytecode.deinit(allocator);
@@ -168,6 +183,8 @@ pub const Interpreter = struct {
             .table = spec.instructionTable(),
             .is_halted = false,
             .return_data = null,
+            .env = env,
+            .host = host,
         };
     }
 

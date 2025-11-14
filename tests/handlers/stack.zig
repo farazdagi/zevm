@@ -8,6 +8,8 @@ const Interpreter = zevm.interpreter.Interpreter;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const U256 = zevm.primitives.U256;
+const Env = zevm.context.Env;
+const MockHost = zevm.host.MockHost;
 const TestCase = test_helpers.TestCase;
 const runOpcodeTests = test_helpers.runOpcodeTests;
 
@@ -101,7 +103,11 @@ test "PUSH with insufficient bytes" {
 
     // PUSH2 needs 2 bytes but only 1 available
     const bytecode = &[_]u8{ 0x61, 0x42 }; // PUSH2 0x42??
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -116,7 +122,11 @@ test "PUSH0 not available pre-Shanghai" {
         0x5F, // PUSH0
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -133,7 +143,11 @@ test "multiple PUSH operations" {
         0x60, 0x03, // PUSH1 3
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -158,7 +172,11 @@ test "PC advances correctly with PUSH" {
         0x61, 0xAA, 0xBB, // PUSH2 0xAABB (PC: 2 -> 5)
         0x00, // STOP (PC: 5)
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -192,7 +210,11 @@ test "POP on empty stack" {
         0x50, // POP (empty stack)
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -249,7 +271,11 @@ test "DUP16 duplicates 16th item" {
     try bytecode_list.append(allocator, 0x8F); // DUP16
     try bytecode_list.append(allocator, 0x00); // STOP
 
-    var interpreter = try Interpreter.init(allocator, bytecode_list.items, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    var interpreter = try Interpreter.init(allocator, bytecode_list.items, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -269,7 +295,11 @@ test "DUP1 on empty stack fails" {
         0x80, // DUP1 (empty stack)
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -285,7 +315,11 @@ test "DUP2 with only one item fails" {
         0x81, // DUP2 (needs 2 items, only has 1)
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -344,7 +378,11 @@ test "SWAP16 swaps top with 17th item" {
     try bytecode_list.append(allocator, 0x9F); // SWAP16
     try bytecode_list.append(allocator, 0x00); // STOP
 
-    var interpreter = try Interpreter.init(allocator, bytecode_list.items, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    var interpreter = try Interpreter.init(allocator, bytecode_list.items, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -369,7 +407,11 @@ test "SWAP1 with only one item fails" {
         0x90, // SWAP1 (needs 2 items, only has 1)
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -386,7 +428,11 @@ test "SWAP2 with only two items fails" {
         0x91, // SWAP2 (needs 3 items, only has 2)
         0x00, // STOP
     };
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000);
+    const env = Env.default();
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+    
+    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
