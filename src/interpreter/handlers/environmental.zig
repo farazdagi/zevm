@@ -213,8 +213,8 @@ pub fn opGaslimit(interp: *Interpreter) !void {
 ///
 /// Stack: [...] -> [..., chainId]
 pub fn opChainid(interp: *Interpreter) !void {
-    _ = interp;
-    return error.UnimplementedOpcode;
+    const chain_id = U256.fromU64(interp.spec.chain_id);
+    try interp.ctx.stack.push(chain_id);
 }
 
 /// Get base fee (BASEFEE) - EIP-3198.

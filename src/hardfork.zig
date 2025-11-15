@@ -92,6 +92,14 @@ pub const Spec = struct {
     /// Base fork this fork is built upon (null only for FRONTIER)
     base_fork: ?Hardfork,
 
+    /// Network chain identifier (EIP-155).
+    ///
+    /// Examples: 1 (Ethereum mainnet), 10 (Optimism), 11155111 (Sepolia)
+    ///
+    /// NOTE: For multi-chain support, this will be derived from Hardfork enum
+    /// when chain-specific fork variants are added (e.g., OPTIMISM_CANYON).
+    chain_id: u64,
+
     /// Optional function to update gas costs for this fork.
     ///
     /// If null, this fork introduces no gas cost changes from its base.
@@ -292,6 +300,7 @@ fn forkSpec(
 pub const FRONTIER = Spec{
     .fork = .FRONTIER,
     .base_fork = null, // Genesis fork, no base
+    .chain_id = 1, // Ethereum mainnet
     .updateCosts = struct {
         fn f(table: *FixedGasCosts, spec: Spec) void {
             _ = spec;

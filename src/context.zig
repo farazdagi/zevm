@@ -8,6 +8,8 @@ const U256 = @import("primitives/mod.zig").U256;
 const B256 = @import("primitives/mod.zig").B256;
 
 /// Block-level environmental information.
+///
+/// For instructions that need to know runtime per-block data of a block that is being processed.
 pub const BlockEnv = struct {
     /// Block number
     number: u64,
