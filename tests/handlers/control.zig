@@ -8,6 +8,7 @@ const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const Hardfork = zevm.hardfork.Hardfork;
 const U256 = zevm.primitives.U256;
+const Address = zevm.primitives.Address;
 const Env = zevm.context.Env;
 const MockHost = zevm.host.MockHost;
 
@@ -33,6 +34,7 @@ test "JUMP: simple forward jump" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
         &env,
@@ -70,6 +72,7 @@ test "JUMPI: conditional jump taken" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -105,6 +108,7 @@ test "JUMPI: conditional jump not taken" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -143,6 +147,7 @@ test "loop: simple counter loop" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -173,6 +178,7 @@ test "RETURN: empty return data" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -206,6 +212,7 @@ test "RETURN: with data in memory" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -246,6 +253,7 @@ test "REVERT: with error message" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.BYZANTIUM), // REVERT added in Byzantium
         100000,
             &env,
@@ -279,6 +287,7 @@ test "PC and GAS opcodes" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -318,6 +327,7 @@ test "INVALID: consumes all gas" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,
@@ -348,6 +358,7 @@ test "JUMP: invalid destination error" {
     var interpreter = try Interpreter.init(
         std.testing.allocator,
         &bytecode,
+        Address.zero(),
         Spec.forFork(.CANCUN),
         100000,
             &env,

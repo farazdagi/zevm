@@ -64,6 +64,7 @@ pub const MockHost = struct {
         .code = codeImpl,
         .codeHash = codeHashImpl,
         .codeSize = codeSizeImpl,
+        .blockHash = blockHashImpl,
     };
 
     fn balanceImpl(ptr: *anyopaque, address: Address) U256 {
@@ -99,6 +100,14 @@ pub const MockHost = struct {
             return code.len;
         }
         return 0;
+    }
+
+    fn blockHashImpl(ptr: *anyopaque, block_number: u64) B256 {
+        _ = ptr;
+        _ = block_number;
+        // Mock implementation: return zero for all blocks
+        // Real implementation would query historical block hashes
+        return B256.zero();
     }
 };
 

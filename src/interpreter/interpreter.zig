@@ -11,6 +11,7 @@ const Gas = @import("../gas/accounting.zig").Gas;
 const Spec = @import("../hardfork.zig").Spec;
 const Opcode = @import("opcode.zig").Opcode;
 const U256 = @import("../primitives/big.zig").U256;
+const Address = @import("../primitives/address.zig").Address;
 const Bytecode = @import("bytecode.zig").Bytecode;
 const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 const InstructionTable = @import("InstructionTable.zig");
@@ -62,24 +63,42 @@ pub const InterpreterResult = struct {
     return_data: ?[]const u8,
 };
 
+/// Contract represents the bytecode being executed and its address.
+pub const Contract = struct {
+    /// The bytecode being executed (with JUMPDEST analysis).
+    bytecode: AnalyzedBytecode,
+
+    /// The address of this contract.
+    ///
+    /// This is the address where the code resides.
+    /// For regular calls, this is the callee's address.
+    /// For DELEGATECALL, this is the caller's address (code borrowed from callee).
+    address: Address,
+
+    /// Clean up allocated resources.
+    pub fn deinit(self: *Contract) void {
+        self.bytecode.deinit();
+    }
+};
+
 /// Call-scoped execution context.
 ///
 /// Contains the state that is local to a single execution context (call frame).
-/// This includes the bytecode being executed, the operand stack, and memory.
-/// When implementing CALL/DELEGATECALL/STATICCALL operations, each nested call
-/// will have its own context.
+/// This includes the contract being executed (code + address), the operand stack, and memory.
+/// When implementing CALL/DELEGATECALL/STATICCALL operations, each nested call will have its
+/// own context.
 pub const CallContext = struct {
-    /// Analyzed bytecode (guaranteed to be executable, not EIP-7702 delegation)
-    bytecode: AnalyzedBytecode,
+    /// The contract being executed.
+    contract: Contract,
 
-    /// Operand stack
+    /// Operand stack.
     stack: Stack,
 
-    /// Call memory
+    /// Call memory.
     memory: Memory,
 
     /// Initialize a new interpreter context.
-    pub fn init(allocator: Allocator, bytecode: AnalyzedBytecode) !CallContext {
+    pub fn init(allocator: Allocator, bytecode: AnalyzedBytecode, address: Address) !CallContext {
         var stack = try Stack.init(allocator);
         errdefer stack.deinit();
 
@@ -87,7 +106,10 @@ pub const CallContext = struct {
         errdefer memory.deinit();
 
         return CallContext{
-            .bytecode = bytecode,
+            .contract = .{
+                .bytecode = bytecode,
+                .address = address,
+            },
             .stack = stack,
             .memory = memory,
         };
@@ -97,7 +119,7 @@ pub const CallContext = struct {
     pub fn deinit(self: *CallContext) void {
         self.stack.deinit();
         self.memory.deinit();
-        self.bytecode.deinit();
+        self.contract.deinit();
     }
 };
 
@@ -139,6 +161,12 @@ pub const Interpreter = struct {
     /// Return data (set by RETURN or REVERT).
     return_data: ?[]const u8,
 
+    /// Return data buffer from the last sub-call.
+    ///
+    /// Used by RETURNDATASIZE and RETURNDATACOPY opcodes (EIP-211, Byzantium).
+    /// Updated after each sub-call (CALL, DELEGATECALL, STATICCALL, CREATE, CREATE2).
+    return_data_buffer: []const u8,
+
     /// Whether execution has halted.
     is_halted: bool,
 
@@ -154,6 +182,7 @@ pub const Interpreter = struct {
     pub fn init(
         allocator: Allocator,
         raw_bytecode: []const u8,
+        contract_address: Address,
         spec: Spec,
         gas_limit: u64,
         env: *const Env,
@@ -170,8 +199,8 @@ pub const Interpreter = struct {
             .eip7702 => return error.InvalidBytecode,
         };
 
-        // Create execution context with analyzed bytecode
-        var ctx = try CallContext.init(allocator, analyzed);
+        // Create execution context with analyzed bytecode and contract address
+        var ctx = try CallContext.init(allocator, analyzed, contract_address);
         errdefer ctx.deinit();
 
         return Self{
@@ -183,6 +212,7 @@ pub const Interpreter = struct {
             .table = spec.instructionTable(),
             .is_halted = false,
             .return_data = null,
+            .return_data_buffer = &[_]u8{}, // Empty initially, updated after sub-calls
             .env = env,
             .host = host,
         };
@@ -209,7 +239,7 @@ pub const Interpreter = struct {
 
     /// Execute one instruction (fetch-decode-execute).
     pub fn step(self: *Self) !void {
-        const code = self.ctx.bytecode.raw;
+        const code = self.ctx.contract.bytecode.raw;
 
         // Verify we're not going beyond bytecode bounds.
         if (self.pc >= code.len) {

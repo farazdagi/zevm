@@ -468,12 +468,12 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.CALLVALUE)] = .{ .execute = handlers.opCallvalue };
             t[@intFromEnum(Opcode.CALLDATALOAD)] = .{ .execute = handlers.opCalldataload };
             t[@intFromEnum(Opcode.CALLDATASIZE)] = .{ .execute = handlers.opCalldatasize };
-            t[@intFromEnum(Opcode.CALLDATACOPY)] = .{ .execute = handlers.opCalldatacopy }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.CALLDATACOPY)] = .{ .execute = handlers.opCalldatacopy, .dynamicGasCost = DynamicGasCosts.opCalldatacopy };
             t[@intFromEnum(Opcode.CODESIZE)] = .{ .execute = handlers.opCodesize };
-            t[@intFromEnum(Opcode.CODECOPY)] = .{ .execute = handlers.opCodecopy }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.CODECOPY)] = .{ .execute = handlers.opCodecopy, .dynamicGasCost = DynamicGasCosts.opCodecopy };
             t[@intFromEnum(Opcode.GASPRICE)] = .{ .execute = handlers.opGasprice };
             t[@intFromEnum(Opcode.EXTCODESIZE)] = .{ .execute = handlers.opExtcodesize };
-            t[@intFromEnum(Opcode.EXTCODECOPY)] = .{ .execute = handlers.opExtcodecopy }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.EXTCODECOPY)] = .{ .execute = handlers.opExtcodecopy, .dynamicGasCost = DynamicGasCosts.opExtcodecopy };
             // Note: RETURNDATASIZE(0x3D), RETURNDATACOPY(0x3E) added in Byzantium
             // Note: EXTCODEHASH(0x3F) added in Constantinople
 
@@ -658,7 +658,7 @@ pub const BYZANTIUM = forkSpec(.BYZANTIUM, SPURIOUS_DRAGON, .{
         fn f(table: *InstructionTable) void {
             const t = &table.table;
             t[@intFromEnum(Opcode.RETURNDATASIZE)] = .{ .execute = handlers.opReturndatasize };
-            t[@intFromEnum(Opcode.RETURNDATACOPY)] = .{ .execute = handlers.opReturndatacopy }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.RETURNDATACOPY)] = .{ .execute = handlers.opReturndatacopy, .dynamicGasCost = DynamicGasCosts.opReturndatacopy };
             t[@intFromEnum(Opcode.STATICCALL)] = .{ .execute = handlers.opStaticcall }; // TODO: dynamic gas
             t[@intFromEnum(Opcode.REVERT)] = .{ .execute = handlers.opRevert, .dynamicGasCost = DynamicGasCosts.opRevert, .is_control_flow = true };
         }

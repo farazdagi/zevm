@@ -11,10 +11,10 @@ const Opcode = @import("../opcode.zig").Opcode;
 /// The number of bytes is determined from the opcode value (0x60=PUSH1, 0x7F=PUSH32).
 pub fn opPushN(interp: *Interpreter) !void {
     // Get the current opcode to determine how many bytes to push
-    const opcode = Opcode.fromByte(interp.ctx.bytecode.raw[interp.pc]);
+    const opcode = Opcode.fromByte(interp.ctx.contract.bytecode.raw[interp.pc]);
 
     // Read immediate bytes (bounds already checked in step())
-    const bytes = interp.ctx.bytecode.raw[interp.pc + 1 ..][0..opcode.immediateBytes()];
+    const bytes = interp.ctx.contract.bytecode.raw[interp.pc + 1 ..][0..opcode.immediateBytes()];
 
     const value = U256.fromBeBytesPadded(bytes);
     try interp.ctx.stack.push(value);
@@ -25,7 +25,7 @@ pub fn opPushN(interp: *Interpreter) !void {
 /// Duplicates the Nth stack item (N=1 is top) and pushes it.
 /// The index is calculated from the opcode value (0x80=DUP1, 0x8F=DUP16).
 pub fn opDupN(interp: *Interpreter) !void {
-    const opcode_byte = interp.ctx.bytecode.raw[interp.pc];
+    const opcode_byte = interp.ctx.contract.bytecode.raw[interp.pc];
     const index = opcode_byte - 0x7F; // DUP1=0x80, so 0x80-0x7F=1
     try interp.ctx.stack.dup(index);
 }
@@ -35,7 +35,7 @@ pub fn opDupN(interp: *Interpreter) !void {
 /// Swaps the top stack item with the Nth item (N=1 is second item).
 /// The index is calculated from the opcode value (0x90=SWAP1, 0x9F=SWAP16).
 pub fn opSwapN(interp: *Interpreter) !void {
-    const opcode_byte = interp.ctx.bytecode.raw[interp.pc];
+    const opcode_byte = interp.ctx.contract.bytecode.raw[interp.pc];
     const index = opcode_byte - 0x8F; // SWAP1=0x90, so 0x90-0x8F=1
     try interp.ctx.stack.swap(index);
 }

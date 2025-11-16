@@ -13,8 +13,10 @@
 
 const std = @import("std");
 const Spec = @import("../hardfork.zig").Spec;
+const Hardfork = @import("../hardfork.zig").Hardfork;
 const Interpreter = @import("../interpreter/mod.zig").Interpreter;
 const U256 = @import("../primitives/big.zig").U256;
+const Address = @import("../primitives/address.zig").Address;
 const Costs = @import("costs.zig").Costs;
 const FixedGasCosts = @import("FixedGasCosts.zig");
 
@@ -29,6 +31,64 @@ pub fn memoryCost(byte_size: usize) u64 {
 
     // Quadratic cost: words^2 / 512 + 3 * words
     return (words *| words) / 512 +| FixedGasCosts.VERYLOW *| words;
+}
+
+/// Memory region information for gas calculation.
+const MemoryRegion = struct {
+    offset: usize,
+    size: usize,
+    expansion_gas: u64,
+};
+
+/// Calculate memory expansion gas for accessing a fixed-size region.
+///
+/// Used by operations that read/write a known number of bytes (MLOAD, MSTORE8).
+inline fn memoryExpansionGasFixed(interp: *Interpreter, offset_pos: u8, size: usize) !u64 {
+    const offset_u256 = try interp.ctx.stack.peek(offset_pos);
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+
+    const old_size = interp.ctx.memory.len();
+    const new_size = offset +| size;
+
+    return interp.gas.memoryExpansionCost(old_size, new_size);
+}
+
+/// Calculate memory expansion for a variable-size region from stack.
+///
+/// Used by operations that peek both offset and size from stack (RETURN, KECCAK256, copy operations).
+/// Returns region info including offset, size, and expansion gas for further processing.
+inline fn memoryRegionExpansion(interp: *Interpreter, offset_pos: u8, size_pos: u8) !MemoryRegion {
+    const offset_u256 = try interp.ctx.stack.peek(offset_pos);
+    const size_u256 = try interp.ctx.stack.peek(size_pos);
+
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+
+    // No expansion for zero-length access
+    if (size == 0) {
+        return MemoryRegion{ .offset = offset, .size = 0, .expansion_gas = 0 };
+    }
+
+    const old_size = interp.ctx.memory.len();
+    const new_size = offset +| size;
+
+    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+    return MemoryRegion{ .offset = offset, .size = size, .expansion_gas = expansion_gas };
+}
+
+/// Calculate dynamic gas for memory copy operations.
+///
+/// Used by CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY.
+/// All copy operations charge memory expansion plus 3 gas per word copied.
+inline fn memoryCopyGas(interp: *Interpreter, dest_offset_pos: u8, length_pos: u8) !u64 {
+    const region = try memoryRegionExpansion(interp, dest_offset_pos, length_pos);
+    if (region.size == 0) return 0;
+
+    // Copy cost: 3 gas per word
+    const copy_words = (region.size +| 31) / 32;
+    const copy_gas = 3 *| @as(u64, @intCast(copy_words));
+
+    return region.expansion_gas +| copy_gas;
 }
 
 /// Compute EXP dynamic gas cost (per-byte portion only).
@@ -54,14 +114,7 @@ pub fn opExp(interp: *Interpreter) !u64 {
 /// Stack: [offset, ...] (peek only, no modification)
 /// Gas depends on memory expansion.
 pub fn opMload(interp: *Interpreter) !u64 {
-    const offset_u256 = try interp.ctx.stack.peek(0);
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-
-    const old_size = interp.ctx.memory.len();
-    const new_size = offset +| 32; // Saturating add
-
-    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
-    return expansion_gas;
+    return memoryExpansionGasFixed(interp, 0, 32);
 }
 
 /// Compute dynamic gas for MSTORE operation.
@@ -77,14 +130,7 @@ pub fn opMstore(interp: *Interpreter) !u64 {
 /// Stack: [offset, value, ...] (peek only, no modification)
 /// Gas depends on memory expansion for a 1-byte write.
 pub fn opMstore8(interp: *Interpreter) !u64 {
-    const offset_u256 = try interp.ctx.stack.peek(0);
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-
-    const old_size = interp.ctx.memory.len();
-    const new_size = offset +| 1; // Saturating add
-
-    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
-    return expansion_gas;
+    return memoryExpansionGasFixed(interp, 0, 1);
 }
 
 /// Compute dynamic gas for RETURN operation.
@@ -92,20 +138,8 @@ pub fn opMstore8(interp: *Interpreter) !u64 {
 /// Stack: [offset, size, ...] (peek only, no modification)
 /// Gas depends on memory expansion for reading return data.
 pub fn opReturn(interp: *Interpreter) !u64 {
-    const offset_u256 = try interp.ctx.stack.peek(0);
-    const size_u256 = try interp.ctx.stack.peek(1);
-
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_u256.toUsize() orelse return error.InvalidOffset;
-
-    // No expansion for zero-length return
-    if (size == 0) return 0;
-
-    const old_size = interp.ctx.memory.len();
-    const new_size = offset +| size; // Saturating add
-
-    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
-    return expansion_gas;
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    return region.expansion_gas;
 }
 
 /// Compute dynamic gas for REVERT operation.
@@ -121,25 +155,14 @@ pub fn opRevert(interp: *Interpreter) !u64 {
 /// Stack: [offset, size, ...] (peek only, no modification)
 /// Gas depends on memory expansion and input data size.
 pub fn opKeccak256(interp: *Interpreter) !u64 {
-    const offset_u256 = try interp.ctx.stack.peek(0);
-    const size_u256 = try interp.ctx.stack.peek(1);
-
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_u256.toUsize() orelse return error.InvalidOffset;
-
-    // No cost for zero-length hash
-    if (size == 0) return 0;
-
-    const old_size = interp.ctx.memory.len();
-    const new_size = offset +| size; // Saturating add
-
-    const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    if (region.size == 0) return 0;
 
     // Hash cost: word_cost per 32-byte word
-    const words = (size +| 31) / 32;
+    const words = (region.size +| 31) / 32;
     const hash_gas = interp.spec.keccak256_word_cost *| @as(u64, @intCast(words));
 
-    return expansion_gas +| hash_gas;
+    return region.expansion_gas +| hash_gas;
 }
 
 /// Compute dynamic gas for MCOPY operation (EIP-5656, Cancun+).
@@ -171,6 +194,38 @@ pub fn opMcopy(interp: *Interpreter) !u64 {
     const copy_gas = 3 *| @as(u64, @intCast(copy_words));
 
     return expansion_gas + copy_gas;
+}
+
+/// Compute dynamic gas for CALLDATACOPY operation.
+///
+/// Stack: [destOffset, offset, length, ...] (peek only, no modification)
+/// Gas depends on memory expansion for destination region, plus per-word copy cost.
+pub fn opCalldatacopy(interp: *Interpreter) !u64 {
+    return memoryCopyGas(interp, 0, 2);
+}
+
+/// Compute dynamic gas for CODECOPY operation.
+///
+/// Stack: [destOffset, offset, length, ...] (peek only, no modification)
+/// Gas depends on memory expansion for destination region, plus per-word copy cost.
+pub fn opCodecopy(interp: *Interpreter) !u64 {
+    return memoryCopyGas(interp, 0, 2);
+}
+
+/// Compute dynamic gas for EXTCODECOPY operation.
+///
+/// Stack: [address, destOffset, offset, length, ...] (peek only, no modification)
+/// Gas depends on memory expansion for destination region, plus per-word copy cost.
+pub fn opExtcodecopy(interp: *Interpreter) !u64 {
+    return memoryCopyGas(interp, 1, 3);
+}
+
+/// Compute dynamic gas for RETURNDATACOPY operation (EIP-211, Byzantium+).
+///
+/// Stack: [destOffset, offset, length, ...] (peek only, no modification)
+/// Gas depends on memory expansion for destination region, plus per-word copy cost.
+pub fn opReturndatacopy(interp: *Interpreter) !u64 {
+    return memoryCopyGas(interp, 0, 2);
 }
 
 /// Get account access cost (BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH).
@@ -270,7 +325,7 @@ test "dynamic_gas: basic smoke test" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Test EXP with small exponent
@@ -322,89 +377,105 @@ test "memoryCost" {
     }
 }
 
-test "accountAccessCost - pre-Berlin" {
-    const homestead_spec = Spec.forFork(.HOMESTEAD);
+test "accountAccessCost" {
+    const test_cases = [_]struct {
+        fork: Hardfork,
+        is_cold: bool,
+        expected: u64,
+        comment: []const u8,
+    }{
+        // Pre-Berlin: no cold/warm distinction
+        .{ .fork = .HOMESTEAD, .is_cold = true, .expected = 700, .comment = "Pre-Berlin always returns cold_account_access_cost" },
+        .{ .fork = .HOMESTEAD, .is_cold = false, .expected = 700, .comment = "Pre-Berlin ignores is_cold flag" },
+        // Berlin+: cold/warm model (EIP-2929)
+        .{ .fork = .BERLIN, .is_cold = true, .expected = 2600, .comment = "Berlin cold access" },
+        .{ .fork = .BERLIN, .is_cold = false, .expected = 100, .comment = "Berlin warm access" },
+    };
 
-    // Pre-Berlin: always returns cold_account_access_cost
-    try expectEqual(700, accountAccessCost(homestead_spec, true));
-    try expectEqual(700, accountAccessCost(homestead_spec, false));
+    for (test_cases) |tc| {
+        const spec = Spec.forFork(tc.fork);
+        try expectEqual(tc.expected, accountAccessCost(spec, tc.is_cold));
+    }
 }
 
-test "accountAccessCost - Berlin+" {
-    const berlin_spec = Spec.forFork(.BERLIN);
+test "callBaseCost" {
+    const test_cases = [_]struct {
+        fork: Hardfork,
+        is_cold: bool,
+        expected: u64,
+        comment: []const u8,
+    }{
+        // Pre-Tangerine: 40 gas (no cold/warm)
+        .{ .fork = .FRONTIER, .is_cold = true, .expected = 40, .comment = "Frontier flat cost" },
+        .{ .fork = .FRONTIER, .is_cold = false, .expected = 40, .comment = "Frontier ignores is_cold" },
+        // Tangerine-Berlin: 700 gas (EIP-150, no cold/warm)
+        .{ .fork = .TANGERINE, .is_cold = true, .expected = 700, .comment = "Tangerine flat cost" },
+        .{ .fork = .TANGERINE, .is_cold = false, .expected = 700, .comment = "Tangerine ignores is_cold" },
+        // Berlin+: cold/warm model (EIP-2929)
+        .{ .fork = .BERLIN, .is_cold = true, .expected = 2600, .comment = "Berlin cold call" },
+        .{ .fork = .BERLIN, .is_cold = false, .expected = 100, .comment = "Berlin warm call" },
+    };
 
-    // Berlin+: cold = 2600, warm = 100
-    try expectEqual(2600, accountAccessCost(berlin_spec, true));
-    try expectEqual(100, accountAccessCost(berlin_spec, false));
+    for (test_cases) |tc| {
+        const spec = Spec.forFork(tc.fork);
+        try expectEqual(tc.expected, callBaseCost(spec, tc.is_cold));
+    }
 }
 
-test "callBaseCost - evolution" {
-    const frontier_spec = Spec.forFork(.FRONTIER);
-    const tangerine_spec = Spec.forFork(.TANGERINE);
-    const berlin_spec = Spec.forFork(.BERLIN);
+test "sloadCost" {
+    const test_cases = [_]struct {
+        fork: Hardfork,
+        is_cold: bool,
+        expected: u64,
+        comment: []const u8,
+    }{
+        // Frontier/Homestead: 50 gas (no cold/warm)
+        .{ .fork = .FRONTIER, .is_cold = true, .expected = 50, .comment = "Frontier flat cost" },
+        .{ .fork = .FRONTIER, .is_cold = false, .expected = 50, .comment = "Frontier ignores is_cold" },
+        .{ .fork = .HOMESTEAD, .is_cold = true, .expected = 50, .comment = "Homestead flat cost" },
+        .{ .fork = .HOMESTEAD, .is_cold = false, .expected = 50, .comment = "Homestead ignores is_cold" },
+        // Tangerine: 200 gas (EIP-150, no cold/warm)
+        .{ .fork = .TANGERINE, .is_cold = true, .expected = 200, .comment = "Tangerine increased cost" },
+        .{ .fork = .TANGERINE, .is_cold = false, .expected = 200, .comment = "Tangerine ignores is_cold" },
+        // Istanbul: 800 gas (EIP-1884, no cold/warm)
+        .{ .fork = .ISTANBUL, .is_cold = true, .expected = 800, .comment = "Istanbul increased cost" },
+        .{ .fork = .ISTANBUL, .is_cold = false, .expected = 800, .comment = "Istanbul ignores is_cold" },
+        // Berlin+: cold/warm model (EIP-2929)
+        .{ .fork = .BERLIN, .is_cold = true, .expected = 2100, .comment = "Berlin cold SLOAD" },
+        .{ .fork = .BERLIN, .is_cold = false, .expected = 100, .comment = "Berlin warm SLOAD" },
+    };
 
-    // Pre-Tangerine: 40
-    try expectEqual(40, callBaseCost(frontier_spec, true));
-    try expectEqual(40, callBaseCost(frontier_spec, false));
-
-    // Tangerine-Berlin: 700
-    try expectEqual(700, callBaseCost(tangerine_spec, true));
-    try expectEqual(700, callBaseCost(tangerine_spec, false));
-
-    // Berlin+: 2600 (cold) or 100 (warm)
-    try expectEqual(2600, callBaseCost(berlin_spec, true));
-    try expectEqual(100, callBaseCost(berlin_spec, false));
-}
-
-test "sloadCost - evolution" {
-    const frontier_spec = Spec.forFork(.FRONTIER);
-    const homestead_spec = Spec.forFork(.HOMESTEAD);
-    const tangerine_spec = Spec.forFork(.TANGERINE);
-    const istanbul_spec = Spec.forFork(.ISTANBUL);
-    const berlin_spec = Spec.forFork(.BERLIN);
-
-    // Frontier/Homestead: 50 (no cold/warm distinction)
-    try expectEqual(50, sloadCost(frontier_spec, true));
-    try expectEqual(50, sloadCost(frontier_spec, false));
-    try expectEqual(50, sloadCost(homestead_spec, true));
-    try expectEqual(50, sloadCost(homestead_spec, false));
-
-    // Tangerine: 200 (EIP-150, no cold/warm distinction)
-    try expectEqual(200, sloadCost(tangerine_spec, true));
-    try expectEqual(200, sloadCost(tangerine_spec, false));
-
-    // Istanbul: 800 (EIP-1884, no cold/warm distinction)
-    try expectEqual(800, sloadCost(istanbul_spec, true));
-    try expectEqual(800, sloadCost(istanbul_spec, false));
-
-    // Berlin+: 2100 (cold) or 100 (warm) (EIP-2929)
-    try expectEqual(2100, sloadCost(berlin_spec, true));
-    try expectEqual(100, sloadCost(berlin_spec, false));
+    for (test_cases) |tc| {
+        const spec = Spec.forFork(tc.fork);
+        try expectEqual(tc.expected, sloadCost(spec, tc.is_cold));
+    }
 }
 
 test "calldataCost" {
-    const byzantium_spec = Spec.forFork(.BYZANTIUM);
-    const istanbul_spec = Spec.forFork(.ISTANBUL);
-    const berlin_spec = Spec.forFork(.BERLIN);
+    const test_cases = [_]struct {
+        fork: Hardfork,
+        data: []const u8,
+        expected: u64,
+        comment: []const u8,
+    }{
+        // Pre-Istanbul: 4/zero-byte, 68/non-zero byte (EIP-2028 not active)
+        .{ .fork = .BYZANTIUM, .data = &[_]u8{ 0, 0, 0, 1 }, .expected = 3 * 4 + 1 * 68, .comment = "3 zeros + 1 non-zero" },
+        .{ .fork = .BYZANTIUM, .data = &[_]u8{ 1, 2, 3, 4 }, .expected = 4 * 68, .comment = "All non-zero" },
+        .{ .fork = .BYZANTIUM, .data = &[_]u8{ 0, 0, 0, 0 }, .expected = 4 * 4, .comment = "All zeros" },
+        // Istanbul+: 4/zero-byte, 16/non-zero byte (EIP-2028)
+        .{ .fork = .ISTANBUL, .data = &[_]u8{ 0, 0, 0, 1 }, .expected = 3 * 4 + 1 * 16, .comment = "3 zeros + 1 non-zero" },
+        .{ .fork = .ISTANBUL, .data = &[_]u8{ 1, 2, 3, 4 }, .expected = 4 * 16, .comment = "All non-zero" },
+        .{ .fork = .ISTANBUL, .data = &[_]u8{ 0, 0, 0, 0 }, .expected = 4 * 4, .comment = "All zeros" },
+        // Berlin (same as Istanbul)
+        .{ .fork = .BERLIN, .data = &[_]u8{ 0, 0, 0, 1 }, .expected = 3 * 4 + 1 * 16, .comment = "3 zeros + 1 non-zero" },
+        .{ .fork = .BERLIN, .data = &[_]u8{ 1, 2, 3, 4 }, .expected = 4 * 16, .comment = "All non-zero" },
+        .{ .fork = .BERLIN, .data = &[_]u8{ 0, 0, 0, 0 }, .expected = 4 * 4, .comment = "All zeros" },
+    };
 
-    const data1 = [_]u8{ 0, 0, 0, 1 }; // 3 zeros, 1 non-zero
-    const data2 = [_]u8{ 1, 2, 3, 4 }; // All non-zero
-    const data3 = [_]u8{ 0, 0, 0, 0 }; // All zeros
-
-    // Pre-Istanbul: 4/zero, 68/non-zero
-    try expectEqual(3 * 4 + 1 * 68, calldataCost(byzantium_spec, &data1));
-    try expectEqual(4 * 68, calldataCost(byzantium_spec, &data2));
-    try expectEqual(4 * 4, calldataCost(byzantium_spec, &data3));
-
-    // Istanbul+: 4/zero, 16/non-zero
-    try expectEqual(3 * 4 + 1 * 16, calldataCost(istanbul_spec, &data1));
-    try expectEqual(4 * 16, calldataCost(istanbul_spec, &data2));
-    try expectEqual(4 * 4, calldataCost(istanbul_spec, &data3));
-
-    // Istanbul+: 4/zero, 16/non-zero
-    try expectEqual(3 * 4 + 1 * 16, calldataCost(berlin_spec, &data1));
-    try expectEqual(4 * 16, calldataCost(berlin_spec, &data2));
-    try expectEqual(4 * 4, calldataCost(berlin_spec, &data3));
+    for (test_cases) |tc| {
+        const spec = Spec.forFork(tc.fork);
+        try expectEqual(tc.expected, calldataCost(spec, tc.data));
+    }
 }
 
 test "logCost" {
@@ -426,58 +497,131 @@ test "logCost" {
     }
 }
 
-test "opKeccak256 dynamic gas" {
+test "opcode gas: KECCAK256" {
     const allocator = std.testing.allocator;
     const spec = Spec.forFork(.CANCUN);
-    const bytecode = &[_]u8{0x00}; // STOP
+    const bytecode = &[_]u8{0x00};
     const Env = @import("../context.zig").Env;
     const MockHost = @import("../host/mock.zig").MockHost;
     const env = Env.default();
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
-    // Test zero-length input (0 words, no memory expansion)
-    // Stack: [offset, size] with offset on top
-    try interp.ctx.stack.push(U256.fromU64(0)); // size (pushed first, will be second)
-    try interp.ctx.stack.push(U256.fromU64(0)); // offset (pushed second, will be on top)
-    var gas = try opKeccak256(&interp);
-    try expectEqual(0, gas); // Zero size = 0 gas
-    _ = try interp.ctx.stack.pop(); // Clear stack
-    _ = try interp.ctx.stack.pop();
+    const test_cases = [_]struct {
+        offset: u64,
+        size: u64,
+        pre_expand: ?usize, // Pre-expand memory to this size (null = don't pre-expand)
+        expected_formula: []const u8,
+    }{
+        // Zero-length hash: no cost
+        .{ .offset = 0, .size = 0, .pre_expand = null, .expected_formula = "0" },
+        // 32 bytes (1 word): 6 gas/word + expansion
+        .{ .offset = 0, .size = 32, .pre_expand = null, .expected_formula = "6 + expansion(0->32)" },
+        // 100 bytes (4 words): 24 gas + expansion
+        .{ .offset = 0, .size = 100, .pre_expand = null, .expected_formula = "24 + expansion(32->100)" },
+        // 64 bytes (2 words) with pre-expanded memory
+        .{ .offset = 32, .size = 64, .pre_expand = 128, .expected_formula = "12 + expansion(128->96)" },
+    };
 
-    // Test 32 bytes (1 word)
-    try interp.ctx.stack.push(U256.fromU64(32)); // size (pushed first, will be second)
-    try interp.ctx.stack.push(U256.fromU64(0)); // offset (pushed second, will be on top)
-    gas = try opKeccak256(&interp);
-    // 1 word = 6 gas (keccak256_word_cost), plus memory expansion
-    // Memory 0->32 expansion cost
-    const expected_32 = 6 + interp.gas.memoryExpansionCost(0, 32);
-    try expectEqual(expected_32, gas);
-    _ = try interp.ctx.stack.pop();
-    _ = try interp.ctx.stack.pop();
+    for (test_cases) |tc| {
+        // Pre-expand memory if requested
+        if (tc.pre_expand) |size| {
+            try interp.ctx.memory.ensureCapacity(0, size);
+        }
+        const old_size = interp.ctx.memory.len();
 
-    // Test 100 bytes (4 words: ceil(100/32) = 4)
-    try interp.ctx.stack.push(U256.fromU64(100)); // size (pushed first, will be second)
-    try interp.ctx.stack.push(U256.fromU64(0)); // offset (pushed second, will be on top)
-    gas = try opKeccak256(&interp);
-    // 4 words = 24 gas, plus memory expansion from 32->100
-    const expected_100 = 24 + interp.gas.memoryExpansionCost(32, 100);
-    try expectEqual(expected_100, gas);
-    _ = try interp.ctx.stack.pop();
-    _ = try interp.ctx.stack.pop();
+        // Push stack values (size first, then offset - stack is LIFO)
+        try interp.ctx.stack.push(U256.fromU64(tc.size));
+        try interp.ctx.stack.push(U256.fromU64(tc.offset));
 
-    // Test 64 bytes (2 words) at offset 32 (no additional expansion)
-    try interp.ctx.memory.ensureCapacity(0, 128); // Pre-expand
-    const old_size = interp.ctx.memory.len();
-    try interp.ctx.stack.push(U256.fromU64(64)); // size (pushed first, will be second)
-    try interp.ctx.stack.push(U256.fromU64(32)); // offset (pushed second, will be on top)
-    gas = try opKeccak256(&interp);
-    // 2 words = 12 gas, no expansion (memory already >= 96)
-    const expansion_cost = interp.gas.memoryExpansionCost(old_size, 96);
-    try expectEqual(12 + expansion_cost, gas);
+        const gas = try opKeccak256(&interp);
+
+        // Calculate expected gas
+        const words = if (tc.size == 0) 0 else (tc.size + 31) / 32;
+        const hash_gas = words * 6; // keccak256_word_cost = 6
+        const new_size = tc.offset + tc.size;
+        const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+        const expected = hash_gas + expansion_gas;
+
+        try expectEqual(expected, gas);
+
+        // Clean up stack
+        _ = try interp.ctx.stack.pop();
+        _ = try interp.ctx.stack.pop();
+    }
+}
+
+test "opcode gas: copy operations" {
+    const allocator = std.testing.allocator;
+    const spec = Spec.forFork(.CANCUN);
+    const bytecode = &[_]u8{0x00};
+    const Env = @import("../context.zig").Env;
+    const MockHost = @import("../host/mock.zig").MockHost;
+    const env = Env.default();
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+
+    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    defer interp.deinit();
+
+    const OpFn = *const fn (*Interpreter) anyerror!u64;
+    const test_cases = [_]struct {
+        op_fn: OpFn,
+        op_name: []const u8,
+        dest_offset: u64,
+        src_offset: u64,
+        length: u64,
+        has_address: bool, // EXTCODECOPY has address param
+        expected_formula: []const u8,
+    }{
+        // CALLDATACOPY: [destOffset, offset, length]
+        .{ .op_fn = opCalldatacopy, .op_name = "CALLDATACOPY", .dest_offset = 0, .src_offset = 0, .length = 0, .has_address = false, .expected_formula = "0 (zero-length)" },
+        .{ .op_fn = opCalldatacopy, .op_name = "CALLDATACOPY", .dest_offset = 0, .src_offset = 0, .length = 32, .has_address = false, .expected_formula = "3 + expansion" },
+        .{ .op_fn = opCalldatacopy, .op_name = "CALLDATACOPY", .dest_offset = 0, .src_offset = 0, .length = 100, .has_address = false, .expected_formula = "12 + expansion" },
+        // CODECOPY: [destOffset, offset, length]
+        .{ .op_fn = opCodecopy, .op_name = "CODECOPY", .dest_offset = 0, .src_offset = 0, .length = 0, .has_address = false, .expected_formula = "0 (zero-length)" },
+        .{ .op_fn = opCodecopy, .op_name = "CODECOPY", .dest_offset = 0, .src_offset = 0, .length = 64, .has_address = false, .expected_formula = "6 + expansion" },
+        // EXTCODECOPY: [address, destOffset, offset, length]
+        .{ .op_fn = opExtcodecopy, .op_name = "EXTCODECOPY", .dest_offset = 0, .src_offset = 0, .length = 0, .has_address = true, .expected_formula = "0 (zero-length)" },
+        .{ .op_fn = opExtcodecopy, .op_name = "EXTCODECOPY", .dest_offset = 0, .src_offset = 0, .length = 96, .has_address = true, .expected_formula = "9 + expansion" },
+        // RETURNDATACOPY: [destOffset, offset, length]
+        .{ .op_fn = opReturndatacopy, .op_name = "RETURNDATACOPY", .dest_offset = 0, .src_offset = 0, .length = 0, .has_address = false, .expected_formula = "0 (zero-length)" },
+        .{ .op_fn = opReturndatacopy, .op_name = "RETURNDATACOPY", .dest_offset = 0, .src_offset = 0, .length = 128, .has_address = false, .expected_formula = "12 + expansion" },
+    };
+
+    for (test_cases) |tc| {
+        const old_size = interp.ctx.memory.len();
+
+        // Push stack values (reverse order - stack is LIFO)
+        try interp.ctx.stack.push(U256.fromU64(tc.length));
+        try interp.ctx.stack.push(U256.fromU64(tc.src_offset));
+        try interp.ctx.stack.push(U256.fromU64(tc.dest_offset));
+        if (tc.has_address) {
+            try interp.ctx.stack.push(U256.fromU64(0)); // address
+        }
+
+        const gas = try tc.op_fn(&interp);
+
+        // Calculate expected: 3 gas per word + expansion
+        const words = if (tc.length == 0) 0 else (tc.length + 31) / 32;
+        const copy_gas = words * 3;
+        const new_size = tc.dest_offset + tc.length;
+        const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
+        const expected = copy_gas + expansion_gas;
+
+        try expectEqual(expected, gas);
+
+        // Clean up stack
+        if (tc.has_address) {
+            _ = try interp.ctx.stack.pop();
+        }
+        _ = try interp.ctx.stack.pop();
+        _ = try interp.ctx.stack.pop();
+        _ = try interp.ctx.stack.pop();
+    }
 }
 
 test "overflow saturation" {

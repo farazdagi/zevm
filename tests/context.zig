@@ -14,7 +14,6 @@ test "BlockEnv: default initialization" {
 
     try expectEqual(1, block.number);
     try expectEqual(30_000_000, block.gas_limit);
-    try expectEqual(1, block.chain_id);
     try expectEqual(Address.zero(), block.coinbase);
 }
 
@@ -42,7 +41,6 @@ test "BlockEnv: custom initialization" {
         .gas_limit = 15_000_000,
         .basefee = U256.fromU64(10),
         .prevrandao = B256.fromHex("0x0000000000000000000000000000000000000000000000000000000000000042") catch unreachable,
-        .chain_id = 1,
     };
 
     try expectEqual(100, block.number);

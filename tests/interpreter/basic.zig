@@ -7,6 +7,7 @@ const Interpreter = zevm.interpreter.Interpreter;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const U256 = zevm.primitives.U256;
+const Address = zevm.primitives.Address;
 const Env = zevm.context.Env;
 const MockHost = zevm.host.MockHost;
 
@@ -23,7 +24,7 @@ test "init and deinit" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
     try expectEqual(0, interpreter.pc);
@@ -41,7 +42,7 @@ test "empty bytecode" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -57,7 +58,7 @@ test "STOP halts execution" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -75,7 +76,7 @@ test "multiple STOP opcodes (only first executed)" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -93,7 +94,7 @@ test "invalid opcode" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -109,7 +110,7 @@ test "unimplemented opcode" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -126,7 +127,7 @@ test "out of gas" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 2, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 2, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -154,7 +155,7 @@ test "Stack overflow - 1025 PUSH operations" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -174,7 +175,7 @@ test "Stack underflow - ADD with only one item" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -201,7 +202,7 @@ test "Complex calculation - Fibonacci-like" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();
@@ -229,7 +230,7 @@ test "Chained operations with mixed ops" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(allocator, bytecode, spec, 10000, &env, mock.host());
+    var interpreter = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
     const result = try interpreter.run();

@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
+const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Jump to destination (JUMP).
@@ -17,7 +18,7 @@ pub fn opJump(interp: *Interpreter) !void {
     const counter = counter_u256.toUsize() orelse return error.InvalidJump;
 
     // Validate destination.
-    if (!interp.ctx.bytecode.isValidJump(counter)) {
+    if (!interp.ctx.contract.bytecode.isValidJump(counter)) {
         return error.InvalidJump;
     }
 
@@ -42,7 +43,7 @@ pub fn opJumpi(interp: *Interpreter) !void {
     const counter = counter_u256.toUsize() orelse return error.InvalidJump;
 
     // Validate destination
-    if (!interp.ctx.bytecode.isValidJump(counter)) {
+    if (!interp.ctx.contract.bytecode.isValidJump(counter)) {
         return error.InvalidJump;
     }
 
@@ -143,7 +144,7 @@ const test_helpers = @import("test_helpers.zig");
 
 test "PC returns current program counter" {
     const bytecode = [_]u8{0x00}; // STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     // Set PC to 10
@@ -156,7 +157,7 @@ test "PC returns current program counter" {
 
 test "GAS returns remaining gas" {
     const bytecode = [_]u8{0x00}; // STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     // Consume some gas
@@ -172,7 +173,7 @@ test "GAS returns remaining gas" {
 
 test "JUMP to valid JUMPDEST" {
     const bytecode = [_]u8{ 0x5B, 0x00 }; // JUMPDEST at 0, STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.fromU64(0)); // Jump to position 0
@@ -184,7 +185,7 @@ test "JUMP to valid JUMPDEST" {
 
 test "JUMP to invalid destination fails" {
     const bytecode = [_]u8{ 0x00, 0x5B }; // STOP, JUMPDEST
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.fromU64(0)); // Try to jump to STOP (invalid)
@@ -193,7 +194,7 @@ test "JUMP to invalid destination fails" {
 
 test "JUMP out of bounds fails" {
     const bytecode = [_]u8{0x5B}; // JUMPDEST
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.fromU64(100)); // Out of bounds
@@ -202,7 +203,7 @@ test "JUMP out of bounds fails" {
 
 test "JUMPI with true condition jumps" {
     const bytecode = [_]u8{0x5B}; // JUMPDEST at 0
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.fromU64(1)); // condition = true
@@ -217,7 +218,7 @@ test "JUMPI with true condition jumps" {
 
 test "JUMPI with false condition doesn't jump" {
     const bytecode = [_]u8{0x5B}; // JUMPDEST at 0
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.fromU64(0)); // condition = false
@@ -232,7 +233,7 @@ test "JUMPI with false condition doesn't jump" {
 
 test "JUMPI with true condition to invalid destination fails" {
     const bytecode = [_]u8{ 0x00, 0x5B }; // STOP, JUMPDEST
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.fromU64(1)); // condition = true
@@ -243,7 +244,7 @@ test "JUMPI with true condition to invalid destination fails" {
 
 test "RETURN with zero size" {
     const bytecode = [_]u8{0x00}; // STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.ZERO); // size = 0
@@ -257,7 +258,7 @@ test "RETURN with zero size" {
 
 test "RETURN with data" {
     const bytecode = [_]u8{0x00}; // STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
     defer if (ctx.interp.return_data) |data| ctx.interp.allocator.free(data);
 
@@ -275,7 +276,7 @@ test "RETURN with data" {
 
 test "REVERT with zero size" {
     const bytecode = [_]u8{0x00}; // STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
 
     try ctx.interp.ctx.stack.push(U256.ZERO); // size = 0
@@ -287,7 +288,7 @@ test "REVERT with zero size" {
 
 test "REVERT with data" {
     const bytecode = [_]u8{0x00}; // STOP
-    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode);
+    var ctx = try test_helpers.TestContext.createWithBytecode(std.testing.allocator, &bytecode, Address.zero());
     defer ctx.destroy();
     defer if (ctx.interp.return_data) |data| ctx.interp.allocator.free(data);
 

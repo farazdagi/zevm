@@ -3,6 +3,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const U256 = @import("../../primitives/big.zig").U256;
+const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
@@ -17,13 +18,13 @@ pub const TestContext = struct {
     interp: Interpreter,
     allocator: Allocator,
 
-    /// Create test context with default bytecode (STOP).
+    /// Create test context with default bytecode (STOP) and default contract address (zero).
     pub fn create(allocator: Allocator) !*TestContext {
-        return createWithBytecode(allocator, &[_]u8{0x00});
+        return createWithBytecode(allocator, &[_]u8{0x00}, Address.zero());
     }
 
-    /// Create test context with custom bytecode.
-    pub fn createWithBytecode(allocator: Allocator, bytecode: []const u8) !*TestContext {
+    /// Create test context with custom bytecode and contract address.
+    pub fn createWithBytecode(allocator: Allocator, bytecode: []const u8, contract_address: Address) !*TestContext {
         const self = try allocator.create(TestContext);
         errdefer allocator.destroy(self);
 
@@ -35,6 +36,7 @@ pub const TestContext = struct {
         self.interp = try Interpreter.init(
             allocator,
             bytecode,
+            contract_address,
             Spec.forFork(.CANCUN),
             1000000,
             &self.env,

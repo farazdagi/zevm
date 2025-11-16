@@ -26,6 +26,14 @@ pub const VTable = struct {
 
     /// Get code size of an account.
     codeSize: *const fn (ptr: *anyopaque, address: Address) usize,
+
+    /// Get hash of a block by number.
+    ///
+    /// Returns B256.zero() for:
+    /// - Block numbers >= current block
+    /// - Block numbers more than 256 blocks in the past
+    /// - Non-existent blocks
+    blockHash: *const fn (ptr: *anyopaque, block_number: u64) B256,
 };
 
 /// Get balance of an account.
@@ -55,4 +63,12 @@ pub inline fn codeHash(self: Host, address: Address) B256 {
 /// Returns 0 for accounts without code or non-existent accounts.
 pub inline fn codeSize(self: Host, address: Address) usize {
     return self.vtable.codeSize(self.ptr, address);
+}
+
+/// Get hash of a block by number.
+///
+/// Returns B256.zero() for invalid or unavailable blocks.
+/// Per EVM spec, only the most recent 256 blocks are accessible.
+pub inline fn blockHash(self: Host, block_number: u64) B256 {
+    return self.vtable.blockHash(self.ptr, block_number);
 }

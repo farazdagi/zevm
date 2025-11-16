@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
+const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Compute Keccak-256 hash (KECCAK256).
@@ -51,7 +52,7 @@ test "opKeccak256: empty string" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Push size=0, offset=0 (stack will be [offset, size] with offset on top)
@@ -75,7 +76,7 @@ test "opKeccak256: known value" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Store test data in memory: "hello"
@@ -111,7 +112,7 @@ test "opKeccak256: 32-byte input" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, spec, 1000000, &env, mock.host());
+    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Store 32 bytes of test data

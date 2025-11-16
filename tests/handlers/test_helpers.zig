@@ -48,7 +48,6 @@ pub fn createTestEnv(opts: struct {
             .gas_limit = 30_000_000,
             .basefee = U256.ZERO,
             .prevrandao = B256.zero(),
-            .chain_id = 1,
         },
         .tx = TxEnv{
             .caller = opts.caller,
@@ -64,6 +63,7 @@ pub fn createTestEnv(opts: struct {
 pub fn createTestInterpreter(
     allocator: std.mem.Allocator,
     bytecode: []const u8,
+    contract_address: Address,
     fork: Hardfork,
     gas_limit: u64,
     env: *const Env,
@@ -71,7 +71,19 @@ pub fn createTestInterpreter(
 ) !Interpreter {
     const spec = Spec.forFork(fork);
     const host = mock_host.host();
-    return try Interpreter.init(allocator, bytecode, spec, gas_limit, env, host);
+    return try Interpreter.init(allocator, bytecode, contract_address, spec, gas_limit, env, host);
+}
+
+/// Create test interpreter with default contract address (zero)
+pub fn createTestInterpreterDefault(
+    allocator: std.mem.Allocator,
+    bytecode: []const u8,
+    fork: Hardfork,
+    gas_limit: u64,
+    env: *const Env,
+    mock_host: *MockHost,
+) !Interpreter {
+    return createTestInterpreter(allocator, bytecode, Address.zero(), fork, gas_limit, env, mock_host);
 }
 
 /// Run a series of opcode tests using table-based test cases.
@@ -86,6 +98,7 @@ pub fn runOpcodeTests(allocator: std.mem.Allocator, test_cases: []const TestCase
         var interpreter = try createTestInterpreter(
             allocator,
             tc.bytecode,
+            Address.zero(),
             tc.spec.fork,
             10000,
             &env,
