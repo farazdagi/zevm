@@ -98,6 +98,7 @@ pub const MockHost = struct {
         .blockHash = blockHashImpl,
         .snapshot = snapshotImpl,
         .revertToSnapshot = revertToSnapshotImpl,
+        .transfer = transferImpl,
     };
 
     fn balanceImpl(ptr: *anyopaque, address: Address) U256 {
@@ -221,6 +222,32 @@ pub const MockHost = struct {
             var discarded = self.snapshots.pop().?;
             discarded.deinit(self.allocator);
         }
+    }
+
+    fn transferImpl(ptr: *anyopaque, from: Address, to: Address, value: U256) (Allocator.Error || Host.Error)!void {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+
+        // Zero-value transfers succeed without changes
+        if (value.isZero()) {
+            return;
+        }
+
+        // Get from balance (defaults to 0 if account doesn't exist)
+        const from_balance = self.balances.get(from) orelse U256.ZERO;
+
+        // Check sufficient balance
+        if (from_balance.lt(value)) {
+            return error.InsufficientBalance;
+        }
+
+        // Calculate new balances
+        const new_from_balance = from_balance.sub(value);
+        const to_balance = self.balances.get(to) orelse U256.ZERO;
+        const new_to_balance = to_balance.add(value);
+
+        // Update balances
+        try self.balances.put(from, new_from_balance);
+        try self.balances.put(to, new_to_balance);
     }
 };
 
@@ -464,4 +491,122 @@ test "Multiple snapshots work independently" {
 
     // Later snapshot should be discarded
     try expectEqual(2, mock.snapshots.items.len); // snap0, snap1 remain
+}
+
+test "Transfer: basic value transfer" {
+    const test_cases = [_]struct {
+        from_initial: u64,
+        to_initial: u64,
+        transfer_amount: u64,
+        should_succeed: bool,
+        from_final: u64,
+        to_final: u64,
+    }{
+        // Successful transfer
+        .{
+            .from_initial = 100,
+            .to_initial = 50,
+            .transfer_amount = 30,
+            .should_succeed = true,
+            .from_final = 70,
+            .to_final = 80,
+        },
+        // Insufficient balance
+        .{
+            .from_initial = 100,
+            .to_initial = 50,
+            .transfer_amount = 101,
+            .should_succeed = false,
+            .from_final = 100,
+            .to_final = 50,
+        },
+        // Zero-value transfer
+        .{
+            .from_initial = 100,
+            .to_initial = 0,
+            .transfer_amount = 0,
+            .should_succeed = true,
+            .from_final = 100,
+            .to_final = 0,
+        },
+        // Transfer entire balance
+        .{
+            .from_initial = 100,
+            .to_initial = 0,
+            .transfer_amount = 100,
+            .should_succeed = true,
+            .from_final = 0,
+            .to_final = 100,
+        },
+    };
+
+    for (test_cases) |tc| {
+        var mock = MockHost.init(std.testing.allocator);
+        defer mock.deinit();
+
+        const from_addr = Address.fromHex("0x0000000000000000000000000000000000001111") catch unreachable;
+        const to_addr = Address.fromHex("0x0000000000000000000000000000000000002222") catch unreachable;
+
+        // Set initial balances
+        try mock.setBalance(from_addr, U256.fromU64(tc.from_initial));
+        try mock.setBalance(to_addr, U256.fromU64(tc.to_initial));
+
+        const h = mock.host();
+
+        // Attempt transfer
+        if (tc.should_succeed) {
+            try h.transfer(from_addr, to_addr, U256.fromU64(tc.transfer_amount));
+        } else {
+            const result = h.transfer(from_addr, to_addr, U256.fromU64(tc.transfer_amount));
+            try std.testing.expectError(error.InsufficientBalance, result);
+        }
+
+        // Verify final balances
+        try expectEqual(U256.fromU64(tc.from_final), h.balance(from_addr));
+        try expectEqual(U256.fromU64(tc.to_final), h.balance(to_addr));
+    }
+}
+
+test "Transfer: to non-existent account creates account" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const from_addr = Address.fromHex("0x0000000000000000000000000000000000001111") catch unreachable;
+    const to_addr = Address.fromHex("0x0000000000000000000000000000000000002222") catch unreachable;
+
+    // Set up sender with balance
+    try mock.setBalance(from_addr, U256.fromU64(100));
+
+    const h = mock.host();
+
+    // Verify recipient doesn't exist (balance is 0)
+    try expectEqual(U256.ZERO, h.balance(to_addr));
+
+    // Transfer to non-existent account
+    try h.transfer(from_addr, to_addr, U256.fromU64(30));
+
+    // Verify balances
+    try expectEqual(U256.fromU64(70), h.balance(from_addr));
+    try expectEqual(U256.fromU64(30), h.balance(to_addr));
+}
+
+test "Transfer: from non-existent account fails" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const from_addr = Address.fromHex("0x0000000000000000000000000000000000001111") catch unreachable;
+    const to_addr = Address.fromHex("0x0000000000000000000000000000000000002222") catch unreachable;
+
+    // Don't set any balance for from_addr (defaults to 0)
+    try mock.setBalance(to_addr, U256.fromU64(50));
+
+    const h = mock.host();
+
+    // Attempt transfer from non-existent account
+    const result = h.transfer(from_addr, to_addr, U256.fromU64(1));
+    try std.testing.expectError(error.InsufficientBalance, result);
+
+    // Verify balances unchanged
+    try expectEqual(U256.ZERO, h.balance(from_addr));
+    try expectEqual(U256.fromU64(50), h.balance(to_addr));
 }

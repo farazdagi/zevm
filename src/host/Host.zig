@@ -7,6 +7,12 @@ const B256 = @import("../primitives/mod.zig").B256;
 
 const Host = @This();
 
+/// Errors that can occur during host operations.
+pub const Error = error{
+    /// Insufficient balance for transfer
+    InsufficientBalance,
+};
+
 /// Opaque pointer to concrete implementation.
 ptr: *anyopaque,
 
@@ -48,6 +54,14 @@ pub const VTable = struct {
     /// All snapshots created after the given snapshot_id are discarded.
     /// The snapshot being reverted to remains valid for potential future reverts.
     revertToSnapshot: *const fn (ptr: *anyopaque, snapshot_id: usize) void,
+
+    /// Transfer value between accounts.
+    ///
+    /// Transfers `value` from `from` address to `to` address.
+    /// Returns error.InsufficientBalance if `from` has insufficient balance.
+    /// Zero-value transfers should succeed without error.
+    /// Creates `to` account if it doesn't exist (with transferred balance).
+    transfer: *const fn (ptr: *anyopaque, from: Address, to: Address, value: U256) (std.mem.Allocator.Error || Error)!void,
 };
 
 pub inline fn balance(self: Host, address: Address) U256 {
@@ -76,4 +90,8 @@ pub inline fn snapshot(self: Host) !usize {
 
 pub inline fn revertToSnapshot(self: Host, snapshot_id: usize) void {
     self.vtable.revertToSnapshot(self.ptr, snapshot_id);
+}
+
+pub inline fn transfer(self: Host, from: Address, to: Address, value: U256) !void {
+    return self.vtable.transfer(self.ptr, from, to, value);
 }
