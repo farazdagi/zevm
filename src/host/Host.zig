@@ -62,6 +62,18 @@ pub const VTable = struct {
     /// Zero-value transfers should succeed without error.
     /// Creates `to` account if it doesn't exist (with transferred balance).
     transfer: *const fn (ptr: *anyopaque, from: Address, to: Address, value: U256) (std.mem.Allocator.Error || Error)!void,
+
+    /// Get nonce of an account.
+    ///
+    /// Returns the nonce value for the given address.
+    /// Returns 0 for non-existent accounts (default nonce value).
+    nonce: *const fn (ptr: *anyopaque, address: Address) u64,
+
+    /// Check if an account exists.
+    ///
+    /// Returns true if the account exists in state (has balance, code, or nonce).
+    /// Returns false if the account does not exist in any state map.
+    accountExists: *const fn (ptr: *anyopaque, address: Address) bool,
 };
 
 pub inline fn balance(self: Host, address: Address) U256 {
@@ -94,4 +106,12 @@ pub inline fn revertToSnapshot(self: Host, snapshot_id: usize) void {
 
 pub inline fn transfer(self: Host, from: Address, to: Address, value: U256) !void {
     return self.vtable.transfer(self.ptr, from, to, value);
+}
+
+pub inline fn nonce(self: Host, address: Address) u64 {
+    return self.vtable.nonce(self.ptr, address);
+}
+
+pub inline fn accountExists(self: Host, address: Address) bool {
+    return self.vtable.accountExists(self.ptr, address);
 }

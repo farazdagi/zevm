@@ -13,6 +13,7 @@ const B256 = @import("../primitives/mod.zig").B256;
 const Snapshot = struct {
     balances: std.AutoHashMap(Address, U256),
     codes: std.AutoHashMap(Address, []const u8),
+    nonces: std.AutoHashMap(Address, u64),
 
     fn deinit(self: *Snapshot, allocator: Allocator) void {
         // Free all stored code in snapshot
@@ -22,6 +23,7 @@ const Snapshot = struct {
         }
         self.codes.deinit();
         self.balances.deinit();
+        self.nonces.deinit();
     }
 };
 
@@ -35,6 +37,9 @@ pub const MockHost = struct {
     /// Account code
     codes: std.AutoHashMap(Address, []const u8),
 
+    /// Account nonces
+    nonces: std.AutoHashMap(Address, u64),
+
     /// Snapshots for state revert
     snapshots: std.ArrayList(Snapshot),
 
@@ -43,6 +48,7 @@ pub const MockHost = struct {
             .allocator = allocator,
             .balances = std.AutoHashMap(Address, U256).init(allocator),
             .codes = std.AutoHashMap(Address, []const u8).init(allocator),
+            .nonces = std.AutoHashMap(Address, u64).init(allocator),
             .snapshots = std.ArrayList(Snapshot){},
         };
     }
@@ -61,6 +67,7 @@ pub const MockHost = struct {
         }
         self.codes.deinit();
         self.balances.deinit();
+        self.nonces.deinit();
     }
 
     /// Convert to Host interface
@@ -99,6 +106,8 @@ pub const MockHost = struct {
         .snapshot = snapshotImpl,
         .revertToSnapshot = revertToSnapshotImpl,
         .transfer = transferImpl,
+        .nonce = nonceImpl,
+        .accountExists = accountExistsImpl,
     };
 
     fn balanceImpl(ptr: *anyopaque, address: Address) U256 {
@@ -150,6 +159,7 @@ pub const MockHost = struct {
         // Preserve the current state
         var snapshot_balances = std.AutoHashMap(Address, U256).init(self.allocator);
         var snapshot_codes = std.AutoHashMap(Address, []const u8).init(self.allocator);
+        var snapshot_nonces = std.AutoHashMap(Address, u64).init(self.allocator);
 
         // Clone balances
         var balance_iter = self.balances.iterator();
@@ -164,9 +174,16 @@ pub const MockHost = struct {
             try snapshot_codes.put(entry.key_ptr.*, code_copy);
         }
 
+        // Clone nonces
+        var nonce_iter = self.nonces.iterator();
+        while (nonce_iter.next()) |entry| {
+            try snapshot_nonces.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
         const snapshot = Snapshot{
             .balances = snapshot_balances,
             .codes = snapshot_codes,
+            .nonces = snapshot_nonces,
         };
 
         try self.snapshots.append(self.allocator, snapshot);
@@ -189,12 +206,14 @@ pub const MockHost = struct {
         }
         self.codes.deinit();
         self.balances.deinit();
+        self.nonces.deinit();
 
         // Clone snapshot state to current (snapshot remains, for potential future reverts)
         const snapshot = &self.snapshots.items[snapshot_id];
 
         self.balances = std.AutoHashMap(Address, U256).init(self.allocator);
         self.codes = std.AutoHashMap(Address, []const u8).init(self.allocator);
+        self.nonces = std.AutoHashMap(Address, u64).init(self.allocator);
 
         // Copy balances from snapshot
         var balance_iter = snapshot.balances.iterator();
@@ -212,6 +231,14 @@ pub const MockHost = struct {
                 @panic("Out of memory during revert");
             };
             self.codes.put(entry.key_ptr.*, code_copy) catch {
+                @panic("Out of memory during revert");
+            };
+        }
+
+        // Copy nonces from snapshot
+        var nonce_iter = snapshot.nonces.iterator();
+        while (nonce_iter.next()) |entry| {
+            self.nonces.put(entry.key_ptr.*, entry.value_ptr.*) catch {
                 @panic("Out of memory during revert");
             };
         }
@@ -248,6 +275,20 @@ pub const MockHost = struct {
         // Update balances
         try self.balances.put(from, new_from_balance);
         try self.balances.put(to, new_to_balance);
+    }
+
+    fn nonceImpl(ptr: *anyopaque, address: Address) u64 {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+        return self.nonces.get(address) orelse 0;
+    }
+
+    fn accountExistsImpl(ptr: *anyopaque, address: Address) bool {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+        // Account exists if it has balance, code, or nonce
+        if (self.balances.contains(address)) return true;
+        if (self.codes.contains(address)) return true;
+        if (self.nonces.contains(address)) return true;
+        return false;
     }
 };
 
@@ -609,4 +650,76 @@ test "Transfer: from non-existent account fails" {
     // Verify balances unchanged
     try expectEqual(U256.ZERO, h.balance(from_addr));
     try expectEqual(U256.fromU64(50), h.balance(to_addr));
+}
+
+test "Nonce: default and set operations" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x0000000000000000000000000000000000001111") catch unreachable;
+    const h = mock.host();
+
+    // Non-existent account returns nonce 0
+    try expectEqual(0, h.nonce(addr));
+
+    // Set nonce via direct map access (no helper method needed for tests)
+    try mock.nonces.put(addr, 42);
+    try expectEqual(42, h.nonce(addr));
+
+    // Update nonce
+    try mock.nonces.put(addr, 100);
+    try expectEqual(100, h.nonce(addr));
+}
+
+test "Nonce: snapshot and revert" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x0000000000000000000000000000000000001111") catch unreachable;
+    const h = mock.host();
+
+    // Set initial nonce
+    try mock.nonces.put(addr, 5);
+    try expectEqual(5, h.nonce(addr));
+
+    // Create snapshot
+    const snapshot_id = try h.snapshot();
+
+    // Modify nonce
+    try mock.nonces.put(addr, 10);
+    try expectEqual(10, h.nonce(addr));
+
+    // Revert to snapshot
+    h.revertToSnapshot(snapshot_id);
+
+    // Verify nonce reverted
+    try expectEqual(5, h.nonce(addr));
+}
+
+test "AccountExists: various account states" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr_balance = Address.fromHex("0x0000000000000000000000000000000000001111") catch unreachable;
+    const addr_code = Address.fromHex("0x0000000000000000000000000000000000002222") catch unreachable;
+    const addr_nonce = Address.fromHex("0x0000000000000000000000000000000000003333") catch unreachable;
+    const addr_none = Address.fromHex("0x0000000000000000000000000000000000004444") catch unreachable;
+
+    const h = mock.host();
+
+    // Account with only balance
+    try mock.setBalance(addr_balance, U256.fromU64(100));
+    try std.testing.expect(h.accountExists(addr_balance));
+
+    // Account with only code
+    const code = [_]u8{ 0x60, 0x01 };
+    try mock.setCode(addr_code, &code);
+    try std.testing.expect(h.accountExists(addr_code));
+
+    // Account with only nonce
+    try mock.nonces.put(addr_nonce, 1);
+    try std.testing.expect(h.accountExists(addr_nonce));
+
+    // Account with nothing
+    try std.testing.expect(!h.accountExists(addr_none));
 }
