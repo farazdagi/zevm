@@ -29,8 +29,8 @@ pub const TestCase = struct {
     expected_stack: []const U256,
     /// Expected gas consumption
     expected_gas: u64,
-    /// Spec to use (defaults to BERLIN)
-    spec: Spec = Spec.forFork(.BERLIN),
+    /// Spec to use (defaults to PRAGUE)
+    spec: Spec = Spec.forFork(.PRAGUE),
 };
 
 /// Create test environment with optional customization

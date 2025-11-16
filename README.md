@@ -13,7 +13,9 @@ Zevm is built from the ground up in Zig with the following goals:
 
 ## Status
 
-Building an EVM from scratch in Zig. Core interpreter is working great – you can run bytecode with loops, math, memory, and control flow. Just finished the host abstraction layer, which unblocks a ton of cool stuff (environmental opcodes, storage, contract calls).
+Core interpreter is working great – you can run bytecode with loops, math, memory, and control flow. 
+
+Just wrapped up environmental opcodes (transaction context, calldata, block info), so we can now simulate realistic smart contract execution. The next big thing is storage, that will unblock the EVM executor abstraction (nested calls!).
 
 ## Quickstart
 

@@ -3,6 +3,7 @@
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
+const B256 = @import("../../primitives/bytes.zig").B256;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 
 /// Get address of currently executing account (ADDRESS).
@@ -396,3 +397,489 @@ pub fn opBlobbasefee(interp: *Interpreter) !void {
 // ============================================================================
 // Tests
 // ============================================================================
+
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
+const expectError = std.testing.expectError;
+
+const test_helpers = @import("test_helpers.zig");
+const TestContext = test_helpers.TestContext;
+
+test "ADDRESS returns contract address" {
+    const addr = try Address.fromHex("0x1234567890123456789012345678901234567890");
+    var ctx = try TestContext.createWithBytecode(
+        std.testing.allocator,
+        &[_]u8{0x00}, // STOP
+        addr,
+    );
+    defer ctx.destroy();
+
+    try opAddress(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try expectEqual(expected, result);
+}
+
+test "ORIGIN returns transaction origin" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const origin_addr = try Address.fromHex("0x1111111111111111111111111111111111111111");
+    ctx.env.tx.origin = origin_addr;
+
+    try opOrigin(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytesPadded(&origin_addr.inner.bytes);
+    try expectEqual(expected, result);
+}
+
+test "CALLER returns transaction caller" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const caller_addr = try Address.fromHex("0x2222222222222222222222222222222222222222");
+    ctx.env.tx.caller = caller_addr;
+
+    try opCaller(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytesPadded(&caller_addr.inner.bytes);
+    try expectEqual(expected, result);
+}
+
+test "CALLVALUE returns transaction value" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.tx.value = U256.fromU64(1000);
+
+    try opCallvalue(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(1000), result);
+}
+
+test "GASPRICE returns gas price" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.tx.gas_price = U256.fromU64(50);
+
+    try opGasprice(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(50), result);
+}
+
+test "CALLDATASIZE returns calldata length" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const calldata = [_]u8{ 0x11, 0x22, 0x33, 0x44 };
+    ctx.env.tx.data = &calldata;
+
+    try opCalldatasize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(4), result);
+}
+
+test "CALLDATASIZE returns zero for empty calldata" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.tx.data = &[_]u8{};
+
+    try opCalldatasize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "CODESIZE returns bytecode length" {
+    const bytecode = [_]u8{ 0x60, 0x01, 0x60, 0x02, 0x01 }; // PUSH1 1, PUSH1 2, ADD
+    var ctx = try TestContext.createWithBytecode(
+        std.testing.allocator,
+        &bytecode,
+        Address.zero(),
+    );
+    defer ctx.destroy();
+
+    try opCodesize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(5), result);
+}
+
+test "RETURNDATASIZE returns return data buffer length" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const return_data = [_]u8{ 0xAA, 0xBB, 0xCC };
+    ctx.interp.return_data_buffer = &return_data;
+
+    try opReturndatasize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(3), result);
+}
+
+test "RETURNDATASIZE returns zero for empty return data" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.interp.return_data_buffer = &[_]u8{};
+
+    try opReturndatasize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "COINBASE returns block coinbase address" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const coinbase_addr = try Address.fromHex("0x3333333333333333333333333333333333333333");
+    ctx.env.block.coinbase = coinbase_addr;
+
+    try opCoinbase(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytesPadded(&coinbase_addr.inner.bytes);
+    try expectEqual(expected, result);
+}
+
+test "TIMESTAMP returns block timestamp" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.block.timestamp = 1234567890;
+
+    try opTimestamp(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(1234567890), result);
+}
+
+test "NUMBER returns block number" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.block.number = 9876543;
+
+    try opNumber(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(9876543), result);
+}
+
+test "PREVRANDAO returns prevrandao value" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const prevrandao_bytes = [_]u8{0xFF} ** 32;
+    ctx.env.block.prevrandao = B256{ .bytes = prevrandao_bytes };
+
+    try opPrevrandao(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytes(&prevrandao_bytes);
+    try expectEqual(expected, result);
+}
+
+test "GASLIMIT returns block gas limit" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.block.gas_limit = 30_000_000;
+
+    try opGaslimit(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(30_000_000), result);
+}
+
+test "CHAINID returns chain ID from spec" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    // Default spec in TestContext is Cancun with chain_id = 1 (mainnet)
+    try opChainid(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(1), result);
+}
+
+test "BASEFEE returns block base fee" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.block.basefee = U256.fromU64(15);
+
+    try opBasefee(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(15), result);
+}
+
+test "BLOBBASEFEE returns blob base fee" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    ctx.env.block.blob_basefee = U256.fromU64(25);
+
+    try opBlobbasefee(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(25), result);
+}
+
+test "CALLDATALOAD - normal 32-byte read" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    // 32 bytes of calldata
+    const calldata = [_]u8{
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+    };
+    ctx.env.tx.data = &calldata;
+
+    // Load from offset 0
+    try ctx.interp.ctx.stack.push(U256.ZERO);
+    try opCalldataload(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytes(&calldata);
+    try expectEqual(expected, result);
+}
+
+test "CALLDATALOAD - partial read with zero padding" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const calldata = [_]u8{ 0x11, 0x22, 0x33, 0x44 }; // Only 4 bytes
+    ctx.env.tx.data = &calldata;
+
+    // Load from offset 0 (should read 4 bytes + 28 zero bytes)
+    try ctx.interp.ctx.stack.push(U256.ZERO);
+    try opCalldataload(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    var expected_bytes = [_]u8{0} ** 32;
+    expected_bytes[0..4].* = calldata;
+    const expected = U256.fromBeBytes(&expected_bytes);
+    try expectEqual(expected, result);
+}
+
+test "CALLDATALOAD - offset beyond calldata returns zeros" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const calldata = [_]u8{ 0x11, 0x22 };
+    ctx.env.tx.data = &calldata;
+
+    // Load from offset 100 (beyond calldata)
+    try ctx.interp.ctx.stack.push(U256.fromU64(100));
+    try opCalldataload(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "CALLDATALOAD - offset overflow returns zeros" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const calldata = [_]u8{ 0x11, 0x22 };
+    ctx.env.tx.data = &calldata;
+
+    // Offset too large to fit in usize
+    try ctx.interp.ctx.stack.push(U256.MAX);
+    try opCalldataload(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "BALANCE - existing account" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const addr = try Address.fromHex("0x4444444444444444444444444444444444444444");
+    try ctx.mock.setBalance(addr, U256.fromU64(1000));
+
+    // Push address to stack
+    const addr_u256 = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try ctx.interp.ctx.stack.push(addr_u256);
+
+    try opBalance(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(1000), result);
+}
+
+test "BALANCE - non-existent account returns zero" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const addr = try Address.fromHex("0x5555555555555555555555555555555555555555");
+    // Don't set balance - account doesn't exist
+
+    const addr_u256 = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try ctx.interp.ctx.stack.push(addr_u256);
+
+    try opBalance(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "SELFBALANCE returns contract's own balance" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    // Contract address is from TestContext (Address.zero())
+    const contract_addr = Address.zero();
+    try ctx.mock.setBalance(contract_addr, U256.fromU64(500));
+
+    try opSelfbalance(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(500), result);
+}
+
+test "EXTCODESIZE - existing account" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const addr = try Address.fromHex("0x6666666666666666666666666666666666666666");
+    const code = [_]u8{ 0x60, 0x01, 0x60, 0x02, 0x01 }; // 5 bytes
+    try ctx.mock.setCode(addr, &code);
+
+    const addr_u256 = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try ctx.interp.ctx.stack.push(addr_u256);
+
+    try opExtcodesize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.fromU64(5), result);
+}
+
+test "EXTCODESIZE - non-existent account returns zero" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const addr = try Address.fromHex("0x7777777777777777777777777777777777777777");
+    // Don't set code
+
+    const addr_u256 = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try ctx.interp.ctx.stack.push(addr_u256);
+
+    try opExtcodesize(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "EXTCODEHASH - existing account with code" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const addr = try Address.fromHex("0x8888888888888888888888888888888888888888");
+    const code = [_]u8{ 0x60, 0x01 };
+    try ctx.mock.setCode(addr, &code);
+
+    const addr_u256 = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try ctx.interp.ctx.stack.push(addr_u256);
+
+    try opExtcodehash(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    // Result should be keccak256 hash of code (non-zero)
+    try expect(!result.isZero());
+}
+
+test "EXTCODEHASH - non-existent account returns zero" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const addr = try Address.fromHex("0x9999999999999999999999999999999999999999");
+    // Don't set code - account doesn't exist
+
+    const addr_u256 = U256.fromBeBytesPadded(&addr.inner.bytes);
+    try ctx.interp.ctx.stack.push(addr_u256);
+
+    try opExtcodehash(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "BLOCKHASH returns hash for block number" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    // MockHost currently returns zero for all block hashes
+    try ctx.interp.ctx.stack.push(U256.fromU64(100));
+    try opBlockhash(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    // Just verify operation completed (MockHost returns zero)
+    _ = result;
+}
+
+test "BLOBHASH - valid index returns hash" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const hash1 = B256{ .bytes = [_]u8{0x11} ** 32 };
+    const hash2 = B256{ .bytes = [_]u8{0x22} ** 32 };
+    const blob_hashes = [_]B256{ hash1, hash2 };
+    ctx.env.tx.blob_hashes = &blob_hashes;
+
+    // Get hash at index 0
+    try ctx.interp.ctx.stack.push(U256.ZERO);
+    try opBlobhash(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    const expected = U256.fromBeBytes(&hash1.bytes);
+    try expectEqual(expected, result);
+}
+
+test "BLOBHASH - index out of bounds returns zero" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const hash1 = B256{ .bytes = [_]u8{0x11} ** 32 };
+    const blob_hashes = [_]B256{hash1};
+    ctx.env.tx.blob_hashes = &blob_hashes;
+
+    // Get hash at index 5 (out of bounds)
+    try ctx.interp.ctx.stack.push(U256.fromU64(5));
+    try opBlobhash(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
+
+test "BLOBHASH - index overflow returns zero" {
+    var ctx = try TestContext.create(std.testing.allocator);
+    defer ctx.destroy();
+
+    const hash1 = B256{ .bytes = [_]u8{0x11} ** 32 };
+    const blob_hashes = [_]B256{hash1};
+    ctx.env.tx.blob_hashes = &blob_hashes;
+
+    // Index too large to fit in usize
+    try ctx.interp.ctx.stack.push(U256.MAX);
+    try opBlobhash(&ctx.interp);
+
+    const result = try ctx.interp.ctx.stack.pop();
+    try expectEqual(U256.ZERO, result);
+}
