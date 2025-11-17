@@ -7,17 +7,22 @@ const Address = @import("../primitives/address.zig").Address;
 
 /// Regular EVM bytecode that has been analyzed for valid JUMPDEST positions.
 pub const AnalyzedBytecode = struct {
-    /// Bitmap of valid JUMPDEST positions (1 bit per bytecode position)
+    /// Allocator used for memory management.
+    allocator: Allocator,
+
+    /// Bitmap of valid JUMPDEST positions (1 bit per bytecode position).
     jumpdests: std.DynamicBitSet,
 
-    /// Raw bytecode bytes
-    raw: []const u8,
+    /// Raw bytecode bytes (owned allocation).
+    raw: []u8,
 
     /// Analyze bytecode to find all valid JUMPDEST positions.
     ///
-    /// Returns AnalyzedBytecode with a bitmap where bit N is set if position N
-    /// is a valid JUMPDEST opcode. PUSH immediate data is correctly skipped.
-    pub fn analyze(allocator: Allocator, bytecode: []const u8) !AnalyzedBytecode {
+    /// Takes ownership of the bytecode parameter.
+    ///
+    /// Returns AnalyzedBytecode with a bitmap where bit `n` is set if position `n`
+    /// is a valid JUMPDEST opcode.
+    pub fn init(allocator: Allocator, bytecode: []u8) !AnalyzedBytecode {
         var jumpdests = try std.DynamicBitSet.initEmpty(allocator, bytecode.len);
         errdefer jumpdests.deinit();
 
@@ -39,6 +44,7 @@ pub const AnalyzedBytecode = struct {
         }
 
         return .{
+            .allocator = allocator,
             .jumpdests = jumpdests,
             .raw = bytecode,
         };
@@ -61,6 +67,7 @@ pub const AnalyzedBytecode = struct {
     /// Free allocated resources.
     pub fn deinit(self: *AnalyzedBytecode) void {
         self.jumpdests.deinit();
+        self.allocator.free(self.raw);
     }
 };
 
@@ -77,17 +84,22 @@ pub const AnalyzedBytecode = struct {
 ///
 /// Reference: https://eips.ethereum.org/EIPS/eip-7702
 pub const Eip7702Bytecode = struct {
+    /// Allocator used for memory management (null for borrowed references).
+    allocator: ?Allocator,
+
     /// Delegation target address
     delegated_address: Address,
 
     /// Version byte (currently only 0 is valid)
     version: u8,
 
-    /// Raw 23-byte delegation indicator
-    raw: []const u8,
-
-    /// Whether this instance owns the raw bytes and should free them on deinit
-    owns_memory: bool,
+    /// Raw 23-byte delegation indicator with ownership semantics.
+    raw: union(enum) {
+        /// Owned allocation (must be freed).
+        owned: []u8,
+        /// Borrowed reference (must not be freed).
+        borrowed: []const u8,
+    },
 
     /// Magic bytes (0xEF01)
     pub const MAGIC: u16 = 0xEF01;
@@ -132,10 +144,10 @@ pub const Eip7702Bytecode = struct {
         const delegated_address = Address.init(addr_bytes);
 
         return .{
+            .allocator = null,
             .delegated_address = delegated_address,
             .version = version,
-            .raw = raw,
-            .owns_memory = false, // parse() does not allocate
+            .raw = .{ .borrowed = raw },
         };
     }
 
@@ -157,10 +169,10 @@ pub const Eip7702Bytecode = struct {
         @memcpy(raw[3..23], &address.inner.bytes);
 
         return .{
+            .allocator = allocator,
             .delegated_address = address,
             .version = VERSION,
-            .raw = raw,
-            .owns_memory = true, // new() allocates memory
+            .raw = .{ .owned = raw },
         };
     }
 
@@ -174,13 +186,21 @@ pub const Eip7702Bytecode = struct {
 
     /// Get bytecode length (always 23 bytes).
     pub fn len(self: *const Eip7702Bytecode) usize {
-        return self.raw.len;
+        return switch (self.raw) {
+            .owned => |bytes| bytes.len,
+            .borrowed => |bytes| bytes.len,
+        };
     }
 
     /// Free allocated resources.
-    pub fn deinit(self: *Eip7702Bytecode, allocator: Allocator) void {
-        if (self.owns_memory) {
-            allocator.free(self.raw);
+    pub fn deinit(self: *Eip7702Bytecode) void {
+        switch (self.raw) {
+            .owned => |bytes| {
+                if (self.allocator) |alloc| {
+                    alloc.free(bytes);
+                }
+            },
+            .borrowed => {}, // Borrowed reference, no need to free
         }
     }
 };
@@ -198,22 +218,32 @@ pub const Bytecode = union(enum) {
 
     /// Analyze raw bytecode and return appropriate format.
     ///
-    /// Detects bytecode format based on magic bytes:
+    /// Takes ownership of the bytecode parameter. Detects bytecode format based
+    /// on magic bytes:
     /// - 0xEF01: EIP-7702 delegation
     /// - Other: Regular bytecode (performs JUMPDEST analysis)
-    pub fn analyze(allocator: Allocator, raw: []const u8) !Bytecode {
+    pub fn analyze(allocator: Allocator, raw: []u8) !Bytecode {
         // Detect EIP-7702 delegation format
         if (raw.len >= 2) {
             const magic = std.mem.readInt(u16, raw[0..2], .big);
 
             // EIP-7702 delegation (0xEF01)
             if (magic == 0xEF01) {
-                return Bytecode{ .eip7702 = try Eip7702Bytecode.parse(raw) };
+                // Parse and validate, then store as owned
+                const parsed = try Eip7702Bytecode.parse(raw);
+                return Bytecode{
+                    .eip7702 = .{
+                        .allocator = allocator,
+                        .delegated_address = parsed.delegated_address,
+                        .version = parsed.version,
+                        .raw = .{ .owned = raw }, // Take ownership
+                    },
+                };
             }
         }
 
         // Default: Regular bytecode (perform JUMPDEST analysis)
-        return Bytecode{ .analyzed = try AnalyzedBytecode.analyze(allocator, raw) };
+        return Bytecode{ .analyzed = try AnalyzedBytecode.init(allocator, raw) };
     }
 
     /// Create EIP-7702 delegation bytecode from an address.
@@ -226,10 +256,11 @@ pub const Bytecode = union(enum) {
 
     /// Create analyzed bytecode from raw code.
     ///
-    /// Convenience constructor for creating analyzed bytecode when you know
-    /// the format is not EIP-7702. Performs JUMPDEST analysis.
-    pub fn newAnalyzed(allocator: Allocator, bytecode_data: []const u8) !Bytecode {
-        const analyzed = try AnalyzedBytecode.analyze(allocator, bytecode_data);
+    /// Takes ownership of bytecode_data. Convenience constructor for creating
+    /// analyzed bytecode when you know the format is not EIP-7702. Performs
+    /// JUMPDEST analysis.
+    pub fn newAnalyzed(allocator: Allocator, bytecode_data: []u8) !Bytecode {
+        const analyzed = try AnalyzedBytecode.init(allocator, bytecode_data);
         return .{ .analyzed = analyzed };
     }
 
@@ -241,7 +272,10 @@ pub const Bytecode = union(enum) {
     pub inline fn code(self: *const Bytecode) []const u8 {
         return switch (self.*) {
             .analyzed => |b| b.raw,
-            .eip7702 => |b| b.raw,
+            .eip7702 => |b| switch (b.raw) {
+                .owned => |bytes| bytes,
+                .borrowed => |bytes| bytes,
+            },
         };
     }
 
@@ -264,10 +298,10 @@ pub const Bytecode = union(enum) {
     }
 
     /// Free allocated resources.
-    pub fn deinit(self: *Bytecode, allocator: Allocator) void {
+    pub fn deinit(self: *Bytecode) void {
         switch (self.*) {
             .analyzed => |*b| b.deinit(),
-            .eip7702 => |*b| b.deinit(allocator),
+            .eip7702 => |*b| b.deinit(),
         }
     }
 };
@@ -280,11 +314,20 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
+/// Allocate bytecode on heap from stack array.
+///
+/// Mimics the behavior of host.code() which returns heap-allocated bytecode.
+/// Ownership is transferred to the caller.
+fn makeTestBytecode(allocator: Allocator, code: []const u8) ![]u8 {
+    return allocator.dupe(u8, code);
+}
+
 test "AnalyzedBytecode: basic analysis" {
     // PUSH1 0x05, JUMP, INVALID, INVALID, JUMPDEST, STOP
-    const bytecode = [_]u8{ 0x60, 0x05, 0x56, 0xFE, 0xFE, 0x5B, 0x00 };
-
-    var analysis = try AnalyzedBytecode.analyze(std.testing.allocator, &bytecode);
+    var analysis = try AnalyzedBytecode.init(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x60, 0x05, 0x56, 0xFE, 0xFE, 0x5B, 0x00 }),
+    );
     defer analysis.deinit();
 
     // Position 5 is JUMPDEST
@@ -301,9 +344,10 @@ test "AnalyzedBytecode: basic analysis" {
 
 test "AnalyzedBytecode: skip PUSH immediate data" {
     // PUSH2 0x5B5B (fake JUMPDESTs in immediate), JUMPDEST
-    const bytecode = [_]u8{ 0x61, 0x5B, 0x5B, 0x5B };
-
-    var analysis = try AnalyzedBytecode.analyze(std.testing.allocator, &bytecode);
+    var analysis = try AnalyzedBytecode.init(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x61, 0x5B, 0x5B, 0x5B }),
+    );
     defer analysis.deinit();
 
     // Only position 3 is a real JUMPDEST
@@ -314,9 +358,10 @@ test "AnalyzedBytecode: skip PUSH immediate data" {
 
 test "AnalyzedBytecode: multiple JUMPDESTs" {
     // JUMPDEST, PUSH1 0x05, JUMPDEST, PUSH1 0x00, JUMPDEST
-    const bytecode = [_]u8{ 0x5B, 0x60, 0x05, 0x5B, 0x60, 0x00, 0x5B };
-
-    var analysis = try AnalyzedBytecode.analyze(std.testing.allocator, &bytecode);
+    var analysis = try AnalyzedBytecode.init(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x5B, 0x60, 0x05, 0x5B, 0x60, 0x00, 0x5B }),
+    );
     defer analysis.deinit();
 
     // Positions 0, 3, 6 are JUMPDESTs
@@ -333,15 +378,18 @@ test "AnalyzedBytecode: multiple JUMPDESTs" {
 
 test "AnalyzedBytecode: PUSH32 with fake JUMPDEST" {
     // PUSH32 followed by 32 bytes of 0x5B (JUMPDEST byte), then real JUMPDEST
-    var bytecode: [34]u8 = undefined;
-    bytecode[0] = 0x7F; // PUSH32
+    var bytecode_stack: [34]u8 = undefined;
+    bytecode_stack[0] = 0x7F; // PUSH32
     // Fill with fake JUMPDEST bytes
     for (0..32) |i| {
-        bytecode[1 + i] = 0x5B;
+        bytecode_stack[1 + i] = 0x5B;
     }
-    bytecode[33] = 0x5B; // Real JUMPDEST
+    bytecode_stack[33] = 0x5B; // Real JUMPDEST
 
-    var analysis = try AnalyzedBytecode.analyze(std.testing.allocator, &bytecode);
+    var analysis = try AnalyzedBytecode.init(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &bytecode_stack),
+    );
     defer analysis.deinit();
 
     // Only position 33 is valid (after PUSH32 and its 32 immediate bytes)
@@ -352,9 +400,10 @@ test "AnalyzedBytecode: PUSH32 with fake JUMPDEST" {
 }
 
 test "AnalyzedBytecode: empty bytecode" {
-    const bytecode = [_]u8{};
-
-    var analysis = try AnalyzedBytecode.analyze(std.testing.allocator, &bytecode);
+    var analysis = try AnalyzedBytecode.init(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{}),
+    );
     defer analysis.deinit();
 
     // No valid destinations in empty bytecode
@@ -362,9 +411,10 @@ test "AnalyzedBytecode: empty bytecode" {
 }
 
 test "AnalyzedBytecode: out of bounds" {
-    const bytecode = [_]u8{ 0x5B, 0x00 }; // JUMPDEST, STOP
-
-    var analysis = try AnalyzedBytecode.analyze(std.testing.allocator, &bytecode);
+    var analysis = try AnalyzedBytecode.init(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x5B, 0x00 }),
+    );
     defer analysis.deinit();
 
     try expect(analysis.isValidJump(0));
@@ -373,10 +423,11 @@ test "AnalyzedBytecode: out of bounds" {
 }
 
 test "Bytecode: format detection - regular bytecode" {
-    const bytecode = [_]u8{ 0x60, 0x01, 0x60, 0x02, 0x01 }; // PUSH1 1, PUSH1 2, ADD
-
-    var bc = try Bytecode.analyze(std.testing.allocator, &bytecode);
-    defer bc.deinit(std.testing.allocator);
+    var bc = try Bytecode.analyze(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x60, 0x01, 0x60, 0x02, 0x01 }),
+    );
+    defer bc.deinit();
 
     try expect(bc.isAnalyzed());
     try expect(!bc.isEip7702());
@@ -431,23 +482,27 @@ test "Eip7702Bytecode: create from address" {
     const addr = try Address.fromHex("0x1234567890123456789012345678901234567890");
 
     var eip7702 = try Eip7702Bytecode.new(std.testing.allocator, addr);
-    defer eip7702.deinit(std.testing.allocator);
+    defer eip7702.deinit();
 
     try expectEqual(Eip7702Bytecode.VERSION, eip7702.version);
     try expectEqual(23, eip7702.len());
     try expect(addr.eql(eip7702.delegated_address));
 
-    // Verify format
-    try expectEqual(0xEF, eip7702.raw[0]);
-    try expectEqual(0x01, eip7702.raw[1]);
-    try expectEqual(0x00, eip7702.raw[2]);
+    // Verify format (extract bytes from union)
+    const bytes = switch (eip7702.raw) {
+        .owned => |b| b,
+        .borrowed => |b| b,
+    };
+    try expectEqual(0xEF, bytes[0]);
+    try expectEqual(0x01, bytes[1]);
+    try expectEqual(0x00, bytes[2]);
 }
 
 test "Eip7702Bytecode: zero address (cleared delegation)" {
     const zero_addr = Address.zero();
 
     var eip7702 = try Eip7702Bytecode.new(std.testing.allocator, zero_addr);
-    defer eip7702.deinit(std.testing.allocator);
+    defer eip7702.deinit();
 
     try expect(eip7702.isCleared());
 }
@@ -455,12 +510,22 @@ test "Eip7702Bytecode: zero address (cleared delegation)" {
 test "Bytecode: auto-detect EIP-7702" {
     const addr = try Address.fromHex("0xABCDEF0123456789ABCDEF0123456789ABCDEF01");
 
+    // Create delegation bytecode
     var delegation = try Eip7702Bytecode.new(std.testing.allocator, addr);
-    defer delegation.deinit(std.testing.allocator);
 
-    // Parse the delegation bytecode
-    var bc = try Bytecode.analyze(std.testing.allocator, delegation.raw);
-    defer bc.deinit(std.testing.allocator);
+    // Duplicate the bytes so both delegation and Bytecode can own their copies
+    const raw_bytes = switch (delegation.raw) {
+        .owned => |b| b,
+        .borrowed => |b| b,
+    };
+    const bytecode_copy = try std.testing.allocator.dupe(u8, raw_bytes);
+
+    // Clean up delegation (we only needed it to create the bytes)
+    delegation.deinit();
+
+    // Analyze should detect EIP-7702 format
+    var bc = try Bytecode.analyze(std.testing.allocator, bytecode_copy);
+    defer bc.deinit();
 
     try expect(bc.isEip7702());
     try expect(!bc.isAnalyzed());
@@ -470,7 +535,7 @@ test "Bytecode: newDelegation convenience constructor" {
     const addr = try Address.fromHex("0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF");
 
     var bc = try Bytecode.newDelegation(std.testing.allocator, addr);
-    defer bc.deinit(std.testing.allocator);
+    defer bc.deinit();
 
     try expect(bc.isEip7702());
     try expectEqual(23, bc.len());
@@ -481,10 +546,11 @@ test "Bytecode: newDelegation convenience constructor" {
 }
 
 test "Bytecode: newAnalyzed convenience constructor" {
-    const code = [_]u8{ 0x5B, 0x60, 0x01, 0x5B }; // JUMPDEST, PUSH1 1, JUMPDEST
-
-    var bc = try Bytecode.newAnalyzed(std.testing.allocator, &code);
-    defer bc.deinit(std.testing.allocator);
+    var bc = try Bytecode.newAnalyzed(
+        std.testing.allocator,
+        try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x5B, 0x60, 0x01, 0x5B }),
+    );
+    defer bc.deinit();
 
     try expect(bc.isAnalyzed());
     try expect(!bc.isEip7702());
