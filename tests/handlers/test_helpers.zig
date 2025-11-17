@@ -4,6 +4,7 @@ const std = @import("std");
 const zevm = @import("zevm");
 
 const Interpreter = zevm.interpreter.Interpreter;
+const CallContext = zevm.interpreter.CallContext;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const Hardfork = zevm.hardfork.Hardfork;
@@ -15,9 +16,18 @@ const BlockEnv = zevm.context.BlockEnv;
 const TxEnv = zevm.context.TxEnv;
 const MockHost = zevm.host.MockHost;
 const Host = zevm.host.Host;
+const Evm = zevm.Evm;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
+
+/// Helper for tests: allocate bytecode on heap from stack array.
+///
+/// Mimics the behavior of host.code() which returns heap-allocated bytecode.
+/// Ownership is transferred to the caller.
+pub fn makeTestBytecode(allocator: std.mem.Allocator, code: []const u8) ![]u8 {
+    return allocator.dupe(u8, code);
+}
 
 /// Test case structure for table-based opcode tests
 pub const TestCase = struct {
@@ -59,10 +69,12 @@ pub fn createTestEnv(opts: struct {
     };
 }
 
-/// Create test interpreter with mock host
+/// Create test interpreter with mock host.
+///
+/// Takes ownership of bytecode parameter.
 pub fn createTestInterpreter(
     allocator: std.mem.Allocator,
-    bytecode: []const u8,
+    bytecode: []u8,
     contract_address: Address,
     fork: Hardfork,
     gas_limit: u64,
@@ -71,13 +83,16 @@ pub fn createTestInterpreter(
 ) !Interpreter {
     const spec = Spec.forFork(fork);
     const host = mock_host.host();
-    return try Interpreter.init(allocator, bytecode, contract_address, spec, gas_limit, env, host);
+    const ctx = try CallContext.init(allocator, bytecode, contract_address);
+    return Interpreter.init(allocator, ctx, spec, gas_limit, env, host);
 }
 
-/// Create test interpreter with default contract address (zero)
+/// Create test interpreter with default contract address (zero).
+///
+/// Takes ownership of bytecode parameter.
 pub fn createTestInterpreterDefault(
     allocator: std.mem.Allocator,
-    bytecode: []const u8,
+    bytecode: []u8,
     fork: Hardfork,
     gas_limit: u64,
     env: *const Env,
@@ -94,10 +109,14 @@ pub fn runOpcodeTests(allocator: std.mem.Allocator, test_cases: []const TestCase
     defer mock.deinit();
 
     for (test_cases) |tc| {
+        // Create EVM for interpreter execution
+        var evm = Evm.init(allocator, &env, mock.host(), tc.spec);
+        defer evm.deinit();
+
         // Init interpreter with provided bytecode and spec.
         var interpreter = try createTestInterpreter(
             allocator,
-            tc.bytecode,
+            try makeTestBytecode(allocator, tc.bytecode),
             Address.zero(),
             tc.spec.fork,
             10000,
@@ -107,7 +126,7 @@ pub fn runOpcodeTests(allocator: std.mem.Allocator, test_cases: []const TestCase
         defer interpreter.deinit();
 
         // Execute.
-        const result = try interpreter.run();
+        const result = try interpreter.run(&evm);
         try expectEqual(ExecutionStatus.SUCCESS, result.status);
         try expectEqual(tc.expected_gas, result.gas_used);
 

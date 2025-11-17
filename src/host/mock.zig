@@ -121,8 +121,9 @@ pub const MockHost = struct {
             // Return copy so caller owns it
             return self.allocator.dupe(u8, code);
         }
-        // Return empty slice for non-existent accounts
-        return &[_]u8{};
+        // Return owned empty slice for non-existent accounts.
+        // Caller must free this (consistent ownership semantics).
+        return try self.allocator.alloc(u8, 0);
     }
 
     fn codeHashImpl(ptr: *anyopaque, address: Address) B256 {

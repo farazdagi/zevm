@@ -17,6 +17,7 @@ const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 const InstructionTable = @import("InstructionTable.zig");
 const Env = @import("../context.zig").Env;
 const Host = @import("../host/Host.zig");
+const Evm = @import("../evm.zig").Evm;
 
 // Instruction handlers
 const handlers = @import("handlers/mod.zig");
@@ -46,6 +47,9 @@ pub const ExecutionStatus = enum {
 
     /// Invalid program counter (beyond bytecode)
     INVALID_PC,
+
+    /// Call depth exceeded (> 1024 frames)
+    CALL_DEPTH_EXCEEDED,
 };
 
 /// Result of interpreter execution.
@@ -75,6 +79,9 @@ pub const Contract = struct {
     /// For DELEGATECALL, this is the caller's address (code borrowed from callee).
     address: Address,
 
+    /// Allocator for cleanup.
+    allocator: Allocator,
+
     /// Clean up allocated resources.
     pub fn deinit(self: *Contract) void {
         self.bytecode.deinit();
@@ -98,7 +105,24 @@ pub const CallContext = struct {
     memory: Memory,
 
     /// Initialize a new interpreter context.
-    pub fn init(allocator: Allocator, bytecode: AnalyzedBytecode, address: Address) !CallContext {
+    ///
+    /// Takes ownership of raw_bytecode and analyzes it internally.
+    ///
+    /// If the bytecode is EIP-7702 delegation bytecode, this will return an error - the caller
+    /// (EVM) must resolve delegation before creating the context.
+    pub fn init(allocator: Allocator, raw_bytecode: []u8, address: Address) !CallContext {
+        var bytecode = try Bytecode.analyze(allocator, raw_bytecode);
+
+        const analyzed = switch (bytecode) {
+            .analyzed => |b| b,
+            .eip7702 => {
+                // Caller must resolve delegation first
+                bytecode.deinit();
+                return error.InvalidBytecode;
+            },
+        };
+
+        // Create stack and memory
         var stack = try Stack.init(allocator);
         errdefer stack.deinit();
 
@@ -107,8 +131,9 @@ pub const CallContext = struct {
 
         return CallContext{
             .contract = .{
-                .bytecode = bytecode,
+                .bytecode = analyzed,
                 .address = address,
+                .allocator = allocator,
             },
             .stack = stack,
             .memory = memory,
@@ -178,31 +203,15 @@ pub const Interpreter = struct {
 
     const Self = @This();
 
-    /// Initialize interpreter with bytecode and gas limit.
+    /// Initialize interpreter with pre-created call context.
     pub fn init(
         allocator: Allocator,
-        raw_bytecode: []const u8,
-        contract_address: Address,
+        ctx: CallContext,
         spec: Spec,
         gas_limit: u64,
         env: *const Env,
         host: Host,
-    ) !Self {
-        // Analyze bytecode (detects format automatically)
-        var bytecode = try Bytecode.analyze(allocator, raw_bytecode);
-        errdefer bytecode.deinit(allocator);
-
-        // EIP-7702 delegation bytecode must be resolved at the Host/State layer.
-        // The interpreter can only execute regular analyzed bytecode.
-        const analyzed = switch (bytecode) {
-            .analyzed => |b| b,
-            .eip7702 => return error.InvalidBytecode,
-        };
-
-        // Create execution context with analyzed bytecode and contract address
-        var ctx = try CallContext.init(allocator, analyzed, contract_address);
-        errdefer ctx.deinit();
-
+    ) Self {
         return Self{
             .allocator = allocator,
             .ctx = ctx,
@@ -226,8 +235,13 @@ pub const Interpreter = struct {
 
     /// Execute bytecode until halted or error.
     ///
+    /// The `evm` parameter provides access to the EVM layer for nested calls
+    /// (CALL, DELEGATECALL, STATICCALL) and contract creation (CREATE, CREATE2).
+    ///
     /// Returns the execution result including status, gas used, and return data.
-    pub fn run(self: *Self) !InterpreterResult {
+    pub fn run(self: *Self, evm: *Evm) !InterpreterResult {
+        _ = evm; // Will be used by call/create handlers in future tasks
+
         while (!self.is_halted) {
             self.step() catch |err| {
                 return self.handleError(err);

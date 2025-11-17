@@ -17,6 +17,7 @@ pub const Hardfork = hardfork.Hardfork;
 pub const Spec = hardfork.Spec;
 pub const Opcode = opcode.Opcode;
 pub const Interpreter = interpreter.Interpreter;
+pub const CallContext = interpreter.CallContext;
 pub const ExecutionStatus = interpreter.ExecutionStatus;
 pub const InterpreterResult = interpreter.InterpreterResult;
 pub const Bytecode = bytecode.Bytecode;

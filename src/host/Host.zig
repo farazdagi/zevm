@@ -24,7 +24,10 @@ pub const VTable = struct {
     /// Get balance of an account.
     balance: *const fn (ptr: *anyopaque, address: Address) U256,
 
-    /// Get code of an account (caller must free returned slice).
+    /// Get code of an account.
+    ///
+    /// The caller owns the returned memory and MUST free it.
+    /// This always returns owned memory, even for empty code (zero-length allocation).
     code: *const fn (ptr: *anyopaque, address: Address) std.mem.Allocator.Error![]const u8,
 
     /// Get code hash of an account.

@@ -4,6 +4,7 @@ const std = @import("std");
 const zevm = @import("zevm");
 
 const Interpreter = zevm.interpreter.Interpreter;
+const CallContext = zevm.interpreter.CallContext;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 const Spec = zevm.hardfork.Spec;
 const Hardfork = zevm.hardfork.Hardfork;
@@ -11,6 +12,7 @@ const U256 = zevm.primitives.U256;
 const Address = zevm.primitives.Address;
 const Env = zevm.context.Env;
 const MockHost = zevm.host.MockHost;
+const Evm = zevm.Evm;
 
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -31,18 +33,15 @@ test "JUMP: simple forward jump" {
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
 
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-        &env,
-        mock.host(),
-    );
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     // Should have executed the jump and pushed 0x42
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
@@ -68,19 +67,16 @@ test "JUMPI: conditional jump taken" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.pop();
@@ -104,19 +100,16 @@ test "JUMPI: conditional jump not taken" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.pop();
@@ -143,19 +136,16 @@ test "loop: simple counter loop" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     // Final counter value should be 0
@@ -174,19 +164,16 @@ test "RETURN: empty return data" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expect(result.return_data != null);
@@ -208,19 +195,16 @@ test "RETURN: with data in memory" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
     defer if (result.return_data) |data| std.testing.allocator.free(data);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
@@ -249,19 +233,16 @@ test "REVERT: with error message" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.BYZANTIUM), // REVERT added in Byzantium
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.BYZANTIUM); // REVERT added in Byzantium
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
     defer if (result.return_data) |data| std.testing.allocator.free(data);
 
     try expectEqual(ExecutionStatus.REVERT, result.status);
@@ -283,19 +264,16 @@ test "PC and GAS opcodes" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     // Stack should have: [gas_remaining, 1 (PC==0)]
@@ -323,19 +301,16 @@ test "INVALID: consumes all gas" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
     // Should have consumed all gas
@@ -354,19 +329,16 @@ test "JUMP: invalid destination error" {
     const env = Env.default();
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
-    
-    var interpreter = try Interpreter.init(
-        std.testing.allocator,
-        &bytecode,
-        Address.zero(),
-        Spec.forFork(.CANCUN),
-        100000,
-            &env,
-            mock.host(),
-    );
+
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
-    const result = try interpreter.run();
+    const result = try interpreter.run(&evm);
 
     try expectEqual(ExecutionStatus.INVALID_JUMP, result.status);
 }

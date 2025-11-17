@@ -5,9 +5,11 @@ const Allocator = std.mem.Allocator;
 const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
+const CallContext = @import("../interpreter.zig").CallContext;
 const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
 const Spec = @import("../../hardfork.zig").Spec;
+const Evm = @import("../../evm.zig").Evm;
 
 const expectEqual = std.testing.expectEqual;
 
@@ -15,6 +17,7 @@ const expectEqual = std.testing.expectEqual;
 pub const TestContext = struct {
     env: Env,
     mock: MockHost,
+    evm: Evm,
     interp: Interpreter,
     allocator: Allocator,
 
@@ -33,11 +36,14 @@ pub const TestContext = struct {
         self.mock = MockHost.init(allocator);
         errdefer self.mock.deinit();
 
-        self.interp = try Interpreter.init(
+        const spec = Spec.forFork(.CANCUN);
+        self.evm = Evm.init(allocator, &self.env, self.mock.host(), spec);
+
+        const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), contract_address);
+        self.interp = Interpreter.init(
             allocator,
-            bytecode,
-            contract_address,
-            Spec.forFork(.CANCUN),
+            ctx,
+            spec,
             1000000,
             &self.env,
             self.mock.host(),
@@ -49,6 +55,7 @@ pub const TestContext = struct {
     /// Clean up all resources and free the context.
     pub fn destroy(self: *TestContext) void {
         self.interp.deinit();
+        self.evm.deinit();
         self.mock.deinit();
         self.allocator.destroy(self);
     }

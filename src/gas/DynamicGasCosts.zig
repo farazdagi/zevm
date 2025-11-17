@@ -15,6 +15,7 @@ const std = @import("std");
 const Spec = @import("../hardfork.zig").Spec;
 const Hardfork = @import("../hardfork.zig").Hardfork;
 const Interpreter = @import("../interpreter/mod.zig").Interpreter;
+const CallContext = @import("../interpreter/interpreter.zig").CallContext;
 const U256 = @import("../primitives/big.zig").U256;
 const Address = @import("../primitives/address.zig").Address;
 const Costs = @import("costs.zig").Costs;
@@ -325,7 +326,8 @@ test "dynamic_gas: basic smoke test" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Test EXP with small exponent
@@ -507,7 +509,8 @@ test "opcode gas: KECCAK256" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     const test_cases = [_]struct {
@@ -564,7 +567,8 @@ test "opcode gas: copy operations" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     const OpFn = *const fn (*Interpreter) anyerror!u64;

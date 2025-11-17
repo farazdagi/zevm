@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const constants = @import("../primitives/constants.zig");
+const constants = @import("../constants.zig");
 const U256 = @import("../primitives/big.zig").U256;
 
 /// EVM stack implementation.

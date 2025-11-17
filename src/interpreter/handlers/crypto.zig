@@ -42,7 +42,9 @@ const expectEqualSlices = std.testing.expectEqualSlices;
 const Spec = @import("../../hardfork.zig").Spec;
 const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
-const constants = @import("../../primitives/constants.zig");
+const CallContext = @import("../interpreter.zig").CallContext;
+const Evm = @import("../../evm.zig").Evm;
+const constants = @import("../../constants.zig");
 
 test "opKeccak256: empty string" {
     const allocator = std.testing.allocator;
@@ -52,7 +54,11 @@ test "opKeccak256: empty string" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    var evm = Evm.init(allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Push size=0, offset=0 (stack will be [offset, size] with offset on top)
@@ -76,7 +82,11 @@ test "opKeccak256: known value" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    var evm = Evm.init(allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Store test data in memory: "hello"
@@ -112,7 +122,11 @@ test "opKeccak256: 32-byte input" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    var interp = try Interpreter.init(allocator, bytecode, Address.zero(), spec, 1000000, &env, mock.host());
+    var evm = Evm.init(allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
     // Store 32 bytes of test data

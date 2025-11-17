@@ -1,5 +1,10 @@
-/// Maximum stack depth as defined by the Ethereum specification.
+/// Maximum operand stack depth as defined by the Ethereum specification.
+/// This limits the number of 256-bit values on the operand stack during execution.
 pub const STACK_LIMIT: usize = 1024;
+
+/// Maximum call depth as defined by the Ethereum specification.
+/// This limits the number of nested contract calls (CALL, DELEGATECALL, STATICCALL, CREATE, etc.).
+pub const CALL_DEPTH_LIMIT: usize = 1024;
 
 /// Number of block hashes that EVM can access in the past (pre-Prague).
 pub const BLOCK_HASH_HISTORY: u64 = 256;
