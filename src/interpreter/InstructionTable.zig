@@ -65,28 +65,28 @@ pub const CANCUN: InstructionTable = computeHandlersForSpec(hardfork.CANCUN);
 pub const PRAGUE: InstructionTable = computeHandlersForSpec(hardfork.PRAGUE);
 
 /// Get pre-computed instruction table for a specific fork.
-pub fn forFork(fork: hardfork.Hardfork) InstructionTable {
+pub fn forFork(fork: hardfork.Hardfork) *const InstructionTable {
     return switch (fork) {
-        .FRONTIER => FRONTIER,
-        .FRONTIER_THAWING => FRONTIER,
-        .HOMESTEAD => HOMESTEAD,
-        .DAO_FORK => HOMESTEAD,
-        .TANGERINE => TANGERINE,
-        .SPURIOUS_DRAGON => SPURIOUS_DRAGON,
-        .BYZANTIUM => BYZANTIUM,
-        .CONSTANTINOPLE => CONSTANTINOPLE,
-        .PETERSBURG => PETERSBURG,
-        .ISTANBUL => ISTANBUL,
-        .MUIR_GLACIER => MUIR_GLACIER,
-        .BERLIN => BERLIN,
-        .LONDON => LONDON,
-        .ARROW_GLACIER => ARROW_GLACIER,
-        .GRAY_GLACIER => GRAY_GLACIER,
-        .MERGE => MERGE,
-        .SHANGHAI => SHANGHAI,
-        .CANCUN => CANCUN,
-        .PRAGUE => PRAGUE,
-        .OSAKA => PRAGUE, // Use Prague for future Osaka
+        .FRONTIER => &FRONTIER,
+        .FRONTIER_THAWING => &FRONTIER,
+        .HOMESTEAD => &HOMESTEAD,
+        .DAO_FORK => &HOMESTEAD,
+        .TANGERINE => &TANGERINE,
+        .SPURIOUS_DRAGON => &SPURIOUS_DRAGON,
+        .BYZANTIUM => &BYZANTIUM,
+        .CONSTANTINOPLE => &CONSTANTINOPLE,
+        .PETERSBURG => &PETERSBURG,
+        .ISTANBUL => &ISTANBUL,
+        .MUIR_GLACIER => &MUIR_GLACIER,
+        .BERLIN => &BERLIN,
+        .LONDON => &LONDON,
+        .ARROW_GLACIER => &ARROW_GLACIER,
+        .GRAY_GLACIER => &GRAY_GLACIER,
+        .MERGE => &MERGE,
+        .SHANGHAI => &SHANGHAI,
+        .CANCUN => &CANCUN,
+        .PRAGUE => &PRAGUE,
+        .OSAKA => &PRAGUE, // Use Prague for future Osaka
     };
 }
 

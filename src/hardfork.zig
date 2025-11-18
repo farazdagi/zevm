@@ -248,7 +248,9 @@ pub const Spec = struct {
     }
 
     /// Get instruction jump table for all defined opcodes.
-    pub fn instructionTable(self: Spec) InstructionTable {
+    ///
+    /// Returns pointer to static comptime-generated table, avoiding copy.
+    pub fn instructionTable(self: Spec) *const InstructionTable {
         return InstructionTable.forFork(self.fork);
     }
 

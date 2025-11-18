@@ -109,7 +109,7 @@ pub const Evm = struct {
     is_static: bool,
 
     /// Instruction table for current spec.
-    table: InstructionTable,
+    table: *const InstructionTable,
 
     const Self = @This();
 

@@ -178,7 +178,7 @@ pub const Interpreter = struct {
     spec: Spec,
 
     /// Instruction dispatch table (configured for this fork).
-    table: InstructionTable,
+    table: *const InstructionTable,
 
     /// Allocator for dynamic memory.
     allocator: Allocator,
