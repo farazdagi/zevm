@@ -18,7 +18,6 @@ const Interpreter = @import("../interpreter/mod.zig").Interpreter;
 const CallContext = @import("../interpreter/interpreter.zig").CallContext;
 const U256 = @import("../primitives/big.zig").U256;
 const Address = @import("../primitives/address.zig").Address;
-const Costs = @import("costs.zig").Costs;
 const FixedGasCosts = @import("FixedGasCosts.zig");
 
 /// Calculate total memory cost for given byte size.
@@ -80,14 +79,14 @@ inline fn memoryRegionExpansion(interp: *Interpreter, offset_pos: u8, size_pos: 
 /// Calculate dynamic gas for memory copy operations.
 ///
 /// Used by CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY.
-/// All copy operations charge memory expansion plus 3 gas per word copied.
+/// All copy operations charge memory expansion plus `copy_word_cost` gas per word copied.
 inline fn memoryCopyGas(interp: *Interpreter, dest_offset_pos: u8, length_pos: u8) !u64 {
     const region = try memoryRegionExpansion(interp, dest_offset_pos, length_pos);
     if (region.size == 0) return 0;
 
-    // Copy cost: 3 gas per word
+    // Copy cost: copy_word_cost gas per word
     const copy_words = (region.size +| 31) / 32;
-    const copy_gas = 3 *| @as(u64, @intCast(copy_words));
+    const copy_gas = interp.spec.copy_word_cost *| @as(u64, @intCast(copy_words));
 
     return region.expansion_gas +| copy_gas;
 }
@@ -190,9 +189,9 @@ pub fn opMcopy(interp: *Interpreter) !u64 {
 
     const expansion_gas = interp.gas.memoryExpansionCost(old_size, max_end);
 
-    // Copy cost: 3 gas per word
+    // Copy cost: copy_word_cost gas per word
     const copy_words = (length +| 31) / 32;
-    const copy_gas = 3 *| @as(u64, @intCast(copy_words));
+    const copy_gas = interp.spec.copy_word_cost *| @as(u64, @intCast(copy_words));
 
     return expansion_gas + copy_gas;
 }
@@ -290,18 +289,145 @@ fn calldataCost(spec: Spec, data: []const u8) u64 {
     const calldata_nonzero_cost: u64 = if (spec.fork.isBefore(.ISTANBUL)) 68 else 16;
     var cost: u64 = 0;
     for (data) |byte| {
-        cost +|= if (byte == 0) Costs.CALLDATA_ZERO_COST else calldata_nonzero_cost;
+        cost +|= if (byte == 0) spec.calldata_zero_cost else calldata_nonzero_cost;
     }
     return cost;
 }
 
 /// Calculate LOG cost (LOG0-LOG4).
 ///
-/// Formula: 375 + (375 * topic_count) + (8 * data_size_bytes)
-fn logCost(topic_count: u8, data_size: usize) u64 {
+/// Formula: log_base_cost + (log_topic_cost * topic_count) + (log_data_cost * data_size_bytes)
+fn logCost(spec: Spec, topic_count: u8, data_size: usize) u64 {
     const topics = @as(u64, topic_count);
     const bytes = @as(u64, @intCast(data_size));
-    return Costs.LOG_BASE +| (Costs.LOG_TOPIC *| topics) +| (Costs.LOG_DATA *| bytes);
+    return spec.log_base_cost +| (spec.log_topic_cost *| topics) +| (spec.log_data_cost *| bytes);
+}
+
+/// Compute dynamic gas for CALL operation.
+///
+/// Stack: [gas, address, value, argsOffset, argsLength, retOffset, retLength]
+/// Gas depends on:
+/// - Base access cost (cold/warm account)
+/// - Memory expansion (for max of input and output regions)
+/// - Value transfer cost (if value > 0)
+/// - New account creation cost (if sending value to non-existent account)
+///
+/// EIPs: EIP-150, EIP-2929
+pub fn opCall(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opCallcode dynamic gas not implemented");
+}
+
+/// Compute dynamic gas for CALLCODE operation.
+///
+/// Similar to CALL but executes code in caller's context.
+/// Stack: [gas, address, value, argsOffset, argsLength, retOffset, retLength]
+///
+/// TODO: Implement when CALLCODE opcode is fully implemented.
+pub fn opCallcode(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opCallcode dynamic gas not implemented");
+}
+
+/// Compute dynamic gas for DELEGATECALL operation.
+///
+/// Similar to CALL but preserves caller and value from parent frame.
+/// Stack: [gas, address, argsOffset, argsLength, retOffset, retLength]
+/// Note: No value parameter (6 args instead of 7).
+///
+/// TODO: Implement when DELEGATECALL opcode is fully implemented.
+pub fn opDelegatecall(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opDelegatecall dynamic gas not implemented");
+}
+
+/// Compute dynamic gas for STATICCALL operation.
+///
+/// Similar to CALL but disallows state modifications.
+/// Stack: [gas, address, argsOffset, argsLength, retOffset, retLength]
+/// Note: No value parameter (6 args instead of 7).
+///
+/// TODO: Implement when STATICCALL opcode is fully implemented.
+pub fn opStaticcall(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opStaticcall dynamic gas not implemented");
+}
+
+/// Compute dynamic gas for SSTORE operation.
+///
+/// Gas cost depends on original, current, and new storage values.
+/// Implements EIP-2200 (Istanbul) and EIP-2929 (Berlin) gas metering.
+///
+/// TODO: Implement when SSTORE opcode is fully implemented.
+pub fn opSstore(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opSstore dynamic gas not implemented");
+}
+
+/// Compute dynamic gas for LOG0 operation.
+///
+/// Stack: [offset, size]
+/// Formula: memory_expansion + log_base_cost + log_data_cost * data_size
+pub fn opLog0(interp: *Interpreter) !u64 {
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    return region.expansion_gas +| logCost(interp.spec, 0, region.size);
+}
+
+/// Compute dynamic gas for LOG1 operation.
+///
+/// Stack: [offset, size, topic]
+/// Formula: memory_expansion + log_base_cost + log_topic_cost + log_data_cost * data_size
+pub fn opLog1(interp: *Interpreter) !u64 {
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    return region.expansion_gas +| logCost(interp.spec, 1, region.size);
+}
+
+/// Compute dynamic gas for LOG2 operation.
+///
+/// Stack: [offset, size, topic1, topic2]
+/// Formula: memory_expansion + log_base_cost + 2*log_topic_cost + log_data_cost * data_size
+pub fn opLog2(interp: *Interpreter) !u64 {
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    return region.expansion_gas +| logCost(interp.spec, 2, region.size);
+}
+
+/// Compute dynamic gas for LOG3 operation.
+///
+/// Stack: [offset, size, topic1, topic2, topic3]
+/// Formula: memory_expansion + log_base_cost + 3*log_topic_cost + log_data_cost * data_size
+pub fn opLog3(interp: *Interpreter) !u64 {
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    return region.expansion_gas +| logCost(interp.spec, 3, region.size);
+}
+
+/// Compute dynamic gas for LOG4 operation.
+///
+/// Stack: [offset, size, topic1, topic2, topic3, topic4]
+/// Formula: memory_expansion + log_base_cost + 4*log_topic_cost + log_data_cost * data_size
+pub fn opLog4(interp: *Interpreter) !u64 {
+    const region = try memoryRegionExpansion(interp, 0, 1);
+    return region.expansion_gas +| logCost(interp.spec, 4, region.size);
+}
+
+/// Compute dynamic gas for CREATE operation.
+///
+/// Gas cost includes memory expansion and init code metering (EIP-3860).
+///
+/// TODO: Implement when CREATE opcode is fully implemented.
+pub fn opCreate(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opCreate dynamic gas not implemented");
+}
+
+/// Compute dynamic gas for CREATE2 operation.
+///
+/// Gas cost includes memory expansion, init code metering (EIP-3860),
+/// and hash cost for address derivation.
+///
+/// TODO: Implement when CREATE2 opcode is fully implemented.
+pub fn opCreate2(interp: *Interpreter) !u64 {
+    _ = interp;
+    @panic("opCreate2 dynamic gas not implemented");
 }
 
 // ============================================================================

@@ -144,6 +144,23 @@ pub const Spec = struct {
     /// Cost per word (32 bytes) for KECCAK256 hashing.
     keccak256_word_cost: u64 = 6,
 
+    /// Cost per word (32 bytes) for memory copy operations.
+    /// Used by CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY, MCOPY.
+    copy_word_cost: u64 = 3,
+
+    /// Log costs (constant across all forks).
+    log_base_cost: u64 = 375,
+    log_topic_cost: u64 = 375,
+    log_data_cost: u64 = 8,
+
+    /// Cost per zero byte in calldata.
+    calldata_zero_cost: u64 = 4,
+
+    /// CALL costs.
+    call_value_transfer_cost: u64 = 9000,
+    call_new_account_cost: u64 = 25000,
+    call_stipend: u64 = 2300,
+
     /// EIP-170: Contract code size limit
     /// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
     max_code_size: usize,
@@ -493,7 +510,7 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.MSTORE)] = .{ .execute = handlers.opMstore, .dynamicGasCost = DynamicGasCosts.opMstore };
             t[@intFromEnum(Opcode.MSTORE8)] = .{ .execute = handlers.opMstore8, .dynamicGasCost = DynamicGasCosts.opMstore8 };
             t[@intFromEnum(Opcode.SLOAD)] = .{ .execute = handlers.opSload };
-            t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore, .dynamicGasCost = DynamicGasCosts.opSstore };
             t[@intFromEnum(Opcode.JUMP)] = .{ .execute = handlers.opJump, .is_control_flow = true };
             t[@intFromEnum(Opcode.JUMPI)] = .{ .execute = handlers.opJumpi }; // PC change detected in step()
             t[@intFromEnum(Opcode.PC)] = .{ .execute = handlers.opPc };
@@ -523,16 +540,16 @@ pub const FRONTIER = Spec{
             }
 
             // 0xA0-0xA4: Logging operations
-            t[@intFromEnum(Opcode.LOG0)] = .{ .execute = handlers.opLog0 }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.LOG1)] = .{ .execute = handlers.opLog1 }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.LOG2)] = .{ .execute = handlers.opLog2 }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.LOG3)] = .{ .execute = handlers.opLog3 }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.LOG4)] = .{ .execute = handlers.opLog4 }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.LOG0)] = .{ .execute = handlers.opLog0, .dynamicGasCost = DynamicGasCosts.opLog0 };
+            t[@intFromEnum(Opcode.LOG1)] = .{ .execute = handlers.opLog1, .dynamicGasCost = DynamicGasCosts.opLog1 };
+            t[@intFromEnum(Opcode.LOG2)] = .{ .execute = handlers.opLog2, .dynamicGasCost = DynamicGasCosts.opLog2 };
+            t[@intFromEnum(Opcode.LOG3)] = .{ .execute = handlers.opLog3, .dynamicGasCost = DynamicGasCosts.opLog3 };
+            t[@intFromEnum(Opcode.LOG4)] = .{ .execute = handlers.opLog4, .dynamicGasCost = DynamicGasCosts.opLog4 };
 
             // 0xF0-0xFF: System operations
-            t[@intFromEnum(Opcode.CREATE)] = .{ .execute = handlers.opCreate }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.CALL)] = .{ .execute = handlers.opCall }; // TODO: dynamic gas
-            t[@intFromEnum(Opcode.CALLCODE)] = .{ .execute = handlers.opCallcode }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.CREATE)] = .{ .execute = handlers.opCreate, .dynamicGasCost = DynamicGasCosts.opCreate };
+            t[@intFromEnum(Opcode.CALL)] = .{ .execute = handlers.opCall, .dynamicGasCost = DynamicGasCosts.opCall };
+            t[@intFromEnum(Opcode.CALLCODE)] = .{ .execute = handlers.opCallcode, .dynamicGasCost = DynamicGasCosts.opCallcode };
             t[@intFromEnum(Opcode.RETURN)] = .{ .execute = handlers.opReturn, .dynamicGasCost = DynamicGasCosts.opReturn, .is_control_flow = true };
             // Note: DELEGATECALL(0xF4) added in Homestead
             // Note: CREATE2(0xF5) added in Constantinople
@@ -590,7 +607,7 @@ pub const HOMESTEAD = forkSpec(.HOMESTEAD, FRONTIER, .{
     .updateHandlers = struct {
         fn f(table: *InstructionTable) void {
             const t = &table.table;
-            t[@intFromEnum(Opcode.DELEGATECALL)] = .{ .execute = handlers.opDelegatecall }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.DELEGATECALL)] = .{ .execute = handlers.opDelegatecall, .dynamicGasCost = DynamicGasCosts.opDelegatecall };
         }
     }.f,
 });
@@ -659,7 +676,7 @@ pub const BYZANTIUM = forkSpec(.BYZANTIUM, SPURIOUS_DRAGON, .{
             const t = &table.table;
             t[@intFromEnum(Opcode.RETURNDATASIZE)] = .{ .execute = handlers.opReturndatasize };
             t[@intFromEnum(Opcode.RETURNDATACOPY)] = .{ .execute = handlers.opReturndatacopy, .dynamicGasCost = DynamicGasCosts.opReturndatacopy };
-            t[@intFromEnum(Opcode.STATICCALL)] = .{ .execute = handlers.opStaticcall }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.STATICCALL)] = .{ .execute = handlers.opStaticcall, .dynamicGasCost = DynamicGasCosts.opStaticcall };
             t[@intFromEnum(Opcode.REVERT)] = .{ .execute = handlers.opRevert, .dynamicGasCost = DynamicGasCosts.opRevert, .is_control_flow = true };
         }
     }.f,
@@ -693,7 +710,7 @@ pub const CONSTANTINOPLE = forkSpec(.CONSTANTINOPLE, BYZANTIUM, .{
             t[@intFromEnum(Opcode.SHR)] = .{ .execute = handlers.opShr };
             t[@intFromEnum(Opcode.SAR)] = .{ .execute = handlers.opSar };
             t[@intFromEnum(Opcode.EXTCODEHASH)] = .{ .execute = handlers.opExtcodehash };
-            t[@intFromEnum(Opcode.CREATE2)] = .{ .execute = handlers.opCreate2 }; // TODO: dynamic gas
+            t[@intFromEnum(Opcode.CREATE2)] = .{ .execute = handlers.opCreate2, .dynamicGasCost = DynamicGasCosts.opCreate2 };
         }
     }.f,
 });
