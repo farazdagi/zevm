@@ -305,7 +305,7 @@ fn logCost(spec: Spec, topic_count: u8, data_size: usize) u64 {
 
 /// Compute dynamic gas for CALL operation.
 ///
-/// Stack: [gas, address, value, argsOffset, argsLength, retOffset, retLength]
+/// Stack: [gas, address, value, argsOffset, argsSize, retOffset, retSize, ...]
 /// Gas depends on:
 /// - Base access cost (cold/warm account)
 /// - Memory expansion (for max of input and output regions)
@@ -314,8 +314,57 @@ fn logCost(spec: Spec, topic_count: u8, data_size: usize) u64 {
 ///
 /// EIPs: EIP-150, EIP-2929
 pub fn opCall(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opCallcode dynamic gas not implemented");
+    // Peek stack values (positions from top of stack).
+    const address_u256 = try interp.ctx.stack.peek(1);
+    const value_u256 = try interp.ctx.stack.peek(2);
+    const args_offset_u256 = try interp.ctx.stack.peek(3);
+    const args_size_u256 = try interp.ctx.stack.peek(4);
+    const ret_offset_u256 = try interp.ctx.stack.peek(5);
+    const ret_size_u256 = try interp.ctx.stack.peek(6);
+
+    // Convert address U256 to Address (take last 20 bytes).
+    const address_bytes = address_u256.toBeBytes();
+    const target = Address.init(address_bytes[12..32].*);
+
+    // Check if value transfer.
+    const has_value = !value_u256.isZero();
+
+    // Convert offsets and lengths to usize.
+    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+
+    var total_gas: u64 = 0;
+
+    // 1. Base access cost (cold/warm).
+    // TODO: Implement proper access list tracking.
+    // For now, assume cold access since we don't have access list infrastructure.
+    const is_cold = true;
+    total_gas +|= callBaseCost(interp.spec, is_cold);
+
+    // 2. Memory expansion cost.
+    // Calculate maximum memory needed for both input and output regions.
+    const old_size = interp.ctx.memory.len();
+    const args_end = if (args_size > 0) args_offset +| args_size else 0;
+    const ret_end = if (ret_size > 0) ret_offset +| ret_size else 0;
+    const new_size = @max(args_end, ret_end);
+
+    if (new_size > old_size) {
+        total_gas +|= interp.gas.memoryExpansionCost(old_size, new_size);
+    }
+
+    // 3. Value transfer cost.
+    if (has_value) {
+        total_gas +|= interp.spec.call_value_transfer_cost;
+
+        // 4. New account creation cost (if sending value to non-existent account).
+        if (!interp.host.accountExists(target)) {
+            total_gas +|= interp.spec.call_new_account_cost;
+        }
+    }
+
+    return total_gas;
 }
 
 /// Compute dynamic gas for CALLCODE operation.
@@ -437,6 +486,7 @@ pub fn opCreate2(interp: *Interpreter) !u64 {
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
+const CallExecutor = @import("../call_types.zig").CallExecutor;
 
 test "dynamic_gas: basic smoke test" {
     // This test verifies that the functions compile and have the correct signatures.
@@ -452,8 +502,17 @@ test "dynamic_gas: basic smoke test" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
-    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    var return_data: []const u8 = &[_]u8{};
+    var interp = Interpreter.init(allocator, ctx, .{
+        .spec = spec,
+        .gas_limit = 1000000,
+        .env = &env,
+        .host = mock.host(),
+        .return_data_buffer = &return_data,
+        .is_static = false,
+        .call_executor = CallExecutor.noOp(),
+    });
     defer interp.deinit();
 
     // Test EXP with small exponent
@@ -607,6 +666,8 @@ test "calldataCost" {
 }
 
 test "logCost" {
+    const spec = Spec.forFork(.CANCUN);
+
     const test_cases = [_]struct {
         topic_count: u8,
         data_size: usize,
@@ -621,7 +682,7 @@ test "logCost" {
     };
 
     for (test_cases) |tc| {
-        try expectEqual(tc.expected, logCost(tc.topic_count, tc.data_size));
+        try expectEqual(tc.expected, logCost(spec, tc.topic_count, tc.data_size));
     }
 }
 
@@ -635,8 +696,17 @@ test "opcode gas: KECCAK256" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
-    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    var return_data: []const u8 = &[_]u8{};
+    var interp = Interpreter.init(allocator, ctx, .{
+        .spec = spec,
+        .gas_limit = 1000000,
+        .env = &env,
+        .host = mock.host(),
+        .return_data_buffer = &return_data,
+        .is_static = false,
+        .call_executor = CallExecutor.noOp(),
+    });
     defer interp.deinit();
 
     const test_cases = [_]struct {
@@ -693,8 +763,17 @@ test "opcode gas: copy operations" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
-    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    var return_data: []const u8 = &[_]u8{};
+    var interp = Interpreter.init(allocator, ctx, .{
+        .spec = spec,
+        .gas_limit = 1000000,
+        .env = &env,
+        .host = mock.host(),
+        .return_data_buffer = &return_data,
+        .is_static = false,
+        .call_executor = CallExecutor.noOp(),
+    });
     defer interp.deinit();
 
     const OpFn = *const fn (*Interpreter) anyerror!u64;
@@ -769,11 +848,160 @@ test "overflow saturation" {
 
     // logCost: data size multiplication saturates
     // 8 * (max_u64 / 4) = 2 * max_u64, overflows to max_u64
+    const spec = Spec.forFork(.CANCUN);
     const very_large_size: usize = max_u64 / 4;
-    const log_result = logCost(4, very_large_size);
+    const log_result = logCost(spec, 4, very_large_size);
     try expect(log_result == max_u64);
 
     // Note: calldataCost accumulation overflow is impractical to test
     // (would require ~270 PB allocation). The +|= operator is verified
     // by inspection and smaller tests verify the logic is correct.
+}
+
+test "CALL" {
+    const allocator = std.testing.allocator;
+    const bytecode = &[_]u8{0x00};
+    const Env = @import("../context.zig").Env;
+    const MockHost = @import("../host/mock.zig").MockHost;
+    const env = Env.default();
+
+    const TestCase = struct {
+        fork: Hardfork = .CANCUN,
+        // Stack values
+        gas_limit: u64 = 10000,
+        address: [20]u8 = [_]u8{0} ** 20,
+        value: u64 = 0,
+        args_offset: u64 = 0,
+        args_size: u64 = 0,
+        ret_offset: u64 = 0,
+        ret_size: u64 = 0,
+        // Setup: if non-null, create account with this balance.
+        target_balance: ?u64 = null,
+        // Expected cost breakdown (memory calculated dynamically).
+        expected_access: u64,
+        expected_value: u64 = 0,
+        expected_new_account: u64 = 0,
+    };
+
+    const test_cases = [_]TestCase{
+        // Cold access, no value, no memory expansion.
+        .{
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x12, 0x34 },
+            .expected_access = 2600,
+        },
+        // Value transfer to existing account.
+        .{
+            .address = [_]u8{0} ** 12 ++ [_]u8{ 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11 },
+            .value = 100,
+            .target_balance = 100,
+            .expected_access = 2600,
+            .expected_value = 9000,
+        },
+        // Value transfer to non-existent account (new account creation).
+        .{
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x22, 0x22 },
+            .value = 100,
+            .expected_access = 2600,
+            .expected_value = 9000,
+            .expected_new_account = 25000,
+        },
+        // Memory expansion from args and ret regions.
+        .{
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x33, 0x33 },
+            .args_offset = 0,
+            .args_size = 64,
+            .ret_offset = 64,
+            .ret_size = 32,
+            .expected_access = 2600,
+        },
+        // Value transfer with memory expansion.
+        .{
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x44, 0x44 },
+            .value = 50,
+            .args_size = 128,
+            .target_balance = 1000,
+            .expected_access = 2600,
+            .expected_value = 9000,
+        },
+        // Zero-length regions at high offsets should not expand memory.
+        .{
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x55, 0x55 },
+            .args_offset = 1000,
+            .args_size = 0,
+            .ret_offset = 2000,
+            .ret_size = 0,
+            .expected_access = 2600,
+        },
+        // Overlapping memory regions (ret inside args).
+        .{
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x66, 0x66 },
+            .args_offset = 0,
+            .args_size = 128,
+            .ret_offset = 32,
+            .ret_size = 64,
+            .expected_access = 2600,
+        },
+        // Pre-Berlin flat cost (no cold/warm distinction).
+        .{
+            .fork = .ISTANBUL,
+            .address = [_]u8{0} ** 18 ++ [_]u8{ 0x77, 0x77 },
+            .expected_access = 700,
+        },
+    };
+
+    for (test_cases) |tc| {
+        var mock = MockHost.init(allocator);
+        defer mock.deinit();
+
+        // Setup target account if specified.
+        if (tc.target_balance) |balance| {
+            const target = Address.init(tc.address);
+            try mock.setBalance(target, U256.fromU64(balance));
+        }
+
+        const spec = Spec.forFork(tc.fork);
+        const ctx = try CallContext.init(
+            allocator,
+            try allocator.dupe(u8, bytecode),
+            Address.zero(),
+            Address.zero(),
+            U256.ZERO,
+        );
+        var return_data: []const u8 = &[_]u8{};
+        var interp = Interpreter.init(allocator, ctx, .{
+            .spec = spec,
+            .gas_limit = 1000000,
+            .env = &env,
+            .host = mock.host(),
+            .return_data_buffer = &return_data,
+            .is_static = false,
+            .call_executor = CallExecutor.noOp(),
+        });
+        defer interp.deinit();
+
+        // Push stack values (reverse order - LIFO).
+        try interp.ctx.stack.push(U256.fromU64(tc.ret_size));
+        try interp.ctx.stack.push(U256.fromU64(tc.ret_offset));
+        try interp.ctx.stack.push(U256.fromU64(tc.args_size));
+        try interp.ctx.stack.push(U256.fromU64(tc.args_offset));
+        try interp.ctx.stack.push(U256.fromU64(tc.value));
+        try interp.ctx.stack.push(U256.fromBeBytesPadded(&tc.address));
+        try interp.ctx.stack.push(U256.fromU64(tc.gas_limit));
+
+        const gas = try opCall(&interp);
+
+        // Calculate expected gas with memory expansion.
+        const args_end = if (tc.args_size > 0) tc.args_offset + tc.args_size else 0;
+        const ret_end = if (tc.ret_size > 0) tc.ret_offset + tc.ret_size else 0;
+        const max_end = @max(args_end, ret_end);
+        const memory_cost = interp.gas.memoryExpansionCost(0, max_end);
+
+        const expected = tc.expected_access + tc.expected_value + tc.expected_new_account + memory_cost;
+        try expectEqual(expected, gas);
+
+        // Cleanup stack.
+        for (0..7) |_| {
+            _ = try interp.ctx.stack.pop();
+        }
+    }
 }
