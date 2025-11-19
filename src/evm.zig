@@ -22,7 +22,9 @@ const CallContext = @import("interpreter/interpreter.zig").CallContext;
 const Interpreter = @import("interpreter/interpreter.zig").Interpreter;
 const InterpreterResult = @import("interpreter/interpreter.zig").InterpreterResult;
 const InterpreterConfig = @import("interpreter/interpreter.zig").InterpreterConfig;
+const AnalyzedBytecode = @import("interpreter/bytecode.zig").AnalyzedBytecode;
 const Eip7702Bytecode = @import("interpreter/bytecode.zig").Eip7702Bytecode;
+const JumpTable = @import("interpreter/JumpTable.zig");
 const call_types = @import("call_types.zig");
 const CallKind = call_types.CallKind;
 const CallInputs = call_types.CallInputs;
@@ -57,6 +59,13 @@ pub const Evm = struct {
     /// Instruction table for current spec.
     table: *const InstructionTable,
 
+    /// Cache of analyzed jump tables by code hash.
+    ///
+    /// Entries remain valid for the lifetime of this EVM instance.
+    /// This avoids redundant `O(n)` bytecode analysis when the same contract is
+    /// called multiple times within or across transactions.
+    jump_table_cache: JumpTable.Cache,
+
     const Self = @This();
 
     /// Initialize EVM with given context and spec.
@@ -70,14 +79,21 @@ pub const Evm = struct {
             .return_data_buffer = &[_]u8{},
             .is_static = false,
             .table = spec.instructionTable(),
+            .jump_table_cache = JumpTable.Cache.init(allocator),
         };
     }
 
     /// Deinitialize EVM and free return data buffer.
     pub fn deinit(self: *Self) void {
+        // Free return data buffer.
         if (self.return_data_buffer.len > 0) {
             self.allocator.free(self.return_data_buffer);
         }
+
+        // Free all cached jump tables.
+        var it = self.jump_table_cache.valueIterator();
+        while (it.next()) |jt| jt.deinit();
+        self.jump_table_cache.deinit();
     }
 
     /// Create a CallExecutor interface that delegates to this Evm.
@@ -213,21 +229,22 @@ pub const Evm = struct {
             else => inputs.target,
         };
 
-        // Create call context (analyzes bytecode internally).
-        const ctx = CallContext.init(self.allocator, resolved, context_address, inputs.caller, inputs.value) catch |err| {
-            return switch (err) {
-                // System errors propagate up.
-                error.OutOfMemory => err,
+        // Analyze bytecode (uses cache for efficiency).
+        const analyzed = try AnalyzedBytecode.init(
+            self.allocator,
+            resolved,
+            &self.jump_table_cache,
+        );
+        errdefer analyzed.deinit();
 
-                // All other errors are considered bytecode validation failures.
-                else => CallResult{
-                    .status = .INVALID_OPCODE,
-                    .gas_used = inputs.gas_limit,
-                    .gas_refund = 0,
-                    .output = &[_]u8{},
-                },
-            };
-        };
+        // Create call context with pre-analyzed bytecode.
+        const ctx = try CallContext.init(
+            self.allocator,
+            analyzed,
+            context_address,
+            inputs.caller,
+            inputs.value,
+        );
 
         // Create interpreter (takes ownership of ctx).
         var interp = Interpreter.init(

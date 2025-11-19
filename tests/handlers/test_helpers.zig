@@ -6,6 +6,7 @@ const zevm = @import("zevm");
 const Interpreter = zevm.interpreter.Interpreter;
 const CallContext = zevm.interpreter.CallContext;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
+const AnalyzedBytecode = zevm.interpreter.AnalyzedBytecode;
 const Spec = zevm.hardfork.Spec;
 const Hardfork = zevm.hardfork.Hardfork;
 const U256 = zevm.primitives.U256;
@@ -85,7 +86,8 @@ pub fn createTestInterpreter(
     _ = env;
     _ = mock_host;
     _ = fork;
-    const ctx = try CallContext.init(allocator, bytecode, contract_address, Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, bytecode);
+    const ctx = try CallContext.init(allocator, analyzed, contract_address, Address.zero(), U256.ZERO);
     return Interpreter.init(
         allocator,
         ctx,

@@ -4,48 +4,69 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Opcode = @import("opcode.zig").Opcode;
 const Address = @import("../primitives/address.zig").Address;
+const JumpTable = @import("JumpTable.zig");
 
 /// Regular EVM bytecode that has been analyzed for valid JUMPDEST positions.
 pub const AnalyzedBytecode = struct {
     /// Allocator used for memory management.
     allocator: Allocator,
 
-    /// Bitmap of valid JUMPDEST positions (1 bit per bytecode position).
-    jumpdests: std.DynamicBitSet,
+    /// Jump table with valid JUMPDEST positions.
+    jump_table: JumpTable,
 
     /// Raw bytecode bytes (owned allocation).
     raw: []u8,
 
-    /// Analyze bytecode to find all valid JUMPDEST positions.
+    /// Analyze bytecode with jump table caching.
     ///
     /// Takes ownership of the bytecode parameter.
     ///
-    /// Returns AnalyzedBytecode with a bitmap where bit `n` is set if position `n`
-    /// is a valid JUMPDEST opcode.
-    pub fn init(allocator: Allocator, bytecode: []u8) !AnalyzedBytecode {
-        var jumpdests = try std.DynamicBitSet.initEmpty(allocator, bytecode.len);
-        errdefer jumpdests.deinit();
+    /// Checks cache for existing analysis by code hash.
+    /// On cache miss, stores the analysis for future reuse.
+    ///
+    /// Returns AnalyzedBytecode where valid JUMPDEST positions can be queried in O(1).
+    pub fn init(
+        allocator: Allocator,
+        bytecode: []u8,
+        cache: *JumpTable.Cache,
+    ) !AnalyzedBytecode {
+        const code_hash = JumpTable.computeCodeHash(bytecode);
 
-        var i: usize = 0;
-        while (i < bytecode.len) {
-            // Invalid opcode - skip and continue
-            if (!Opcode.isDefined(bytecode[i])) {
-                i += 1;
-                continue;
-            }
+        const jump_table = if (cache.get(code_hash)) |cached| blk: {
+            // Cache hit - clone for ownership.
+            break :blk try cached.clone(allocator);
+        } else blk: {
+            // Cache miss - analyze and store.
+            var analyzed = try JumpTable.analyze(allocator, bytecode);
+            errdefer analyzed.deinit();
 
-            const opcode = Opcode.fromByte(bytecode[i]);
-            if (opcode == .JUMPDEST) {
-                jumpdests.set(i);
-            }
+            // Save cloned table for re-use.
+            var for_cache = try analyzed.clone(allocator);
+            errdefer for_cache.deinit();
+            try cache.put(code_hash, for_cache);
 
-            // If PUSH opcode, also skip immediate data
-            i += if (opcode.isPush()) 1 + opcode.pushSize() else 1;
-        }
+            break :blk analyzed;
+        };
 
         return .{
             .allocator = allocator,
-            .jumpdests = jumpdests,
+            .jump_table = jump_table,
+            .raw = bytecode,
+        };
+    }
+
+    /// Analyze bytecode without caching.
+    ///
+    /// Takes ownership of the bytecode parameter.
+    ///
+    /// Use this for tests or one-off analysis where caching is not necessary.
+    /// For production code, use init() with cache.
+    pub fn initUncached(allocator: Allocator, bytecode: []u8) !AnalyzedBytecode {
+        const jump_table = try JumpTable.analyze(allocator, bytecode);
+
+        return .{
+            .allocator = allocator,
+            .jump_table = jump_table,
             .raw = bytecode,
         };
     }
@@ -55,8 +76,7 @@ pub const AnalyzedBytecode = struct {
     /// Returns true if the position points to a JUMPDEST opcode,
     /// false if out of bounds or not a JUMPDEST.
     pub fn isValidJump(self: *const AnalyzedBytecode, dest: usize) bool {
-        if (dest >= self.jumpdests.capacity()) return false;
-        return self.jumpdests.isSet(dest);
+        return self.jump_table.isValidDest(dest);
     }
 
     /// Get bytecode length.
@@ -65,8 +85,8 @@ pub const AnalyzedBytecode = struct {
     }
 
     /// Free allocated resources.
-    pub fn deinit(self: *AnalyzedBytecode) void {
-        self.jumpdests.deinit();
+    pub fn deinit(self: AnalyzedBytecode) void {
+        self.jump_table.deinit();
         self.allocator.free(self.raw);
     }
 };
@@ -222,7 +242,9 @@ pub const Bytecode = union(enum) {
     /// on magic bytes:
     /// - 0xEF01: EIP-7702 delegation
     /// - Other: Regular bytecode (performs JUMPDEST analysis)
-    pub fn analyze(allocator: Allocator, raw: []u8) !Bytecode {
+    ///
+    /// Uses cache for jump table analysis by code hash.
+    pub fn analyze(allocator: Allocator, raw: []u8, cache: *JumpTable.Cache) !Bytecode {
         // Detect EIP-7702 delegation format
         if (raw.len >= 2) {
             const magic = std.mem.readInt(u16, raw[0..2], .big);
@@ -243,7 +265,7 @@ pub const Bytecode = union(enum) {
         }
 
         // Default: Regular bytecode (perform JUMPDEST analysis)
-        return Bytecode{ .analyzed = try AnalyzedBytecode.init(allocator, raw) };
+        return Bytecode{ .analyzed = try AnalyzedBytecode.init(allocator, raw, cache) };
     }
 
     /// Create EIP-7702 delegation bytecode from an address.
@@ -259,8 +281,10 @@ pub const Bytecode = union(enum) {
     /// Takes ownership of bytecode_data. Convenience constructor for creating
     /// analyzed bytecode when you know the format is not EIP-7702. Performs
     /// JUMPDEST analysis.
-    pub fn newAnalyzed(allocator: Allocator, bytecode_data: []u8) !Bytecode {
-        const analyzed = try AnalyzedBytecode.init(allocator, bytecode_data);
+    ///
+    /// Uses cache for jump table analysis by code hash.
+    pub fn newAnalyzed(allocator: Allocator, bytecode_data: []u8, cache: *JumpTable.Cache) !Bytecode {
+        const analyzed = try AnalyzedBytecode.init(allocator, bytecode_data, cache);
         return .{ .analyzed = analyzed };
     }
 
@@ -324,7 +348,7 @@ fn makeTestBytecode(allocator: Allocator, code: []const u8) ![]u8 {
 
 test "AnalyzedBytecode: basic analysis" {
     // PUSH1 0x05, JUMP, INVALID, INVALID, JUMPDEST, STOP
-    var analysis = try AnalyzedBytecode.init(
+    var analysis = try AnalyzedBytecode.initUncached(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x60, 0x05, 0x56, 0xFE, 0xFE, 0x5B, 0x00 }),
     );
@@ -344,7 +368,7 @@ test "AnalyzedBytecode: basic analysis" {
 
 test "AnalyzedBytecode: skip PUSH immediate data" {
     // PUSH2 0x5B5B (fake JUMPDESTs in immediate), JUMPDEST
-    var analysis = try AnalyzedBytecode.init(
+    var analysis = try AnalyzedBytecode.initUncached(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x61, 0x5B, 0x5B, 0x5B }),
     );
@@ -358,7 +382,7 @@ test "AnalyzedBytecode: skip PUSH immediate data" {
 
 test "AnalyzedBytecode: multiple JUMPDESTs" {
     // JUMPDEST, PUSH1 0x05, JUMPDEST, PUSH1 0x00, JUMPDEST
-    var analysis = try AnalyzedBytecode.init(
+    var analysis = try AnalyzedBytecode.initUncached(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x5B, 0x60, 0x05, 0x5B, 0x60, 0x00, 0x5B }),
     );
@@ -386,7 +410,7 @@ test "AnalyzedBytecode: PUSH32 with fake JUMPDEST" {
     }
     bytecode_stack[33] = 0x5B; // Real JUMPDEST
 
-    var analysis = try AnalyzedBytecode.init(
+    var analysis = try AnalyzedBytecode.initUncached(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &bytecode_stack),
     );
@@ -400,7 +424,7 @@ test "AnalyzedBytecode: PUSH32 with fake JUMPDEST" {
 }
 
 test "AnalyzedBytecode: empty bytecode" {
-    var analysis = try AnalyzedBytecode.init(
+    var analysis = try AnalyzedBytecode.initUncached(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{}),
     );
@@ -411,7 +435,7 @@ test "AnalyzedBytecode: empty bytecode" {
 }
 
 test "AnalyzedBytecode: out of bounds" {
-    var analysis = try AnalyzedBytecode.init(
+    var analysis = try AnalyzedBytecode.initUncached(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x5B, 0x00 }),
     );
@@ -423,9 +447,17 @@ test "AnalyzedBytecode: out of bounds" {
 }
 
 test "Bytecode: format detection - regular bytecode" {
+    var cache = JumpTable.Cache.init(std.testing.allocator);
+    defer {
+        var it = cache.valueIterator();
+        while (it.next()) |jt| jt.deinit();
+        cache.deinit();
+    }
+
     var bc = try Bytecode.analyze(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x60, 0x01, 0x60, 0x02, 0x01 }),
+        &cache,
     );
     defer bc.deinit();
 
@@ -508,6 +540,9 @@ test "Eip7702Bytecode: zero address (cleared delegation)" {
 }
 
 test "Bytecode: auto-detect EIP-7702" {
+    var cache = JumpTable.Cache.init(std.testing.allocator);
+    defer cache.deinit(); // No entries for EIP-7702 (returns early)
+
     const addr = try Address.fromHex("0xABCDEF0123456789ABCDEF0123456789ABCDEF01");
 
     // Create delegation bytecode
@@ -524,7 +559,7 @@ test "Bytecode: auto-detect EIP-7702" {
     delegation.deinit();
 
     // Analyze should detect EIP-7702 format
-    var bc = try Bytecode.analyze(std.testing.allocator, bytecode_copy);
+    var bc = try Bytecode.analyze(std.testing.allocator, bytecode_copy, &cache);
     defer bc.deinit();
 
     try expect(bc.isEip7702());
@@ -546,9 +581,17 @@ test "Bytecode: newDelegation convenience constructor" {
 }
 
 test "Bytecode: newAnalyzed convenience constructor" {
+    var cache = JumpTable.Cache.init(std.testing.allocator);
+    defer {
+        var it = cache.valueIterator();
+        while (it.next()) |jt| jt.deinit();
+        cache.deinit();
+    }
+
     var bc = try Bytecode.newAnalyzed(
         std.testing.allocator,
         try makeTestBytecode(std.testing.allocator, &[_]u8{ 0x5B, 0x60, 0x01, 0x5B }),
+        &cache,
     );
     defer bc.deinit();
 

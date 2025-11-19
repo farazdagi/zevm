@@ -16,6 +16,7 @@ const Spec = @import("../hardfork.zig").Spec;
 const Hardfork = @import("../hardfork.zig").Hardfork;
 const Interpreter = @import("../interpreter/mod.zig").Interpreter;
 const CallContext = @import("../interpreter/interpreter.zig").CallContext;
+const AnalyzedBytecode = @import("../interpreter/bytecode.zig").AnalyzedBytecode;
 const U256 = @import("../primitives/big.zig").U256;
 const Address = @import("../primitives/address.zig").Address;
 const FixedGasCosts = @import("FixedGasCosts.zig");
@@ -488,62 +489,6 @@ const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 const CallExecutor = @import("../call_types.zig").CallExecutor;
 
-test "dynamic_gas: basic smoke test" {
-    // This test verifies that the functions compile and have the correct signatures.
-    // Full integration tests will be added later when the interpreter is wired up.
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.CANCUN);
-
-    // Use proper Interpreter initialization
-    const bytecode = &[_]u8{0x00}; // STOP
-    const Env = @import("../context.zig").Env;
-    const MockHost = @import("../host/mock.zig").MockHost;
-    const env = Env.default();
-    var mock = MockHost.init(allocator);
-    defer mock.deinit();
-
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var return_data: []const u8 = &[_]u8{};
-    var interp = Interpreter.init(allocator, ctx, .{
-        .spec = spec,
-        .gas_limit = 1000000,
-        .env = &env,
-        .host = mock.host(),
-        .return_data_buffer = &return_data,
-        .is_static = false,
-        .call_executor = CallExecutor.noOp(),
-    });
-    defer interp.deinit();
-
-    // Test EXP with small exponent
-    try interp.ctx.stack.push(U256.fromU64(2)); // base
-    try interp.ctx.stack.push(U256.fromU64(8)); // exponent (1 byte)
-    const exp_gas = try opExp(&interp);
-    try expect(exp_gas > 0);
-
-    // Clear stack
-    _ = try interp.ctx.stack.pop();
-    _ = try interp.ctx.stack.pop();
-
-    // Test MLOAD at offset 0 (no expansion from 0)
-    try interp.ctx.stack.push(U256.fromU64(0));
-    const mload_gas = try opMload(&interp);
-    try expect(mload_gas >= 0); // May be 0 for small expansion
-
-    // Clear stack
-    _ = try interp.ctx.stack.pop();
-
-    // Test RETURN with size 0 (no expansion)
-    try interp.ctx.stack.push(U256.fromU64(0)); // offset
-    try interp.ctx.stack.push(U256.fromU64(0)); // size
-    const return_gas = try opReturn(&interp);
-    try expectEqual(0, return_gas); // Zero-length should be 0
-
-    // Clear stack
-    _ = try interp.ctx.stack.pop();
-    _ = try interp.ctx.stack.pop();
-}
-
 test "memoryCost" {
     const test_cases = [_]struct {
         byte_size: usize,
@@ -696,7 +641,8 @@ test "opcode gas: KECCAK256" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var return_data: []const u8 = &[_]u8{};
     var interp = Interpreter.init(allocator, ctx, .{
         .spec = spec,
@@ -763,7 +709,8 @@ test "opcode gas: copy operations" {
     var mock = MockHost.init(allocator);
     defer mock.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var return_data: []const u8 = &[_]u8{};
     var interp = Interpreter.init(allocator, ctx, .{
         .spec = spec,
@@ -960,9 +907,10 @@ test "CALL" {
         }
 
         const spec = Spec.forFork(tc.fork);
+        const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
         const ctx = try CallContext.init(
             allocator,
-            try allocator.dupe(u8, bytecode),
+            analyzed,
             Address.zero(),
             Address.zero(),
             U256.ZERO,

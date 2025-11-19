@@ -14,6 +14,7 @@ const U256 = @import("../primitives/big.zig").U256;
 const Address = @import("../primitives/address.zig").Address;
 const Bytecode = @import("bytecode.zig").Bytecode;
 const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
+const JumpTable = @import("JumpTable.zig");
 const InstructionTable = @import("InstructionTable.zig");
 const Env = @import("../context.zig").Env;
 const Host = @import("../host/Host.zig");
@@ -116,33 +117,22 @@ pub const CallContext = struct {
     /// Initialize a new interpreter context.
     ///
     /// Parameters:
-    /// - allocator: Memory allocator for stack, memory, and bytecode analysis.
-    /// - raw_bytecode: The bytecode to analzye and execute (ownership transferred).
+    /// - allocator: Memory allocator for stack and memory.
+    /// - analyzed: Pre-analyzed bytecode (ownership transferred).
     /// - address: The context address (where storage operations apply).
     /// - caller: The caller of this frame (msg.sender).
     /// - value: The value sent with this call (msg.value).
     ///
-    /// If the bytecode is EIP-7702 delegation bytecode, this will return an error - the caller must
-    /// resolve delegation before creating the context. Currently, this happens in Evm.
+    /// The caller must resolve EIP-7702 delegation before calling this function.
+    /// This is enforced at the type level by requiring AnalyzedBytecode.
     pub fn init(
         allocator: Allocator,
-        raw_bytecode: []u8,
+        analyzed: AnalyzedBytecode,
         address: Address,
         caller: Address,
         value: U256,
     ) !CallContext {
-        var bytecode = try Bytecode.analyze(allocator, raw_bytecode);
-
-        const analyzed = switch (bytecode) {
-            .analyzed => |b| b,
-            .eip7702 => {
-                // Caller must resolve delegation first
-                bytecode.deinit();
-                return error.InvalidBytecode;
-            },
-        };
-
-        // Create stack and memory
+        // Create stack and memory.
         var stack = try Stack.init(allocator);
         errdefer stack.deinit();
 

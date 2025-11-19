@@ -7,6 +7,7 @@ const test_helpers = @import("test_helpers.zig");
 const Interpreter = zevm.interpreter.Interpreter;
 const CallContext = zevm.interpreter.CallContext;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
+const AnalyzedBytecode = zevm.interpreter.AnalyzedBytecode;
 const Spec = zevm.hardfork.Spec;
 const U256 = zevm.primitives.U256;
 const Address = zevm.primitives.Address;
@@ -113,7 +114,8 @@ test "PUSH with insufficient bytes" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -136,7 +138,8 @@ test "PUSH0 not available pre-Shanghai" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -161,7 +164,8 @@ test "multiple PUSH operations" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -194,7 +198,8 @@ test "PC advances correctly with PUSH" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -236,7 +241,8 @@ test "POP on empty stack" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -300,7 +306,8 @@ test "DUP16 duplicates 16th item" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try bytecode_list.toOwnedSlice(allocator), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try bytecode_list.toOwnedSlice(allocator));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -328,7 +335,8 @@ test "DUP1 on empty stack fails" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -352,7 +360,8 @@ test "DUP2 with only one item fails" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -418,7 +427,8 @@ test "SWAP16 swaps top with 17th item" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try bytecode_list.toOwnedSlice(allocator), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try bytecode_list.toOwnedSlice(allocator));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -451,7 +461,8 @@ test "SWAP1 with only one item fails" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
@@ -476,7 +487,8 @@ test "SWAP2 with only two items fails" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
+    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 

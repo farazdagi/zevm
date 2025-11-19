@@ -6,6 +6,7 @@ const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 const CallContext = @import("../interpreter.zig").CallContext;
+const AnalyzedBytecode = @import("../bytecode.zig").AnalyzedBytecode;
 const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
 const Spec = @import("../../hardfork.zig").Spec;
@@ -39,7 +40,8 @@ pub const TestContext = struct {
         const spec = Spec.forFork(.CANCUN);
         self.evm = Evm.init(allocator, &self.env, self.mock.host(), spec);
 
-        const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), contract_address, Address.zero(), U256.ZERO);
+        const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+        const ctx = try CallContext.init(allocator, analyzed, contract_address, Address.zero(), U256.ZERO);
         self.interp = Interpreter.init(
             allocator,
             ctx,
