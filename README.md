@@ -13,9 +13,12 @@ Zevm is built from the ground up in Zig with the following goals:
 
 ## Status
 
-Core interpreter is working great – you can run bytecode with loops, math, memory, and control flow. 
+Nested contract calls are working! 
 
-Just wrapped up environmental opcodes (transaction context, calldata, block info), so we can now simulate realistic smart contract execution. The next big thing is storage, that will unblock the EVM executor abstraction (nested calls!).
+CALL, DELEGATECALL, and STATICCALL all implemented with correct gas semantics. 
+
+Storage (SLOAD/SSTORE), logging (LOG0-4), and contract creation (CREATE/CREATE2) are the remaining pieces.
+Once those land, we can run the official Ethereum test suite end-to-end.
 
 ## Quickstart
 
