@@ -17,7 +17,9 @@ const AnalyzedBytecode = @import("bytecode.zig").AnalyzedBytecode;
 const InstructionTable = @import("InstructionTable.zig");
 const Env = @import("../context.zig").Env;
 const Host = @import("../host/Host.zig");
-const Evm = @import("../evm.zig").Evm;
+const CallExecutor = @import("../call_types.zig").CallExecutor;
+const CallInputs = @import("../call_types.zig").CallInputs;
+const CallResult = @import("../call_types.zig").CallResult;
 const Contract = @import("../Contract.zig");
 
 // Instruction handlers
@@ -66,6 +68,33 @@ pub const InterpreterResult = struct {
 
     /// Return data (from RETURN or REVERT)
     return_data: ?[]const u8,
+};
+
+/// Configuration for interpreter execution.
+///
+/// Contains the external context needed for execution/interpretation.
+pub const InterpreterConfig = struct {
+    /// Spec (fork-specific rules and costs).
+    spec: Spec,
+
+    /// Gas limit for this execution.
+    gas_limit: u64,
+
+    /// Environmental context (block and transaction info).
+    env: *const Env,
+
+    /// Host interface for blockchain state access.
+    host: Host,
+
+    /// Return data from last nested call (EIP-211).
+    /// Points to EVM-owned buffer, updated after CALL/CREATE operations.
+    return_data_buffer: *[]const u8,
+
+    /// Whether state modifications are forbidden (STATICCALL context).
+    is_static: bool,
+
+    /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL/CREATE/CREATE2).
+    call_executor: CallExecutor,
 };
 
 /// Call-scoped execution context.
@@ -189,14 +218,15 @@ pub const Interpreter = struct {
     /// Host interface for blockchain state access.
     host: Host,
 
-    /// Reference to the parent EVM for nested calls.
-    ///
-    /// This is only valid during `run()` execution.
-    /// It is null before `run()` is called and reset to null after `run()` completes.
-    ///
-    /// Used by opcode handlers that need access to EVM state (`return_data_buffer`, `is_static`)
-    /// or need to make nested calls (CALL, DELEGATECALL, STATICCALL, CREATE, CREATE2).
-    evm: ?*Evm,
+    /// Return data from last nested call (EIP-211).
+    /// Points to EVM-owned buffer, updated after CALL/CREATE operations.
+    return_data_buffer: *[]const u8,
+
+    /// Whether state modifications are forbidden (STATICCALL context).
+    is_static: bool,
+
+    /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL/CREATE/CREATE2).
+    call_executor: CallExecutor,
 
     const Self = @This();
 
@@ -204,23 +234,22 @@ pub const Interpreter = struct {
     pub fn init(
         allocator: Allocator,
         ctx: CallContext,
-        spec: Spec,
-        gas_limit: u64,
-        env: *const Env,
-        host: Host,
+        config: InterpreterConfig,
     ) Self {
         return Self{
             .allocator = allocator,
             .ctx = ctx,
             .pc = 0,
-            .gas = Gas.init(gas_limit, spec),
-            .spec = spec,
-            .table = spec.instructionTable(),
+            .gas = Gas.init(config.gas_limit, config.spec),
+            .spec = config.spec,
+            .table = config.spec.instructionTable(),
             .is_halted = false,
             .return_data = null,
-            .env = env,
-            .host = host,
-            .evm = null, // Set during run(), null otherwise
+            .env = config.env,
+            .host = config.host,
+            .return_data_buffer = config.return_data_buffer,
+            .is_static = config.is_static,
+            .call_executor = config.call_executor,
         };
     }
 
@@ -232,15 +261,8 @@ pub const Interpreter = struct {
 
     /// Execute bytecode until halted or error.
     ///
-    /// The `evm` parameter provides access to the EVM layer for nested calls
-    /// (CALL, DELEGATECALL, STATICCALL) and contract creation (CREATE, CREATE2).
-    ///
     /// Returns the execution result including status, gas used, and return data.
-    pub fn run(self: *Self, evm: *Evm) !InterpreterResult {
-        // Set EVM reference for opcode handlers to access.
-        self.evm = evm;
-        defer self.evm = null; // Clear on exit
-
+    pub fn run(self: *Self) !InterpreterResult {
         while (!self.is_halted) {
             self.step() catch |err| {
                 return self.handleError(err);

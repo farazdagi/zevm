@@ -21,61 +21,13 @@ const ExecutionStatus = @import("interpreter/interpreter.zig").ExecutionStatus;
 const CallContext = @import("interpreter/interpreter.zig").CallContext;
 const Interpreter = @import("interpreter/interpreter.zig").Interpreter;
 const InterpreterResult = @import("interpreter/interpreter.zig").InterpreterResult;
+const InterpreterConfig = @import("interpreter/interpreter.zig").InterpreterConfig;
 const Eip7702Bytecode = @import("interpreter/bytecode.zig").Eip7702Bytecode;
-
-/// Call kind determines the type of call operation.
-pub const CallKind = enum {
-    /// Normal call: transfers value, changes context.
-    CALL,
-
-    /// Legacy call: like CALL but deprecated.
-    CALLCODE,
-
-    /// Delegate call: preserves caller, no value transfer.
-    DELEGATECALL,
-
-    /// Static call: read-only, no state modifications allowed.
-    STATICCALL,
-};
-
-/// Input parameters for a call operation.
-pub const CallInputs = struct {
-    /// Type of call.
-    kind: CallKind,
-
-    /// Target contract address to call.
-    target: Address,
-
-    /// Address initiating this call.
-    caller: Address,
-
-    /// Value to transfer (in wei).
-    value: U256,
-
-    /// Input data.
-    input: []const u8,
-
-    /// Gas limit for this call.
-    gas_limit: u64,
-
-    /// Whether to actually transfer value (false for DELEGATECALL).
-    transfer_value: bool,
-};
-
-/// Result of a call operation.
-pub const CallResult = struct {
-    /// Execution status.
-    status: ExecutionStatus,
-
-    /// Gas consumed by the call.
-    gas_used: u64,
-
-    /// Gas refunded by the call.
-    gas_refund: u64,
-
-    /// Output data from the call.
-    output: []const u8,
-};
+const call_types = @import("call_types.zig");
+const CallKind = call_types.CallKind;
+const CallInputs = call_types.CallInputs;
+const CallResult = call_types.CallResult;
+const CallExecutor = call_types.CallExecutor;
 
 /// EVM execution engine.
 pub const Evm = struct {
@@ -126,6 +78,37 @@ pub const Evm = struct {
         if (self.return_data_buffer.len > 0) {
             self.allocator.free(self.return_data_buffer);
         }
+    }
+
+    /// Create a CallExecutor interface that delegates to this Evm.
+    pub fn callExecutor(self: *Self) CallExecutor {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .call = callImpl,
+            },
+        };
+    }
+
+    /// Vtable wrapper for call().
+    fn callImpl(ptr: *anyopaque, inputs: CallInputs) anyerror!CallResult {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+        return self.call(inputs);
+    }
+
+    /// Create an InterpreterConfig for this EVM.
+    ///
+    /// This bundles all the external context needed for interpreter execution.
+    pub fn interpreterConfig(self: *Self, gas_limit: u64, is_static: bool) InterpreterConfig {
+        return .{
+            .spec = self.spec,
+            .gas_limit = gas_limit,
+            .env = self.env,
+            .host = self.host,
+            .return_data_buffer = &self.return_data_buffer,
+            .is_static = is_static,
+            .call_executor = self.callExecutor(),
+        };
     }
 
     /// Resolve EIP-7702 delegation if present.
@@ -250,15 +233,12 @@ pub const Evm = struct {
         var interp = Interpreter.init(
             self.allocator,
             ctx,
-            self.spec,
-            inputs.gas_limit,
-            self.env,
-            self.host,
+            self.interpreterConfig(inputs.gas_limit, self.is_static),
         );
         defer interp.deinit(); // This will also clean up ctx
 
         // Execute bytecode instructions.
-        const result = try interp.run(self);
+        const result = try interp.run();
 
         // Free any previously stored data (from previous calls).
         if (self.return_data_buffer.len > 0) {

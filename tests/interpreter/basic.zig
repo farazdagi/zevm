@@ -30,11 +30,11 @@ test "init and deinit" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
     defer interpreter.deinit();
 
     try expectEqual(0, interpreter.pc);
-    try expect(!interpreter.is_halted);
+    try expect(!interpreter.is_static);
     try expectEqual(1000, interpreter.gas.limit);
     try expectEqual(0, interpreter.gas.used);
 }
@@ -52,10 +52,10 @@ test "empty bytecode" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.INVALID_PC, result.status);
 }
 
@@ -72,10 +72,10 @@ test "STOP halts execution" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expectEqual(0, result.gas_used); // STOP costs 0 gas
     try expect(interpreter.is_halted);
@@ -94,10 +94,10 @@ test "multiple STOP opcodes (only first executed)" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expectEqual(0, interpreter.pc); // PC stays at 0 (STOP is control flow)
     try expectEqual(0, result.gas_used);
@@ -116,10 +116,10 @@ test "invalid opcode" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
 }
 
@@ -136,10 +136,10 @@ test "unimplemented opcode" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
 }
 
@@ -157,10 +157,10 @@ test "out of gas" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 2, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(2, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.OUT_OF_GAS, result.status);
 }
 
@@ -189,10 +189,10 @@ test "Stack overflow - 1025 PUSH operations" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_OVERFLOW, result.status);
 }
 
@@ -213,10 +213,10 @@ test "Stack underflow - ADD with only one item" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
@@ -244,10 +244,10 @@ test "Complex calculation - Fibonacci-like" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const top = try interpreter.ctx.stack.peek(0);
     try expectEqual(6, top.toU64().?);
@@ -276,10 +276,10 @@ test "Chained operations with mixed ops" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.peek(0);
     try expectEqual(17, value.toU64().?);

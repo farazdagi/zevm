@@ -114,10 +114,10 @@ test "PUSH with insufficient bytes" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.INVALID_PC, result.status);
 }
 
@@ -137,10 +137,10 @@ test "PUSH0 not available pre-Shanghai" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
 }
 
@@ -162,10 +162,10 @@ test "multiple PUSH operations" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expectEqual(3, interpreter.ctx.stack.len);
 
@@ -195,10 +195,10 @@ test "PC advances correctly with PUSH" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expectEqual(5, interpreter.pc); // PC at STOP
 }
@@ -237,10 +237,10 @@ test "POP on empty stack" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
@@ -301,10 +301,10 @@ test "DUP16 duplicates 16th item" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try bytecode_list.toOwnedSlice(allocator), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expectEqual(17, interpreter.ctx.stack.len);
 
@@ -329,10 +329,10 @@ test "DUP1 on empty stack fails" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
@@ -353,10 +353,10 @@ test "DUP2 with only one item fails" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
@@ -419,10 +419,10 @@ test "SWAP16 swaps top with 17th item" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try bytecode_list.toOwnedSlice(allocator), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expectEqual(17, interpreter.ctx.stack.len);
 
@@ -452,10 +452,10 @@ test "SWAP1 with only one item fails" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }
 
@@ -477,9 +477,9 @@ test "SWAP2 with only two items fails" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
+    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(10000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     try expectEqual(ExecutionStatus.STACK_UNDERFLOW, result.status);
 }

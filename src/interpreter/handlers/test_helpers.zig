@@ -43,10 +43,7 @@ pub const TestContext = struct {
         self.interp = Interpreter.init(
             allocator,
             ctx,
-            spec,
-            1000000,
-            &self.env,
-            self.mock.host(),
+            self.evm.interpreterConfig(1000000, self.evm.is_static),
         );
 
         return self;

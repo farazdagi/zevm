@@ -4,8 +4,7 @@ const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
-const Evm = @import("../../evm.zig").Evm;
-const CallInputs = @import("../../evm.zig").CallInputs;
+const CallInputs = @import("../../call_types.zig").CallInputs;
 const ExecutionStatus = @import("../interpreter.zig").ExecutionStatus;
 
 /// Create a new contract (CREATE).
@@ -14,8 +13,8 @@ const ExecutionStatus = @import("../interpreter.zig").ExecutionStatus;
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opCreate(interp: *Interpreter) !void {
-    // CREATE is not allowed in static call context (STATICCALL)
-    if (interp.evm.?.is_static) {
+    // CREATE is not allowed in static call context (STATICCALL).
+    if (interp.is_static) {
         return error.StateWriteInStaticCall;
     }
     return error.UnimplementedOpcode;
@@ -27,8 +26,8 @@ pub fn opCreate(interp: *Interpreter) !void {
 /// Note: This operation requires complex state management and sub-context execution.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opCreate2(interp: *Interpreter) !void {
-    // CREATE2 is not allowed in static call context (STATICCALL)
-    if (interp.evm.?.is_static) {
+    // CREATE2 is not allowed in static call context (STATICCALL).
+    if (interp.is_static) {
         return error.StateWriteInStaticCall;
     }
     return error.UnimplementedOpcode;
@@ -100,20 +99,16 @@ pub fn opCall(interp: *Interpreter) !void {
     };
 
     // Execute the call.
-    const evm = interp.evm.?;
-    const result = evm.call(inputs) catch {
-        // Handle errors from Evm.call() as failed calls.
+    const result = interp.call_executor.call(inputs) catch {
+        // Handle errors from call as failed calls.
         // These errors (InsufficientBalance, InvalidLength, etc.) should not propagate
         // but instead result in a failed call (push 0 to stack).
         // All gas sent is consumed on error.
         // No return data on error.
-        evm.return_data_buffer = &[_]u8{};
+        interp.return_data_buffer.* = &[_]u8{};
         try interp.ctx.stack.push(U256.ZERO);
         return;
     };
-
-    // Update return data buffer.
-    evm.return_data_buffer = result.output;
 
     // Copy return data to memory (truncated to ret_length).
     if (ret_size > 0) {
@@ -209,15 +204,11 @@ pub fn opDelegatecall(interp: *Interpreter) !void {
     };
 
     // Execute the call.
-    const evm = interp.evm.?;
-    const result = evm.call(inputs) catch {
-        evm.return_data_buffer = &[_]u8{};
+    const result = interp.call_executor.call(inputs) catch {
+        interp.return_data_buffer.* = &[_]u8{};
         try interp.ctx.stack.push(U256.ZERO);
         return;
     };
-
-    // Update return data buffer.
-    evm.return_data_buffer = result.output;
 
     // Copy return data to memory.
     if (ret_size > 0) {
@@ -300,15 +291,11 @@ pub fn opStaticcall(interp: *Interpreter) !void {
     };
 
     // Execute the call.
-    const evm = interp.evm.?;
-    const result = evm.call(inputs) catch {
-        evm.return_data_buffer = &[_]u8{};
+    const result = interp.call_executor.call(inputs) catch {
+        interp.return_data_buffer.* = &[_]u8{};
         try interp.ctx.stack.push(U256.ZERO);
         return;
     };
-
-    // Update return data buffer.
-    evm.return_data_buffer = result.output;
 
     // Copy return data to memory.
     if (ret_size > 0) {
@@ -342,8 +329,8 @@ pub fn opStaticcall(interp: *Interpreter) !void {
 /// Note: This operation requires state modifications and special handling.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opSelfdestruct(interp: *Interpreter) !void {
-    // SELFDESTRUCT is not allowed in static call context (STATICCALL)
-    if (interp.evm.?.is_static) {
+    // SELFDESTRUCT is not allowed in static call context (STATICCALL).
+    if (interp.is_static) {
         return error.StateWriteInStaticCall;
     }
     return error.UnimplementedOpcode;

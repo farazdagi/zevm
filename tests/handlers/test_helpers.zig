@@ -80,11 +80,17 @@ pub fn createTestInterpreter(
     gas_limit: u64,
     env: *const Env,
     mock_host: *MockHost,
+    evm: *Evm,
 ) !Interpreter {
-    const spec = Spec.forFork(fork);
-    const host = mock_host.host();
+    _ = env;
+    _ = mock_host;
+    _ = fork;
     const ctx = try CallContext.init(allocator, bytecode, contract_address, Address.zero(), U256.ZERO);
-    return Interpreter.init(allocator, ctx, spec, gas_limit, env, host);
+    return Interpreter.init(
+        allocator,
+        ctx,
+        evm.interpreterConfig(gas_limit, evm.is_static),
+    );
 }
 
 /// Create test interpreter with default contract address (zero).
@@ -97,8 +103,9 @@ pub fn createTestInterpreterDefault(
     gas_limit: u64,
     env: *const Env,
     mock_host: *MockHost,
+    evm: *Evm,
 ) !Interpreter {
-    return createTestInterpreter(allocator, bytecode, Address.zero(), fork, gas_limit, env, mock_host);
+    return createTestInterpreter(allocator, bytecode, Address.zero(), fork, gas_limit, env, mock_host, evm);
 }
 
 /// Run a series of opcode tests using table-based test cases.
@@ -122,11 +129,12 @@ pub fn runOpcodeTests(allocator: std.mem.Allocator, test_cases: []const TestCase
             10000,
             &env,
             &mock,
+            &evm,
         );
         defer interpreter.deinit();
 
         // Execute.
-        const result = try interpreter.run(&evm);
+        const result = try interpreter.run();
         try expectEqual(ExecutionStatus.SUCCESS, result.status);
         try expectEqual(tc.expected_gas, result.gas_used);
 

@@ -58,7 +58,7 @@ test "opKeccak256: empty string" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    var interp = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000000, evm.is_static));
     defer interp.deinit();
 
     // Push size=0, offset=0 (stack will be [offset, size] with offset on top)
@@ -86,7 +86,7 @@ test "opKeccak256: known value" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    var interp = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000000, evm.is_static));
     defer interp.deinit();
 
     // Store test data in memory: "hello"
@@ -126,7 +126,7 @@ test "opKeccak256: 32-byte input" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
+    var interp = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000000, evm.is_static));
     defer interp.deinit();
 
     // Store 32 bytes of test data

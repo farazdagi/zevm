@@ -38,10 +38,10 @@ test "JUMP: simple forward jump" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     // Should have executed the jump and pushed 0x42
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
@@ -73,10 +73,10 @@ test "JUMPI: conditional jump taken" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.pop();
@@ -106,10 +106,10 @@ test "JUMPI: conditional jump not taken" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     const value = try interpreter.ctx.stack.pop();
@@ -142,10 +142,10 @@ test "loop: simple counter loop" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     // Final counter value should be 0
@@ -170,10 +170,10 @@ test "RETURN: empty return data" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     try expect(result.return_data != null);
@@ -201,10 +201,10 @@ test "RETURN: with data in memory" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     defer if (result.return_data) |data| std.testing.allocator.free(data);
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
@@ -239,10 +239,10 @@ test "REVERT: with error message" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
     defer if (result.return_data) |data| std.testing.allocator.free(data);
 
     try expectEqual(ExecutionStatus.REVERT, result.status);
@@ -270,10 +270,10 @@ test "PC and GAS opcodes" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
     // Stack should have: [gas_remaining, 1 (PC==0)]
@@ -307,10 +307,10 @@ test "INVALID: consumes all gas" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
     // Should have consumed all gas
@@ -335,10 +335,10 @@ test "JUMP: invalid destination error" {
     defer evm.deinit();
 
     const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
+    var interpreter = Interpreter.init(std.testing.allocator, ctx, evm.interpreterConfig(100000, evm.is_static));
     defer interpreter.deinit();
 
-    const result = try interpreter.run(&evm);
+    const result = try interpreter.run();
 
     try expectEqual(ExecutionStatus.INVALID_JUMP, result.status);
 }

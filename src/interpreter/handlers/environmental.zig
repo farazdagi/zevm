@@ -267,8 +267,8 @@ pub fn opExtcodehash(interp: *Interpreter) !void {
 ///
 /// Stack: [...] -> [size, ...]
 pub fn opReturndatasize(interp: *Interpreter) !void {
-    // Return data buffer lives at EVM level (EIP-211)
-    const return_data = interp.evm.?.return_data_buffer;
+    // Return data buffer lives at Evm executor level (EIP-211).
+    const return_data = interp.return_data_buffer.*;
     const size = U256.fromU64(@intCast(return_data.len));
     try interp.ctx.stack.push(size);
 }
@@ -288,8 +288,8 @@ pub fn opReturndatacopy(interp: *Interpreter) !void {
 
     if (length == 0) return; // No-op for zero length
 
-    // Return data buffer lives at EVM level (EIP-211)
-    const return_data = interp.evm.?.return_data_buffer;
+    // Return data buffer lives at Evm executor level (EIP-211).
+    const return_data = interp.return_data_buffer.*;
 
     // Check bounds - revert if reading beyond return data (EIP-211 requirement)
     const end_offset = offset +| length; // Saturating add
@@ -529,9 +529,6 @@ test "RETURNDATASIZE returns return data buffer length" {
     var ctx = try TestContext.create(std.testing.allocator);
     defer ctx.destroy();
 
-    // Set up EVM reference for handler access
-    ctx.interp.evm = &ctx.evm;
-
     const return_data = [_]u8{ 0xAA, 0xBB, 0xCC };
     ctx.evm.return_data_buffer = &return_data;
 
@@ -540,7 +537,7 @@ test "RETURNDATASIZE returns return data buffer length" {
     const result = try ctx.interp.ctx.stack.pop();
     try expectEqual(U256.fromU64(3), result);
 
-    // Reset to empty so deinit doesn't try to free stack memory
+    // Reset to empty so deinit doesn't try to free stack memory.
     ctx.evm.return_data_buffer = &[_]u8{};
 }
 
@@ -548,10 +545,7 @@ test "RETURNDATASIZE returns zero for empty return data" {
     var ctx = try TestContext.create(std.testing.allocator);
     defer ctx.destroy();
 
-    // Set up EVM reference for handler access
-    ctx.interp.evm = &ctx.evm;
-
-    // EVM starts with empty return_data_buffer by default
+    // EVM starts with empty return_data_buffer by default.
     try opReturndatasize(&ctx.interp);
 
     const result = try ctx.interp.ctx.stack.pop();
