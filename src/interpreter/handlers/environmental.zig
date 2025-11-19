@@ -38,17 +38,26 @@ pub fn opOrigin(interp: *Interpreter) !void {
 
 /// Get caller address (CALLER).
 ///
+/// Returns the address of the account that initiated this call frame (msg.sender).
+/// For CALL/CALLCODE/STATICCALL: the immediate caller.
+/// For DELEGATECALL: propagated from parent frame.
+///
 /// Stack: [...] -> [address, ...]
 pub fn opCaller(interp: *Interpreter) !void {
-    const caller_u256 = U256.fromBeBytesPadded(&interp.env.tx.caller.inner.bytes);
+    const caller_u256 = U256.fromBeBytesPadded(&interp.ctx.contract.caller.inner.bytes);
     try interp.ctx.stack.push(caller_u256);
 }
 
 /// Get deposited value (CALLVALUE).
 ///
+/// Returns the value sent with this call frame (msg.value).
+/// For CALL/CALLCODE: the value transferred.
+/// For DELEGATECALL: propagated from parent frame (no actual transfer).
+/// For STATICCALL: always zero.
+///
 /// Stack: [...] -> [value, ...]
 pub fn opCallvalue(interp: *Interpreter) !void {
-    try interp.ctx.stack.push(interp.env.tx.value);
+    try interp.ctx.stack.push(interp.ctx.contract.value);
 }
 
 /// Get gas price (GASPRICE).
@@ -258,7 +267,9 @@ pub fn opExtcodehash(interp: *Interpreter) !void {
 ///
 /// Stack: [...] -> [size, ...]
 pub fn opReturndatasize(interp: *Interpreter) !void {
-    const size = U256.fromU64(@intCast(interp.return_data_buffer.len));
+    // Return data buffer lives at EVM level (EIP-211)
+    const return_data = interp.evm.?.return_data_buffer;
+    const size = U256.fromU64(@intCast(return_data.len));
     try interp.ctx.stack.push(size);
 }
 
@@ -277,7 +288,8 @@ pub fn opReturndatacopy(interp: *Interpreter) !void {
 
     if (length == 0) return; // No-op for zero length
 
-    const return_data = interp.return_data_buffer;
+    // Return data buffer lives at EVM level (EIP-211)
+    const return_data = interp.evm.?.return_data_buffer;
 
     // Check bounds - revert if reading beyond return data (EIP-211 requirement)
     const end_offset = offset +| length; // Saturating add
@@ -435,12 +447,12 @@ test "ORIGIN returns transaction origin" {
     try expectEqual(expected, result);
 }
 
-test "CALLER returns transaction caller" {
+test "CALLER returns contract caller (msg.sender)" {
     var ctx = try TestContext.create(std.testing.allocator);
     defer ctx.destroy();
 
     const caller_addr = try Address.fromHex("0x2222222222222222222222222222222222222222");
-    ctx.env.tx.caller = caller_addr;
+    ctx.interp.ctx.contract.caller = caller_addr;
 
     try opCaller(&ctx.interp);
 
@@ -449,11 +461,11 @@ test "CALLER returns transaction caller" {
     try expectEqual(expected, result);
 }
 
-test "CALLVALUE returns transaction value" {
+test "CALLVALUE returns contract value (msg.value)" {
     var ctx = try TestContext.create(std.testing.allocator);
     defer ctx.destroy();
 
-    ctx.env.tx.value = U256.fromU64(1000);
+    ctx.interp.ctx.contract.value = U256.fromU64(1000);
 
     try opCallvalue(&ctx.interp);
 
@@ -517,21 +529,29 @@ test "RETURNDATASIZE returns return data buffer length" {
     var ctx = try TestContext.create(std.testing.allocator);
     defer ctx.destroy();
 
+    // Set up EVM reference for handler access
+    ctx.interp.evm = &ctx.evm;
+
     const return_data = [_]u8{ 0xAA, 0xBB, 0xCC };
-    ctx.interp.return_data_buffer = &return_data;
+    ctx.evm.return_data_buffer = &return_data;
 
     try opReturndatasize(&ctx.interp);
 
     const result = try ctx.interp.ctx.stack.pop();
     try expectEqual(U256.fromU64(3), result);
+
+    // Reset to empty so deinit doesn't try to free stack memory
+    ctx.evm.return_data_buffer = &[_]u8{};
 }
 
 test "RETURNDATASIZE returns zero for empty return data" {
     var ctx = try TestContext.create(std.testing.allocator);
     defer ctx.destroy();
 
-    ctx.interp.return_data_buffer = &[_]u8{};
+    // Set up EVM reference for handler access
+    ctx.interp.evm = &ctx.evm;
 
+    // EVM starts with empty return_data_buffer by default
     try opReturndatasize(&ctx.interp);
 
     const result = try ctx.interp.ctx.stack.pop();

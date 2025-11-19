@@ -57,7 +57,7 @@ test "opKeccak256: empty string" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
@@ -85,7 +85,7 @@ test "opKeccak256: known value" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 
@@ -125,7 +125,7 @@ test "opKeccak256: 32-byte input" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interp = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interp.deinit();
 

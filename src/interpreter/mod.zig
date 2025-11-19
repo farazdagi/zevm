@@ -24,6 +24,7 @@ pub const Bytecode = bytecode.Bytecode;
 pub const AnalyzedBytecode = bytecode.AnalyzedBytecode;
 pub const Eip7702Bytecode = bytecode.Eip7702Bytecode;
 pub const InstructionTable = @import("InstructionTable.zig");
+pub const Contract = @import("../Contract.zig");
 
 test {
     std.testing.refAllDecls(@This());

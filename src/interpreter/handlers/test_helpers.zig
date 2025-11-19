@@ -39,7 +39,7 @@ pub const TestContext = struct {
         const spec = Spec.forFork(.CANCUN);
         self.evm = Evm.init(allocator, &self.env, self.mock.host(), spec);
 
-        const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), contract_address);
+        const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), contract_address, Address.zero(), U256.ZERO);
         self.interp = Interpreter.init(
             allocator,
             ctx,

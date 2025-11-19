@@ -18,6 +18,7 @@ const InstructionTable = @import("InstructionTable.zig");
 const Env = @import("../context.zig").Env;
 const Host = @import("../host/Host.zig");
 const Evm = @import("../evm.zig").Evm;
+const Contract = @import("../Contract.zig");
 
 // Instruction handlers
 const handlers = @import("handlers/mod.zig");
@@ -67,27 +68,6 @@ pub const InterpreterResult = struct {
     return_data: ?[]const u8,
 };
 
-/// Contract represents the bytecode being executed and its address.
-pub const Contract = struct {
-    /// The bytecode being executed (with JUMPDEST analysis).
-    bytecode: AnalyzedBytecode,
-
-    /// The address of this contract.
-    ///
-    /// This is the address where the code resides.
-    /// For regular calls, this is the callee's address.
-    /// For DELEGATECALL, this is the caller's address (code borrowed from callee).
-    address: Address,
-
-    /// Allocator for cleanup.
-    allocator: Allocator,
-
-    /// Clean up allocated resources.
-    pub fn deinit(self: *Contract) void {
-        self.bytecode.deinit();
-    }
-};
-
 /// Call-scoped execution context.
 ///
 /// Contains the state that is local to a single execution context (call frame).
@@ -106,11 +86,22 @@ pub const CallContext = struct {
 
     /// Initialize a new interpreter context.
     ///
-    /// Takes ownership of raw_bytecode and analyzes it internally.
+    /// Parameters:
+    /// - allocator: Memory allocator for stack, memory, and bytecode analysis.
+    /// - raw_bytecode: The bytecode to analzye and execute (ownership transferred).
+    /// - address: The context address (where storage operations apply).
+    /// - caller: The caller of this frame (msg.sender).
+    /// - value: The value sent with this call (msg.value).
     ///
-    /// If the bytecode is EIP-7702 delegation bytecode, this will return an error - the caller
-    /// (EVM) must resolve delegation before creating the context.
-    pub fn init(allocator: Allocator, raw_bytecode: []u8, address: Address) !CallContext {
+    /// If the bytecode is EIP-7702 delegation bytecode, this will return an error - the caller must
+    /// resolve delegation before creating the context. Currently, this happens in Evm.
+    pub fn init(
+        allocator: Allocator,
+        raw_bytecode: []u8,
+        address: Address,
+        caller: Address,
+        value: U256,
+    ) !CallContext {
         var bytecode = try Bytecode.analyze(allocator, raw_bytecode);
 
         const analyzed = switch (bytecode) {
@@ -133,6 +124,8 @@ pub const CallContext = struct {
             .contract = .{
                 .bytecode = analyzed,
                 .address = address,
+                .caller = caller,
+                .value = value,
                 .allocator = allocator,
             },
             .stack = stack,
@@ -163,6 +156,7 @@ pub const Interpreter = struct {
         InvalidOffset,
         InvalidBytecode,
         Revert,
+        StateWriteInStaticCall,
     };
 
     /// Call-scoped execution context (stack, memory, bytecode).
@@ -186,12 +180,6 @@ pub const Interpreter = struct {
     /// Return data (set by RETURN or REVERT).
     return_data: ?[]const u8,
 
-    /// Return data buffer from the last sub-call.
-    ///
-    /// Used by RETURNDATASIZE and RETURNDATACOPY opcodes (EIP-211, Byzantium).
-    /// Updated after each sub-call (CALL, DELEGATECALL, STATICCALL, CREATE, CREATE2).
-    return_data_buffer: []const u8,
-
     /// Whether execution has halted.
     is_halted: bool,
 
@@ -200,6 +188,15 @@ pub const Interpreter = struct {
 
     /// Host interface for blockchain state access.
     host: Host,
+
+    /// Reference to the parent EVM for nested calls.
+    ///
+    /// This is only valid during `run()` execution.
+    /// It is null before `run()` is called and reset to null after `run()` completes.
+    ///
+    /// Used by opcode handlers that need access to EVM state (`return_data_buffer`, `is_static`)
+    /// or need to make nested calls (CALL, DELEGATECALL, STATICCALL, CREATE, CREATE2).
+    evm: ?*Evm,
 
     const Self = @This();
 
@@ -221,9 +218,9 @@ pub const Interpreter = struct {
             .table = spec.instructionTable(),
             .is_halted = false,
             .return_data = null,
-            .return_data_buffer = &[_]u8{}, // Empty initially, updated after sub-calls
             .env = env,
             .host = host,
+            .evm = null, // Set during run(), null otherwise
         };
     }
 
@@ -240,7 +237,9 @@ pub const Interpreter = struct {
     ///
     /// Returns the execution result including status, gas used, and return data.
     pub fn run(self: *Self, evm: *Evm) !InterpreterResult {
-        _ = evm; // Will be used by call/create handlers in future tasks
+        // Set EVM reference for opcode handlers to access.
+        self.evm = evm;
+        defer self.evm = null; // Clear on exit
 
         while (!self.is_halted) {
             self.step() catch |err| {
@@ -401,6 +400,7 @@ pub const Interpreter = struct {
             error.InvalidProgramCounter => .INVALID_PC,
             error.InvalidJump => .INVALID_JUMP,
             error.Revert => .REVERT,
+            error.StateWriteInStaticCall => .REVERT,
         };
 
         return InterpreterResult{

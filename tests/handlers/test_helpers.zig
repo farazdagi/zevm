@@ -83,7 +83,7 @@ pub fn createTestInterpreter(
 ) !Interpreter {
     const spec = Spec.forFork(fork);
     const host = mock_host.host();
-    const ctx = try CallContext.init(allocator, bytecode, contract_address);
+    const ctx = try CallContext.init(allocator, bytecode, contract_address, Address.zero(), U256.ZERO);
     return Interpreter.init(allocator, ctx, spec, gas_limit, env, host);
 }
 

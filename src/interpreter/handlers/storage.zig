@@ -20,7 +20,10 @@ pub fn opSload(interp: *Interpreter) !void {
 /// Note: This operation needs access to the storage state and has complex gas costs.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opSstore(interp: *Interpreter) !void {
-    _ = interp;
+    // SSTORE is not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 
@@ -40,7 +43,10 @@ pub fn opTload(interp: *Interpreter) !void {
 /// Note: This operation needs access to the transient storage state.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opTstore(interp: *Interpreter) !void {
-    _ = interp;
+    // TSTORE is not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 

@@ -37,7 +37,7 @@ test "JUMP: simple forward jump" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -72,7 +72,7 @@ test "JUMPI: conditional jump taken" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -105,7 +105,7 @@ test "JUMPI: conditional jump not taken" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -141,7 +141,7 @@ test "loop: simple counter loop" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -169,7 +169,7 @@ test "RETURN: empty return data" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -200,7 +200,7 @@ test "RETURN: with data in memory" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -238,7 +238,7 @@ test "REVERT: with error message" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -269,7 +269,7 @@ test "PC and GAS opcodes" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -306,7 +306,7 @@ test "INVALID: consumes all gas" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -334,7 +334,7 @@ test "JUMP: invalid destination error" {
     var evm = Evm.init(std.testing.allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero());
+    const ctx = try CallContext.init(std.testing.allocator, try std.testing.allocator.dupe(u8, &bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(std.testing.allocator, ctx, spec, 100000, &env, mock.host());
     defer interpreter.deinit();
 

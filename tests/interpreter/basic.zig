@@ -29,7 +29,7 @@ test "init and deinit" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -51,7 +51,7 @@ test "empty bytecode" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -71,7 +71,7 @@ test "STOP halts execution" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -93,7 +93,7 @@ test "multiple STOP opcodes (only first executed)" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -115,7 +115,7 @@ test "invalid opcode" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -135,7 +135,7 @@ test "unimplemented opcode" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -156,7 +156,7 @@ test "out of gas" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 2, &env, mock.host());
     defer interpreter.deinit();
 
@@ -188,7 +188,7 @@ test "Stack overflow - 1025 PUSH operations" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 1000000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -212,7 +212,7 @@ test "Stack underflow - ADD with only one item" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -243,7 +243,7 @@ test "Complex calculation - Fibonacci-like" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 
@@ -275,7 +275,7 @@ test "Chained operations with mixed ops" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero());
+    const ctx = try CallContext.init(allocator, try allocator.dupe(u8, bytecode), Address.zero(), Address.zero(), U256.ZERO);
     var interpreter = Interpreter.init(allocator, ctx, spec, 10000, &env, mock.host());
     defer interpreter.deinit();
 

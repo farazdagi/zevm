@@ -10,7 +10,10 @@ const Interpreter = @import("../interpreter.zig").Interpreter;
 /// Note: This operation requires access to memory and log state.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opLog0(interp: *Interpreter) !void {
-    _ = interp;
+    // LOG operations are not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 
@@ -20,7 +23,10 @@ pub fn opLog0(interp: *Interpreter) !void {
 /// Note: This operation requires access to memory and log state.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opLog1(interp: *Interpreter) !void {
-    _ = interp;
+    // LOG operations are not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 
@@ -30,7 +36,10 @@ pub fn opLog1(interp: *Interpreter) !void {
 /// Note: This operation requires access to memory and log state.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opLog2(interp: *Interpreter) !void {
-    _ = interp;
+    // LOG operations are not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 
@@ -40,7 +49,10 @@ pub fn opLog2(interp: *Interpreter) !void {
 /// Note: This operation requires access to memory and log state.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opLog3(interp: *Interpreter) !void {
-    _ = interp;
+    // LOG operations are not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 
@@ -50,7 +62,10 @@ pub fn opLog3(interp: *Interpreter) !void {
 /// Note: This operation requires access to memory and log state.
 /// It will be handled specially in the interpreter's execute() function.
 pub fn opLog4(interp: *Interpreter) !void {
-    _ = interp;
+    // LOG operations are not allowed in static call context (STATICCALL)
+    if (interp.evm.?.is_static) {
+        return error.StateWriteInStaticCall;
+    }
     return error.UnimplementedOpcode;
 }
 

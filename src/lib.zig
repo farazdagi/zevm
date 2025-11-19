@@ -7,7 +7,8 @@ pub const hardfork = @import("hardfork.zig");
 pub const gas = @import("gas/mod.zig");
 pub const context = @import("context.zig");
 pub const host = @import("host/mod.zig");
-pub const Evm = @import("evm.zig").Evm;
+pub const evm = @import("evm.zig");
+pub const Evm = evm.Evm;
 pub const Contract = @import("Contract.zig");
 
 pub fn add(a: i32, b: i32) i32 {
