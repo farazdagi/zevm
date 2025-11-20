@@ -15,6 +15,8 @@ pub const CallExecutor = call_types.CallExecutor;
 pub const evm = @import("evm.zig");
 pub const Evm = evm.Evm;
 pub const Contract = @import("Contract.zig");
+pub const AccessList = @import("AccessList.zig");
+pub const AccessListAccessor = AccessList.Accessor;
 
 pub fn add(a: i32, b: i32) i32 {
     return a + b;
@@ -31,4 +33,5 @@ test {
     _ = host;
     _ = call_types;
     _ = Evm;
+    _ = AccessList;
 }
