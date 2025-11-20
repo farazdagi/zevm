@@ -32,6 +32,19 @@ pub const Address = struct {
         return Self{ .inner = B160.init(b) };
     }
 
+    /// Create an Address from a U256 by taking the lower 20 bytes.
+    ///
+    /// In Ethereum, addresses are represented as U256 values on the stack,
+    /// but only the rightmost 20 bytes are significant. This function extracts
+    /// those bytes to create an Address.
+    ///
+    /// The conversion extracts bytes[12..32] from the big-endian byte representation,
+    /// which corresponds to the lower 20 bytes of the 256-bit value.
+    pub inline fn fromU256(value: anytype) Address {
+        const value_bytes = value.toBeBytes();
+        return Address.init(value_bytes[12..32].*);
+    }
+
     /// Create a zero-filled address.
     pub fn zero() Self {
         return Self{ .inner = B160.zero() };
@@ -260,6 +273,7 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 const expectEqualStrings = std.testing.expectEqualStrings;
+const expectEqualSlices = std.testing.expectEqualSlices;
 
 test "Address.fromHex - valid addresses" {
     const test_cases = [_]struct {
@@ -827,4 +841,80 @@ test "Address.format" {
         defer allocator.free(expected_double);
         try expectEqualStrings(expected_double, result4);
     }
+}
+
+test "Address.fromU256 - extracts lower 20 bytes" {
+    const U256 = @import("big.zig").U256;
+
+    const test_cases = [_]struct {
+        value: u64,
+        expected_bytes: [20]u8,
+    }{
+        // Small value fits in lower bytes.
+        .{
+            .value = 0x123456789ABCDEF0,
+            .expected_bytes = [_]u8{0} ** 12 ++ [_]u8{ 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 },
+        },
+        // Zero value.
+        .{
+            .value = 0,
+            .expected_bytes = [_]u8{0} ** 20,
+        },
+        // Max u64 value.
+        .{
+            .value = 0xFFFFFFFFFFFFFFFF,
+            .expected_bytes = [_]u8{0} ** 12 ++ [_]u8{0xFF} ** 8,
+        },
+    };
+
+    for (test_cases) |tc| {
+        const value = U256.fromU64(tc.value);
+        const addr = Address.fromU256(value);
+        try expectEqualSlices(u8, &tc.expected_bytes, &addr.inner.bytes);
+    }
+}
+
+test "Address.fromU256 - upper bits ignored" {
+    const U256 = @import("big.zig").U256;
+
+    // Create U256 with non-zero upper 12 bytes and zero lower 20 bytes.
+    const test_bytes = [_]u8{0xFF} ** 12 ++ [_]u8{0x00} ** 20;
+    const value = U256.fromBeBytesPadded(&test_bytes);
+    const addr = Address.fromU256(value);
+
+    // Address should be all zeros (upper 12 bytes ignored).
+    try expect(addr.isZero());
+}
+
+test "Address.fromU256 - known address pattern" {
+    const U256 = @import("big.zig").U256;
+
+    // Create a U256 from a known address.
+    const expected_addr = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
+
+    // Convert address to U256 (pad with zeros on left).
+    const value = U256.fromBeBytesPadded(&expected_addr.inner.bytes);
+
+    // Convert back to address.
+    const result_addr = Address.fromU256(value);
+
+    // Should match original.
+    try expect(result_addr.eql(expected_addr));
+}
+
+test "Address.fromU256 - round trip with upper bits" {
+    const U256 = @import("big.zig").U256;
+
+    // Create U256 with non-zero upper bits.
+    const full_bytes = [_]u8{0xAA} ** 12 ++ [_]u8{
+        0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d,
+        0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3,
+        0x7a, 0xa9, 0x60, 0x45,
+    };
+    const value = U256.fromBeBytesPadded(&full_bytes);
+    const addr = Address.fromU256(value);
+
+    // Check that we got the lower 20 bytes.
+    const expected_addr = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
+    try expect(addr.eql(expected_addr));
 }
