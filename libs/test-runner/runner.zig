@@ -117,8 +117,6 @@ pub fn main() !void {
             continue;
         }
 
-        slowest.startTiming();
-
         const friendly_name = getFriendlyName(t.name);
 
         // Format name with :: separator for display and filtering
@@ -131,6 +129,9 @@ pub fn main() !void {
                 continue;
             }
         }
+
+        // Start timing only for tests that pass the filter
+        slowest.startTiming();
 
         current_test = formatted_name;
 
