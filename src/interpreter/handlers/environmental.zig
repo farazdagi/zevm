@@ -20,11 +20,10 @@ pub fn opAddress(interp: *Interpreter) !void {
 pub fn opBalance(interp: *Interpreter) !void {
     const address_ptr = try interp.ctx.stack.peekMut(0);
 
-    // Convert U256 to Address (take last 20 bytes)
-    const address_bytes = address_ptr.toBeBytes();
-    const address = Address.init(address_bytes[12..32].*);
+    // Convert U256 to Address (take last 20 bytes).
+    const address = Address.fromU256(address_ptr.*);
 
-    // Query balance from host and write directly to stack
+    // Query balance from host and write directly to stack.
     address_ptr.* = interp.host.balance(address);
 }
 
@@ -195,11 +194,10 @@ pub fn opCodecopy(interp: *Interpreter) !void {
 pub fn opExtcodesize(interp: *Interpreter) !void {
     const address_ptr = try interp.ctx.stack.peekMut(0);
 
-    // Convert U256 to Address (take last 20 bytes)
-    const address_bytes = address_ptr.toBeBytes();
-    const address = Address.init(address_bytes[12..32].*);
+    // Convert U256 to Address (take last 20 bytes).
+    const address = Address.fromU256(address_ptr.*);
 
-    // Query code size from host and write directly to stack
+    // Query code size from host and write directly to stack.
     const size = interp.host.codeSize(address);
     address_ptr.* = U256.fromU64(@intCast(size));
 }
@@ -220,11 +218,10 @@ pub fn opExtcodecopy(interp: *Interpreter) !void {
 
     if (length == 0) return; // No-op for zero length
 
-    // Convert U256 to Address (take last 20 bytes)
-    const address_bytes = address_u256.toBeBytes();
-    const address = Address.init(address_bytes[12..32].*);
+    // Convert U256 to Address (take last 20 bytes).
+    const address = Address.fromU256(address_u256);
 
-    // Ensure memory is large enough (gas already charged by dynamic gas function)
+    // Ensure memory is large enough (gas already charged by dynamic gas function).
     try interp.ctx.memory.ensureCapacity(dest_offset, length);
 
     // Get code from host (we own this slice and must free it)
@@ -254,11 +251,10 @@ pub fn opExtcodecopy(interp: *Interpreter) !void {
 pub fn opExtcodehash(interp: *Interpreter) !void {
     const address_ptr = try interp.ctx.stack.peekMut(0);
 
-    // Convert U256 to Address (take last 20 bytes)
-    const address_bytes = address_ptr.toBeBytes();
-    const address = Address.init(address_bytes[12..32].*);
+    // Convert U256 to Address (take last 20 bytes).
+    const address = Address.fromU256(address_ptr.*);
 
-    // Query code hash from host and write directly to stack
+    // Query code hash from host and write directly to stack.
     const code_hash = interp.host.codeHash(address);
     address_ptr.* = U256.fromBeBytes(&code_hash.bytes);
 }

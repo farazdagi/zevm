@@ -52,8 +52,7 @@ pub fn opCall(interp: *Interpreter) !void {
     const ret_size_u256 = try interp.ctx.stack.pop();
 
     // Convert address (last 20 bytes of U256).
-    const address_bytes = address_u256.toBeBytes();
-    const target = Address.init(address_bytes[12..32].*);
+    const target = Address.fromU256(address_u256);
 
     // Convert offsets and lengths to usize.
     const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
@@ -166,8 +165,7 @@ pub fn opDelegatecall(interp: *Interpreter) !void {
     const ret_size_u256 = try interp.ctx.stack.pop();
 
     // Convert address (last 20 bytes of U256).
-    const address_bytes = address_u256.toBeBytes();
-    const target = Address.init(address_bytes[12..32].*);
+    const target = Address.fromU256(address_u256);
 
     // Convert offsets and lengths to usize.
     const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
@@ -254,8 +252,7 @@ pub fn opStaticcall(interp: *Interpreter) !void {
     const ret_size_u256 = try interp.ctx.stack.pop();
 
     // Convert address (last 20 bytes of U256).
-    const address_bytes = address_u256.toBeBytes();
-    const target = Address.init(address_bytes[12..32].*);
+    const target = Address.fromU256(address_u256);
 
     // Convert offsets and lengths to usize.
     const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
