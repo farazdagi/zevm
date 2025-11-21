@@ -1,7 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
-const constants = @import("../constants.zig");
 const U256 = @import("../primitives/big.zig").U256;
 
 /// EVM stack implementation.
@@ -9,7 +8,7 @@ const U256 = @import("../primitives/big.zig").U256;
 /// The EVM uses a stack-based architecture with a maximum depth of 1024 items.
 /// Each item on the stack is a 256-bit word (U256).
 pub const Stack = struct {
-    /// Heap-allocated array (preallocated to STACK_LIMIT).
+    /// Heap-allocated array (preallocated to capacity).
     data: []U256,
 
     /// Current number of items on the stack.
@@ -21,7 +20,8 @@ pub const Stack = struct {
     const Self = @This();
 
     /// Maximum stack capacity as defined by the Ethereum specification.
-    pub const CAPACITY: usize = constants.STACK_LIMIT;
+    /// This matches spec.stack_limit (default 1024).
+    pub const CAPACITY: usize = 1024;
 
     /// Errors that can occur during stack operations.
     pub const Error = error{

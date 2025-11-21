@@ -10,7 +10,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const constants = @import("constants.zig");
 const Address = @import("primitives/mod.zig").Address;
 const U256 = @import("primitives/mod.zig").U256;
 const Env = @import("context.zig").Env;
@@ -206,7 +205,7 @@ pub const Evm = struct {
     /// Handles value transfers, snapshots, and return data buffer management.
     pub fn call(self: *Self, inputs: CallInputs) !CallResult {
         // Assert depth limit.
-        if (self.depth >= constants.CALL_DEPTH_LIMIT) {
+        if (self.depth >= self.spec.call_depth_limit) {
             return CallResult{
                 .status = .CALL_DEPTH_EXCEEDED,
                 .gas_used = inputs.gas_limit,

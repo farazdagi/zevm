@@ -553,6 +553,48 @@ Zig's type system ensures:
 - Fork configurations are complete (missing fields = compile error)
 - No runtime type errors
 
+### 6. All Protocol Configuration in Spec
+
+**Spec is the single source of truth for all protocol-level configuration**, regardless of whether values change across forks.
+
+**Why this matters:**
+
+The question "should this constant go in Spec or a separate constants file?" has a simple answer: **if it's protocol configuration, it belongs in Spec**.
+
+- A value that "never changed" just means no fork has changed it *yet*
+- Many Spec fields have never changed (e.g., `call_value_transfer_cost = 9000`, `log_base_cost = 375`) -- they're still in Spec
+- Zig's default values eliminate boilerplate: define once in Spec, inherit everywhere
+- If a future fork changes the value, it's already in the right place
+
+**Guidelines:**
+
+1. **Protocol limits** (stack depth, call depth, code size limits) → Spec fields with defaults
+2. **Gas costs** (static costs, stipends, refund amounts) → Spec fields with defaults
+3. **Feature flags** (EIP activation) → Spec boolean fields
+4. **Implementation details** (array sizes for pre-allocation) → Local constants in implementation files
+
+**Example - Correct:**
+```zig
+// In Spec struct (hardfork.zig)
+stack_limit: usize = 1024,        // Protocol limit
+call_depth_limit: usize = 1024,   // Protocol limit
+sstore_set_gas: u64 = 20000,      // Gas cost
+call_stipend: u64 = 2300,         // Gas cost
+
+// Usage
+if (self.depth >= self.spec.call_depth_limit) { ... }
+```
+
+**Example - Incorrect:**
+```zig
+// DON'T create separate constants files for protocol values
+// constants.zig  <-- WRONG
+pub const STACK_LIMIT: usize = 1024;
+pub const CALL_DEPTH_LIMIT: usize = 1024;
+```
+
+**Exception:** Implementation-level constants that are not protocol-defined (e.g., `Stack.CAPACITY = 1024` for pre-allocation) can remain as local constants in their implementation files. These match protocol values but are implementation details.
+
 ## Current Limitations & Future Work
 
 ### Chain Extensibility (Future Sprint)

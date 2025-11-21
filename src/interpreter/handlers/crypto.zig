@@ -5,6 +5,15 @@ const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 
+/// Keccak-256 hash of empty string.
+/// keccak256("") = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+pub const EMPTY_KECCAK256: [32]u8 = [_]u8{
+    0xc5, 0xd2, 0x46, 0x01, 0x86, 0xf7, 0x23, 0x3c,
+    0x92, 0x7e, 0x7d, 0xb2, 0xdc, 0xc7, 0x03, 0xc0,
+    0xe5, 0x00, 0xb6, 0x53, 0xca, 0x82, 0x27, 0x3b,
+    0x7b, 0xfa, 0xd8, 0x04, 0x5d, 0x85, 0xa4, 0x70,
+};
+
 /// Compute Keccak-256 hash (KECCAK256).
 ///
 /// Stack: [offset, size, ...] -> [hash, ...]
@@ -45,7 +54,6 @@ const MockHost = @import("../../host/mock.zig").MockHost;
 const CallContext = @import("../interpreter.zig").CallContext;
 const AnalyzedBytecode = @import("../bytecode.zig").AnalyzedBytecode;
 const Evm = @import("../../evm.zig").Evm;
-const constants = @import("../../constants.zig");
 
 test "opKeccak256: empty string" {
     const allocator = std.testing.allocator;
@@ -73,7 +81,7 @@ test "opKeccak256: empty string" {
     // Verify result matches EMPTY_KECCAK256 constant
     const result = try interp.ctx.stack.pop();
     const result_bytes = result.toBeBytes();
-    try expectEqualSlices(u8, &constants.EMPTY_KECCAK256, &result_bytes);
+    try expectEqualSlices(u8, &EMPTY_KECCAK256, &result_bytes);
 }
 
 test "opKeccak256: known value" {

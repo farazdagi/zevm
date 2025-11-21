@@ -112,6 +112,15 @@ pub const Spec = struct {
     /// for the fork's features and enabled opcodes.
     updateHandlers: ?*const fn (*InstructionTable) void,
 
+    /// Maximum operand stack depth.
+    stack_limit: usize = 1024,
+
+    /// Maximum call depth (nested CALL/CREATE operations).
+    call_depth_limit: usize = 1024,
+
+    /// Number of block hashes accessible via BLOCKHASH (pre-Prague).
+    block_hash_history: u64 = 256,
+
     /// EIP-3529: Reduction in refunds
     /// Pre-London: 2 (50%), Post-London: 5 (20%)
     max_refund_quotient: u64,
@@ -147,6 +156,12 @@ pub const Spec = struct {
     /// Cost per word (32 bytes) for memory copy operations.
     /// Used by CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY, MCOPY.
     copy_word_cost: u64 = 3,
+
+    /// Gas cost for SSTORE when setting storage (zero -> non-zero).
+    sstore_set_gas: u64 = 20000,
+
+    /// Gas cost for SSTORE when resetting storage (non-zero -> different).
+    sstore_reset_gas: u64 = 5000,
 
     /// Log costs (constant across all forks).
     log_base_cost: u64 = 375,
