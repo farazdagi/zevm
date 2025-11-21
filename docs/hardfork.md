@@ -47,8 +47,9 @@ pub const LONDON = forkSpec(.LONDON, BERLIN, .{
     .sstore_clears_schedule = 4800, // EIP-3529: Reduced from 15000
     .has_basefee = true,            // EIP-3198
     .updateCosts = struct {
-        fn f(table: *FixedGasCosts, spec: Spec) void {
-            table.costs[@intFromEnum(Opcode.BASEFEE)] = FixedGasCosts.BASE;
+        fn f(costs: *[256]u64, spec: Spec) void {
+            _ = spec;
+            costs[@intFromEnum(Opcode.BASEFEE)] = FixedGasCosts.BASE;
         }
     }.f,
     .updateHandlers = struct {
@@ -108,11 +109,11 @@ Each fork defines an optional `updateCosts` function that modifies the cost tabl
 pub const FRONTIER = Spec{
     // ...
     .updateCosts = struct {
-        fn f(table: *FixedGasCosts, spec: Spec) void {
+        fn f(costs: *[256]u64, spec: Spec) void {
             _ = spec;
-            table.costs[@intFromEnum(Opcode.ADD)] = FixedGasCosts.VERYLOW;
-            table.costs[@intFromEnum(Opcode.MUL)] = FixedGasCosts.LOW;
-            table.costs[@intFromEnum(Opcode.SLOAD)] = 50;
+            costs[@intFromEnum(Opcode.ADD)] = FixedGasCosts.VERYLOW;
+            costs[@intFromEnum(Opcode.MUL)] = FixedGasCosts.LOW;
+            costs[@intFromEnum(Opcode.SLOAD)] = 50;
             // ... all other opcodes
         }
     }.f,
@@ -123,12 +124,12 @@ pub const FRONTIER = Spec{
 pub const TANGERINE = forkSpec(.TANGERINE, HOMESTEAD, .{
     .cold_sload_cost = 200, // EIP-150
     .updateCosts = struct {
-        fn f(table: *FixedGasCosts, spec: Spec) void {
+        fn f(costs: *[256]u64, spec: Spec) void {
             _ = spec;
             // Only specify changes
-            table.costs[@intFromEnum(Opcode.SLOAD)] = 200; // Was 50
-            table.costs[@intFromEnum(Opcode.BALANCE)] = 400; // Was 20
-            table.costs[@intFromEnum(Opcode.CALL)] = 700; // Was 40
+            costs[@intFromEnum(Opcode.SLOAD)] = 200; // Was 50
+            costs[@intFromEnum(Opcode.BALANCE)] = 400; // Was 20
+            costs[@intFromEnum(Opcode.CALL)] = 700; // Was 40
         }
     }.f,
 });
@@ -437,10 +438,10 @@ pub const OSAKA = forkSpec(.OSAKA, PRAGUE, .{
 
     // Optionally update costs
     .updateCosts = struct {
-        fn f(table: *FixedGasCosts, spec: Spec) void {
+        fn f(costs: *[256]u64, spec: Spec) void {
             _ = spec;
             // Modify costs
-            table.costs[@intFromEnum(Opcode.SOME_OP)] = 50;
+            costs[@intFromEnum(Opcode.SOME_OP)] = 50;
         }
     }.f,
 

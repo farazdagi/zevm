@@ -90,7 +90,7 @@ fn computeCostsForSpec(comptime spec: Spec) FixedGasCosts {
 
     // Apply this fork's cost updates (if any)
     if (spec.updateCosts) |updateFn| {
-        updateFn(&table, spec);
+        updateFn(&table.costs, spec);
     }
 
     return table;
