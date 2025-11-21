@@ -13,6 +13,18 @@ pub const Error = error{
     InsufficientBalance,
 };
 
+/// Result from SSTORE operation with metadata for gas calculation.
+///
+/// Returned by `sstore()` which performs the write AND returns value info.
+/// To check whether access is cold/warm, use `AccessList.warmSlot()` before calling.
+pub const SstoreResult = struct {
+    /// Value at transaction start (for net metering).
+    original_value: U256,
+
+    /// Value before this SSTORE (now overwritten).
+    current_value: U256,
+};
+
 /// Opaque pointer to concrete implementation.
 ptr: *anyopaque,
 
@@ -77,6 +89,30 @@ pub const VTable = struct {
     /// Returns true if the account exists in state (has balance, code, or nonce).
     /// Returns false if the account does not exist in any state map.
     accountExists: *const fn (ptr: *anyopaque, address: Address) bool,
+
+    /// Load value from persistent storage.
+    ///
+    /// Returns the value at the given storage slot for the address.
+    /// Returns U256.zero() for uninitialized slots.
+    sload: *const fn (ptr: *anyopaque, address: Address, key: U256) U256,
+
+    /// Store value to persistent storage.
+    ///
+    /// Writes the value to the storage slot and returns metadata for gas calculation.
+    /// The returned result contains `original_value` (at tx start) and `current_value`
+    /// (before this write). Cold/warm status should be tracked via AccessList.
+    sstore: *const fn (ptr: *anyopaque, address: Address, key: U256, value: U256) SstoreResult,
+
+    /// Load value from transient (cleared at the end of each tx) storage (EIP-1153).
+    ///
+    /// Returns the value at the given transient storage slot.
+    /// Returns U256.zero() for uninitialized slots.
+    tload: *const fn (ptr: *anyopaque, address: Address, key: U256) U256,
+
+    /// Store value to transient storage (EIP-1153).
+    ///
+    /// Writes the value to the transient storage slot.
+    tstore: *const fn (ptr: *anyopaque, address: Address, key: U256, value: U256) void,
 };
 
 pub inline fn balance(self: Host, address: Address) U256 {
@@ -117,4 +153,20 @@ pub inline fn nonce(self: Host, address: Address) u64 {
 
 pub inline fn accountExists(self: Host, address: Address) bool {
     return self.vtable.accountExists(self.ptr, address);
+}
+
+pub inline fn sload(self: Host, address: Address, key: U256) U256 {
+    return self.vtable.sload(self.ptr, address, key);
+}
+
+pub inline fn sstore(self: Host, address: Address, key: U256, value: U256) SstoreResult {
+    return self.vtable.sstore(self.ptr, address, key, value);
+}
+
+pub inline fn tload(self: Host, address: Address, key: U256) U256 {
+    return self.vtable.tload(self.ptr, address, key);
+}
+
+pub inline fn tstore(self: Host, address: Address, key: U256, value: U256) void {
+    self.vtable.tstore(self.ptr, address, key, value);
 }

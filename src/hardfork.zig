@@ -143,6 +143,12 @@ pub const Spec = struct {
     /// Cost of warm storage read
     warm_storage_read_cost: u64,
 
+    /// EIP-2200: Base storage read cost used in SSTORE gas formulas (`SLOAD_GAS` constant).
+    ///
+    /// Pre-Berlin: Tracks `cold_sload_cost` (the only SLOAD cost at the time).
+    /// Berlin+: Uses `warm_storage_read_cost` (SSTORE assumes slot is already accessed).
+    sload_gas: u64 = 50,
+
     /// EIP-3860: Limit and meter initcode
     /// Maximum initcode size (null = no limit)
     max_initcode_size: ?usize,
@@ -405,7 +411,7 @@ pub const FRONTIER = Spec{
             costs[@intFromEnum(Opcode.MSTORE)] = FixedGasCosts.VERYLOW;
             costs[@intFromEnum(Opcode.MSTORE8)] = FixedGasCosts.VERYLOW;
             costs[@intFromEnum(Opcode.SLOAD)] = 50;
-            costs[@intFromEnum(Opcode.SSTORE)] = 100;
+            costs[@intFromEnum(Opcode.SSTORE)] = 0; // Gas calculated in handler.
             costs[@intFromEnum(Opcode.JUMP)] = FixedGasCosts.MID;
             costs[@intFromEnum(Opcode.JUMPI)] = FixedGasCosts.HIGH;
             costs[@intFromEnum(Opcode.PC)] = FixedGasCosts.BASE;
@@ -527,7 +533,9 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.MSTORE)] = .{ .execute = handlers.opMstore, .dynamicGasCost = DynamicGasCosts.opMstore };
             t[@intFromEnum(Opcode.MSTORE8)] = .{ .execute = handlers.opMstore8, .dynamicGasCost = DynamicGasCosts.opMstore8 };
             t[@intFromEnum(Opcode.SLOAD)] = .{ .execute = handlers.opSload };
-            t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore, .dynamicGasCost = DynamicGasCosts.opSstore };
+            // SSTORE: dynamicGasCost = null because gas is calculated in handler.
+            // SSTORE gas depends on storage write result (original/current values).
+            t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore };
             t[@intFromEnum(Opcode.JUMP)] = .{ .execute = handlers.opJump, .is_control_flow = true };
             t[@intFromEnum(Opcode.JUMPI)] = .{ .execute = handlers.opJumpi }; // PC change detected in step()
             t[@intFromEnum(Opcode.PC)] = .{ .execute = handlers.opPc };
@@ -640,6 +648,7 @@ pub const DAO_FORK = HOMESTEAD;
 /// EIP-158: reduces state size by removing a large number of empty accounts.
 pub const TANGERINE = forkSpec(.TANGERINE, HOMESTEAD, .{
     .cold_sload_cost = 200, // EIP-150
+    .sload_gas = 200, // EIP-2200: Tracks cold_sload_cost pre-Berlin
     .cold_account_access_cost = 0,
     .updateCosts = struct {
         fn f(costs: *[256]u64, spec: Spec) void {
@@ -753,6 +762,7 @@ pub const PETERSBURG = CONSTANTINOPLE;
 /// EIP-2200: other opcode gas price alterations.
 pub const ISTANBUL = forkSpec(.ISTANBUL, PETERSBURG, .{
     .cold_sload_cost = 800, // EIP-1884
+    .sload_gas = 800, // EIP-2200: Tracks cold_sload_cost pre-Berlin
     .updateCosts = struct {
         fn f(costs: *[256]u64, spec: Spec) void {
             _ = spec;
@@ -792,9 +802,10 @@ pub const MUIR_GLACIER = ISTANBUL;
 /// EIP-2929: gas cost increases for state access opcodes
 /// EIP-2930: adds optional access lists
 pub const BERLIN = forkSpec(.BERLIN, ISTANBUL, .{
-    .cold_sload_cost = 2100, // EIP-2929
-    .cold_account_access_cost = 2600, // EIP-2929
-    .warm_storage_read_cost = 100, // EIP-2929
+    .cold_sload_cost = 2100, // EIP-2929: Cold storage access
+    .cold_account_access_cost = 2600, // EIP-2929: Cold account access
+    .warm_storage_read_cost = 100, // EIP-2929: Warm access
+    .sload_gas = 100, // EIP-2200: Now uses warm cost (SSTORE assumes warm access)
     .updateCosts = struct {
         fn f(costs: *[256]u64, spec: Spec) void {
             // EIP-2929: Warm/cold storage access costs
