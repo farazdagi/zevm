@@ -1,15 +1,8 @@
 # Zevm
 
-Zig implementation of the Ethereum Virtual Machine (EVM).
+Zevm is an implementation of the Ethereum Virtual Machine (EVM) written in Zig.
 
-## Overview
-
-Zevm is built from the ground up in Zig with the following goals:
-
-- **Correctness**: Pass the official Ethereum test suite
-- **Performance**: Competitive with state-of-the-art implementations (revm, geth, evmone)
-- **Readability**: Serve as a clear reference implementation in idiomatic Zig
-- **Extensibility**: Multi-chain support for Ethereum L2s (Optimism, Arbitrum, etc.)
+The goal is to create a concise and readable implementation in idiomatic Zig, with performance on par with the state of the art EVM implementations.
 
 ## Status
 
