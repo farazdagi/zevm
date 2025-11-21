@@ -130,7 +130,7 @@ pub fn opCall(interp: *Interpreter) !void {
     interp.gas.used -|= gas_refund;
 
     // Add sub-call refunds to our refund counter.
-    interp.gas.refund(result.gas_refund);
+    interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0) to stack.
     const success: u64 = if (result.status == .SUCCESS) 1 else 0;
@@ -227,7 +227,7 @@ pub fn opDelegatecall(interp: *Interpreter) !void {
     interp.gas.used -|= gas_refund;
 
     // Add sub-call refunds.
-    interp.gas.refund(result.gas_refund);
+    interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0) to stack.
     const success: u64 = if (result.status == .SUCCESS) 1 else 0;
@@ -313,7 +313,7 @@ pub fn opStaticcall(interp: *Interpreter) !void {
     interp.gas.used -|= gas_refund;
 
     // Add sub-call refunds.
-    interp.gas.refund(result.gas_refund);
+    interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0) to stack.
     const success: u64 = if (result.status == .SUCCESS) 1 else 0;

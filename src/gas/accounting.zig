@@ -22,8 +22,10 @@ pub const Gas = struct {
     used: u64,
 
     /// Gas refunded (SSTORE, SELFDESTRUCT, etc.)
-    /// Capped per EIP-3529 (refund divisor varies by fork)
-    refunded: u64,
+    ///
+    /// Capped per EIP-3529 (refund divisor varies by fork).
+    /// Signed because SSTORE can have negative adjustments mid-execution.
+    refunded: i64,
 
     /// Last memory expansion cost (for incremental calculation)
     /// Updated by updateMemoryCost after each expansion
@@ -64,21 +66,24 @@ pub const Gas = struct {
         return self.limit - self.used;
     }
 
-    /// Add gas refund.
+    /// Adjust gas refund amount.
     ///
-    /// Note: The actual refund is capped when finalizing (EIP-3529).
-    /// We track the full refund amount here and cap it later.
-    pub fn refund(self: *Self, amount: u64) void {
-        self.refunded += amount;
+    /// SSTORE can have negative refunds (anti-refunds) when restoring storage from a cleared state.
+    /// The final refund is clamped to non-negative when finalizing (EIP-3529).
+    /// At call frame level, refund may temporary go negative, transaction wise it is always >= 0.
+    pub fn adjustRefund(self: *Self, amount: i64) void {
+        self.refunded +|= amount;
     }
 
     /// Calculate final refund amount (capped per EIP-3529).
     ///
     /// Refund cap varies by fork (EIP-3529 changed from used/2 to used/5).
     /// This is called after execution to determine actual refund.
+    /// Negative accumulated refund is clamped to zero.
     pub fn finalRefund(self: *const Self) u64 {
+        if (self.refunded <= 0) return 0;
         const max_refund = self.used / self.spec.max_refund_quotient;
-        return @min(self.refunded, max_refund);
+        return @min(@as(u64, @intCast(self.refunded)), max_refund);
     }
 
     /// Get gas left after accounting for refund.
@@ -224,8 +229,8 @@ test "Gas: refund" {
         spec: Spec,
         limit: u64,
         consume_amount: u64,
-        refund_amounts: []const u64,
-        expected_refunded: u64,
+        refund_amounts: []const i64,
+        expected_refunded: i64,
         expected_final_refund: u64,
         expected_remaining_with_refund: u64,
     }{
@@ -234,7 +239,7 @@ test "Gas: refund" {
             .spec = Spec.forFork(.CANCUN),
             .limit = 1000,
             .consume_amount = 500,
-            .refund_amounts = &[_]u64{ 100, 50 },
+            .refund_amounts = &[_]i64{ 100, 50 },
             .expected_refunded = 150,
             .expected_final_refund = 100, // Capped at 500/5 = 100
             .expected_remaining_with_refund = 600, // 500 remaining + 100 refund
@@ -244,7 +249,7 @@ test "Gas: refund" {
             .spec = Spec.forFork(.CANCUN),
             .limit = 10000,
             .consume_amount = 5000,
-            .refund_amounts = &[_]u64{2000},
+            .refund_amounts = &[_]i64{2000},
             .expected_refunded = 2000,
             .expected_final_refund = 1000, // Capped at 5000/5 = 1000
             .expected_remaining_with_refund = 6000, // 5000 remaining + 1000 refund
@@ -254,7 +259,7 @@ test "Gas: refund" {
             .spec = Spec.forFork(.CANCUN),
             .limit = 10000,
             .consume_amount = 5000,
-            .refund_amounts = &[_]u64{1000},
+            .refund_amounts = &[_]i64{1000},
             .expected_refunded = 1000,
             .expected_final_refund = 1000, // Within cap of 5000/5 = 1000
             .expected_remaining_with_refund = 6000, // 5000 remaining + 1000 refund
@@ -264,10 +269,30 @@ test "Gas: refund" {
             .spec = Spec.forFork(.BERLIN),
             .limit = 10000,
             .consume_amount = 5000,
-            .refund_amounts = &[_]u64{3000},
+            .refund_amounts = &[_]i64{3000},
             .expected_refunded = 3000,
             .expected_final_refund = 2500, // Capped at 5000/2 = 2500
             .expected_remaining_with_refund = 7500, // 5000 remaining + 2500 refund
+        },
+        // Negative adjustment mid-execution
+        .{
+            .spec = Spec.forFork(.CANCUN),
+            .limit = 10000,
+            .consume_amount = 5000,
+            .refund_amounts = &[_]i64{ 1000, -500 },
+            .expected_refunded = 500,
+            .expected_final_refund = 500, // Within cap of 5000/5 = 1000
+            .expected_remaining_with_refund = 5500, // 5000 remaining + 500 refund
+        },
+        // Net negative refund clamps to zero
+        .{
+            .spec = Spec.forFork(.CANCUN),
+            .limit = 10000,
+            .consume_amount = 5000,
+            .refund_amounts = &[_]i64{ 100, -500 },
+            .expected_refunded = -400,
+            .expected_final_refund = 0, // Clamped to 0
+            .expected_remaining_with_refund = 5000, // 5000 remaining + 0 refund
         },
     };
 
@@ -276,7 +301,7 @@ test "Gas: refund" {
         try gas.consume(tc.consume_amount);
 
         for (tc.refund_amounts) |amount| {
-            gas.refund(amount);
+            gas.adjustRefund(amount);
         }
 
         try expectEqual(tc.expected_refunded, gas.refunded);

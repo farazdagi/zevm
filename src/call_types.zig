@@ -55,7 +55,7 @@ pub const CallResult = struct {
     gas_used: u64,
 
     /// Gas refunded by the call.
-    gas_refund: u64,
+    gas_refund: i64,
 
     /// Output data from the call.
     output: []const u8,

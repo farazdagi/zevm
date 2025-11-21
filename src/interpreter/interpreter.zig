@@ -65,8 +65,9 @@ pub const InterpreterResult = struct {
     /// Total gas used
     gas_used: u64,
 
-    /// Gas refunded (capped per EIP-3529)
-    gas_refund: u64,
+    /// Gas refunded (may be negative mid-transaction).
+    /// Capped per EIP-3529 only at transaction finalization.
+    gas_refund: i64,
 
     /// Return data (from RETURN or REVERT)
     return_data: ?[]const u8,
@@ -426,7 +427,7 @@ pub const Interpreter = struct {
         return InterpreterResult{
             .status = status,
             .gas_used = self.gas.used,
-            .gas_refund = self.gas.finalRefund(),
+            .gas_refund = self.gas.refunded,
             .return_data = self.return_data,
         };
     }
@@ -436,7 +437,7 @@ pub const Interpreter = struct {
         return InterpreterResult{
             .status = .SUCCESS,
             .gas_used = self.gas.used,
-            .gas_refund = self.gas.finalRefund(),
+            .gas_refund = self.gas.refunded,
             .return_data = self.return_data,
         };
     }

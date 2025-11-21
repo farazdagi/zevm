@@ -22,7 +22,7 @@ test "Pre-EIP-3529 refund cap (used/2)" {
     try gas.consume(5000);
 
     // Try to refund 3000, cap is used/2 = 2500
-    gas.refund(3000);
+    gas.adjustRefund(3000);
     try expectEqual(3000, gas.refunded); // Tracks full amount
     try expectEqual(2500, gas.finalRefund()); // But capped at 2500
 }
@@ -34,7 +34,7 @@ test "Post-EIP-3529 refund cap (used/5)" {
     try gas.consume(5000);
 
     // Try to refund 3000, cap is used/5 = 1000
-    gas.refund(3000);
+    gas.adjustRefund(3000);
     try expectEqual(3000, gas.refunded); // Tracks full amount
     try expectEqual(1000, gas.finalRefund()); // But capped at 1000
 }
@@ -60,7 +60,7 @@ test "Refund evolution across forks" {
 
         var gas = Gas.init(10000, spec);
         try gas.consume(5000);
-        gas.refund(3000);
+        gas.adjustRefund(3000);
         try expectEqual(tc.expected_cap, gas.finalRefund());
     }
 }
@@ -229,8 +229,7 @@ test "Gas - same code, different fork costs" {
         const spec = Spec.forFork(.BERLIN);
         var gas = Gas.init(100000, spec);
         try gas.consume(5000);
-        const refund_amount = gas.spec.sstore_clears_schedule;
-        gas.refund(refund_amount);
+        gas.adjustRefund(@intCast(gas.spec.sstore_clears_schedule));
 
         // Berlin: 15000 refund, capped at used/2 = 2500
         try expectEqual(15000, gas.refunded);
@@ -242,8 +241,7 @@ test "Gas - same code, different fork costs" {
         const spec = Spec.forFork(.LONDON);
         var gas = Gas.init(100000, spec);
         try gas.consume(5000);
-        const refund_amount = gas.spec.sstore_clears_schedule;
-        gas.refund(refund_amount);
+        gas.adjustRefund(@intCast(gas.spec.sstore_clears_schedule));
 
         // London: 4800 refund, capped at used/5 = 1000
         try expectEqual(4800, gas.refunded);
@@ -264,7 +262,7 @@ test "Gas - fork comparison for storage" {
         // Simulate: cold SLOAD + SSTORE clear
         try gas.consume(gas.spec.cold_sload_cost);
         try gas.consume(5000); // Approximate SSTORE cost
-        gas.refund(gas.spec.sstore_clears_schedule);
+        gas.adjustRefund(@intCast(gas.spec.sstore_clears_schedule));
 
         results[i] = gas.used - gas.finalRefund();
     }
@@ -283,7 +281,7 @@ test "Zero gas used with refunds" {
     var gas = Gas.init(10000, spec);
 
     // No gas used, try to refund
-    gas.refund(1000);
+    gas.adjustRefund(1000);
     try expectEqual(1000, gas.refunded);
     try expectEqual(0, gas.finalRefund()); // Cap is 0/5 = 0
 }
@@ -294,7 +292,7 @@ test "Refund within cap" {
     try gas.consume(5000);
 
     // Refund amount within cap
-    gas.refund(500); // Cap is 5000/5 = 1000
+    gas.adjustRefund(500); // Cap is 5000/5 = 1000
     try expectEqual(500, gas.finalRefund()); // Not capped
 }
 
