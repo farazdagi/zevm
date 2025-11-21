@@ -129,27 +129,6 @@ test "invalid opcode" {
     try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
 }
 
-test "unimplemented opcode" {
-    const allocator = std.testing.allocator;
-    const spec = Spec.forFork(.BERLIN);
-
-    const bytecode = &[_]u8{0x54}; // SLOAD (not yet implemented)
-    const env = Env.default();
-    var mock = MockHost.init(allocator);
-    defer mock.deinit();
-
-    var evm = Evm.init(allocator, &env, mock.host(), spec);
-    defer evm.deinit();
-
-    const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
-    const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
-    var interpreter = Interpreter.init(allocator, ctx, evm.interpreterConfig(1000, evm.is_static));
-    defer interpreter.deinit();
-
-    const result = try interpreter.run();
-    try expectEqual(ExecutionStatus.INVALID_OPCODE, result.status);
-}
-
 test "out of gas" {
     const allocator = std.testing.allocator;
     const spec = Spec.forFork(.BERLIN);
