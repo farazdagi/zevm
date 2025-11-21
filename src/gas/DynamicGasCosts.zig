@@ -20,11 +20,12 @@ const AnalyzedBytecode = @import("../interpreter/bytecode.zig").AnalyzedBytecode
 const U256 = @import("../primitives/big.zig").U256;
 const Address = @import("../primitives/address.zig").Address;
 const FixedGasCosts = @import("FixedGasCosts.zig");
+const AccessList = @import("../AccessList.zig");
 
 /// Calculate total memory cost for given byte size.
 ///
 /// Quadratic cost: words^2 / 512 + 3 * words
-pub fn memoryCost(byte_size: usize) u64 {
+pub inline fn memoryCost(byte_size: usize) u64 {
     if (byte_size == 0) return 0;
 
     // Round up to word size (32 bytes)
@@ -213,12 +214,23 @@ pub fn opCodecopy(interp: *Interpreter) !u64 {
     return memoryCopyGas(interp, 0, 2);
 }
 
-/// Compute dynamic gas for EXTCODECOPY operation.
+/// Compute dynamic gas for EXTCODECOPY operation (EIP-2929).
 ///
-/// Stack: [address, destOffset, offset, length, ...] (peek only, no modification)
-/// Gas depends on memory expansion for destination region, plus per-word copy cost.
+/// Stack: [address, destOffset, offset, length, ...]
+/// Gas depends on:
+/// - Account access cost (cold/warm)
+/// - Memory expansion for destination region
+/// - Per-word copy cost
 pub fn opExtcodecopy(interp: *Interpreter) !u64 {
-    return memoryCopyGas(interp, 1, 3);
+    // Account access cost (EIP-2929).
+    const address = Address.fromU256(try interp.ctx.stack.peek(0));
+    const is_cold = interp.access_list.warmAddress(address);
+    var total: u64 = accountAccessCost(interp.spec, is_cold);
+
+    // Memory expansion and copy costs.
+    total +|= try memoryCopyGas(interp, 1, 3);
+
+    return total;
 }
 
 /// Compute dynamic gas for RETURNDATACOPY operation (EIP-211, Byzantium+).
@@ -229,37 +241,28 @@ pub fn opReturndatacopy(interp: *Interpreter) !u64 {
     return memoryCopyGas(interp, 0, 2);
 }
 
-/// Get account access cost (BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH).
+/// Get account access cost for cold/warm access (EIP-2929).
 ///
-/// Handles both pre-Berlin (flat cost, no cold/warm distinction) and post-Berlin (cold/warm) models.
+/// Returns the *additional* dynamic gas cost beyond the base opcode cost.
 ///
-/// Pre-Berlin: Returns Spec.cold_account_access_cost regardless of is_cold
-/// Post-Berlin+: Returns 2600 (cold) or 100 (warm)
+/// Pre-Berlin: 0 (no dynamic gas, all costs are static)
+/// Berlin+ cold: 2500 (cold_account_access_cost - warm_storage_read_cost)
+/// Berlin+ warm: 0 (no additional cost, base already covers warm access)
 ///
-/// EIPs: EIP-150 (Tangerine), EIP-2929 (Berlin)
-fn accountAccessCost(spec: Spec, is_cold: bool) u64 {
-    if (is_cold or spec.fork.isBefore(.BERLIN)) {
-        return spec.cold_account_access_cost;
-    }
-    return spec.warm_storage_read_cost;
-}
-
-/// Get CALL base cost (CALL, DELEGATECALL, STATICCALL).
-///
-/// Evolution:
-/// - Pre-Tangerine: 40 gas
-/// - Tangerine to Berlin: 700 gas
-/// - Post-Berlin: 2600 (cold) or 100 (warm)
+/// Used by: BALANCE, EXTCODESIZE, EXTCODECOPY, EXTCODEHASH,
+///          CALL, CALLCODE, DELEGATECALL, STATICCALL
 ///
 /// EIPs: EIP-150 (Tangerine), EIP-2929 (Berlin)
-fn callBaseCost(spec: Spec, is_cold: bool) u64 {
-    // Pre-Berlin: flat cost
-    if (spec.fork.isBefore(.BERLIN)) {
-        return if (spec.fork.isBefore(.TANGERINE)) 40 else 700;
+inline fn accountAccessCost(spec: Spec, is_cold: bool) u64 {
+    // Warm access or pre-Berlin: no dynamic gas, all costs are in base opcode cost.
+    if (!is_cold or spec.fork.isBefore(.BERLIN)) {
+        return 0;
     }
 
-    // Post-Berlin: cold/warm model
-    return if (is_cold) spec.cold_account_access_cost else spec.warm_storage_read_cost;
+    // Cold: extra cost beyond warm base.
+    // Subtracting because we need additional dynamic gas (so, subtracting the base cost).
+    // In spec we have a base access cost equal to the warm access cost (100 gas for Berlin+).
+    return spec.cold_account_access_cost - spec.warm_storage_read_cost;
 }
 
 /// Get SLOAD cost.
@@ -271,13 +274,40 @@ fn callBaseCost(spec: Spec, is_cold: bool) u64 {
 /// - Post-Berlin: 2100 (cold) or 100 (warm)
 ///
 /// EIPs: EIP-150 (Tangerine), EIP-1884 (Istanbul), EIP-2929 (Berlin)
-fn sloadCost(spec: Spec, is_cold: bool) u64 {
+inline fn sloadCost(spec: Spec, is_cold: bool) u64 {
     if (spec.fork.isBefore(.BERLIN)) {
         // No cold/warm distinction
         return spec.cold_sload_cost;
     }
 
     return if (is_cold) spec.cold_sload_cost else spec.warm_storage_read_cost;
+}
+
+/// Compute dynamic gas for BALANCE operation (EIP-2929).
+///
+/// Stack: [address, ...]
+pub fn opBalance(interp: *Interpreter) !u64 {
+    const address = Address.fromU256(try interp.ctx.stack.peek(0));
+    const is_cold = interp.access_list.warmAddress(address);
+    return accountAccessCost(interp.spec, is_cold);
+}
+
+/// Compute dynamic gas for EXTCODESIZE operation (EIP-2929).
+///
+/// Stack: [address, ...]
+pub fn opExtcodesize(interp: *Interpreter) !u64 {
+    const address = Address.fromU256(try interp.ctx.stack.peek(0));
+    const is_cold = interp.access_list.warmAddress(address);
+    return accountAccessCost(interp.spec, is_cold);
+}
+
+/// Compute dynamic gas for EXTCODEHASH operation (EIP-2929).
+///
+/// Stack: [address, ...]
+pub fn opExtcodehash(interp: *Interpreter) !u64 {
+    const address = Address.fromU256(try interp.ctx.stack.peek(0));
+    const is_cold = interp.access_list.warmAddress(address);
+    return accountAccessCost(interp.spec, is_cold);
 }
 
 /// Calculate calldata gas cost for given data.
@@ -298,10 +328,32 @@ fn calldataCost(spec: Spec, data: []const u8) u64 {
 /// Calculate LOG cost (LOG0-LOG4).
 ///
 /// Formula: log_base_cost + (log_topic_cost * topic_count) + (log_data_cost * data_size_bytes)
-fn logCost(spec: Spec, topic_count: u8, data_size: usize) u64 {
+inline fn logCost(spec: Spec, topic_count: u8, data_size: usize) u64 {
     const topics = @as(u64, topic_count);
     const bytes = @as(u64, @intCast(data_size));
     return spec.log_base_cost +| (spec.log_topic_cost *| topics) +| (spec.log_data_cost *| bytes);
+}
+
+/// Calculate memory expansion gas for call operations.
+///
+/// Used by: CALL, CALLCODE, DELEGATECALL, STATICCALL.
+/// Computes the cost of expanding memory to accommodate both input args and return data regions.
+inline fn callMemoryExpansion(
+    interp: *Interpreter,
+    args_offset: usize,
+    args_size: usize,
+    ret_offset: usize,
+    ret_size: usize,
+) u64 {
+    const old_size = interp.ctx.memory.len();
+    const args_end = if (args_size > 0) args_offset +| args_size else 0;
+    const ret_end = if (ret_size > 0) ret_offset +| ret_size else 0;
+    const new_size = @max(args_end, ret_end);
+
+    return if (new_size > old_size)
+        interp.gas.memoryExpansionCost(old_size, new_size)
+    else
+        0;
 }
 
 /// Compute dynamic gas for CALL operation.
@@ -324,8 +376,7 @@ pub fn opCall(interp: *Interpreter) !u64 {
     const ret_size_u256 = try interp.ctx.stack.peek(6);
 
     // Convert address U256 to Address (take last 20 bytes).
-    const address_bytes = address_u256.toBeBytes();
-    const target = Address.init(address_bytes[12..32].*);
+    const target = Address.fromU256(address_u256);
 
     // Check if value transfer.
     const has_value = !value_u256.isZero();
@@ -338,22 +389,13 @@ pub fn opCall(interp: *Interpreter) !u64 {
 
     var total_gas: u64 = 0;
 
-    // 1. Base access cost (cold/warm).
-    // TODO: Implement proper access list tracking.
-    // For now, assume cold access since we don't have access list infrastructure.
-    const is_cold = true;
-    total_gas +|= callBaseCost(interp.spec, is_cold);
+    // 1. Access cost (cold/warm).
+    // EIP-2929: Warm the address and get whether it was cold.
+    const is_cold = interp.access_list.warmAddress(target);
+    total_gas +|= accountAccessCost(interp.spec, is_cold);
 
     // 2. Memory expansion cost.
-    // Calculate maximum memory needed for both input and output regions.
-    const old_size = interp.ctx.memory.len();
-    const args_end = if (args_size > 0) args_offset +| args_size else 0;
-    const ret_end = if (ret_size > 0) ret_offset +| ret_size else 0;
-    const new_size = @max(args_end, ret_end);
-
-    if (new_size > old_size) {
-        total_gas +|= interp.gas.memoryExpansionCost(old_size, new_size);
-    }
+    total_gas +|= callMemoryExpansion(interp, args_offset, args_size, ret_offset, ret_size);
 
     // 3. Value transfer cost.
     if (has_value) {
@@ -371,36 +413,136 @@ pub fn opCall(interp: *Interpreter) !u64 {
 /// Compute dynamic gas for CALLCODE operation.
 ///
 /// Similar to CALL but executes code in caller's context.
-/// Stack: [gas, address, value, argsOffset, argsLength, retOffset, retLength]
-///
-/// TODO: Implement when CALLCODE opcode is fully implemented.
+/// Stack: [gas, address, value, argsOffset, argsSize, retOffset, retSize, ...]
 pub fn opCallcode(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opCallcode dynamic gas not implemented");
+    // Peek stack values (positions from top of stack).
+    const address_u256 = try interp.ctx.stack.peek(1);
+    const value_u256 = try interp.ctx.stack.peek(2);
+    const args_offset_u256 = try interp.ctx.stack.peek(3);
+    const args_size_u256 = try interp.ctx.stack.peek(4);
+    const ret_offset_u256 = try interp.ctx.stack.peek(5);
+    const ret_size_u256 = try interp.ctx.stack.peek(6);
+
+    // Convert address U256 to Address (take last 20 bytes).
+    const target = Address.fromU256(address_u256);
+
+    // Check if value transfer.
+    const has_value = !value_u256.isZero();
+
+    // Convert offsets and lengths to usize.
+    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+
+    var total_gas: u64 = 0;
+
+    // 1. Access cost (cold/warm).
+    const is_cold = interp.access_list.warmAddress(target);
+    total_gas +|= accountAccessCost(interp.spec, is_cold);
+
+    // 2. Memory expansion cost.
+    total_gas +|= callMemoryExpansion(interp, args_offset, args_size, ret_offset, ret_size);
+
+    // 3. Value transfer cost.
+    // CALLCODE doesn't create new accounts, but does charge for value transfer.
+    if (has_value) {
+        total_gas +|= interp.spec.call_value_transfer_cost;
+    }
+
+    return total_gas;
 }
 
 /// Compute dynamic gas for DELEGATECALL operation.
 ///
 /// Similar to CALL but preserves caller and value from parent frame.
-/// Stack: [gas, address, argsOffset, argsLength, retOffset, retLength]
+/// Stack: [gas, address, argsOffset, argsSize, retOffset, retSize, ...]
 /// Note: No value parameter (6 args instead of 7).
-///
-/// TODO: Implement when DELEGATECALL opcode is fully implemented.
 pub fn opDelegatecall(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opDelegatecall dynamic gas not implemented");
+    // Peek stack values (positions from top of stack).
+    const address_u256 = try interp.ctx.stack.peek(1);
+    const args_offset_u256 = try interp.ctx.stack.peek(2);
+    const args_size_u256 = try interp.ctx.stack.peek(3);
+    const ret_offset_u256 = try interp.ctx.stack.peek(4);
+    const ret_size_u256 = try interp.ctx.stack.peek(5);
+
+    // Convert address U256 to Address (take last 20 bytes).
+    const target = Address.fromU256(address_u256);
+
+    // Convert offsets and lengths to usize.
+    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+
+    var total_gas: u64 = 0;
+
+    // 1. Access cost (cold/warm).
+    const is_cold = interp.access_list.warmAddress(target);
+    total_gas +|= accountAccessCost(interp.spec, is_cold);
+
+    // 2. Memory expansion cost.
+    total_gas +|= callMemoryExpansion(interp, args_offset, args_size, ret_offset, ret_size);
+
+    // DELEGATECALL has no value transfer, so no additional costs.
+
+    return total_gas;
 }
 
 /// Compute dynamic gas for STATICCALL operation.
 ///
 /// Similar to CALL but disallows state modifications.
-/// Stack: [gas, address, argsOffset, argsLength, retOffset, retLength]
+/// Stack: [gas, address, argsOffset, argsSize, retOffset, retSize, ...]
 /// Note: No value parameter (6 args instead of 7).
-///
-/// TODO: Implement when STATICCALL opcode is fully implemented.
 pub fn opStaticcall(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opStaticcall dynamic gas not implemented");
+    // Peek stack values (positions from top of stack).
+    const address_u256 = try interp.ctx.stack.peek(1);
+    const args_offset_u256 = try interp.ctx.stack.peek(2);
+    const args_size_u256 = try interp.ctx.stack.peek(3);
+    const ret_offset_u256 = try interp.ctx.stack.peek(4);
+    const ret_size_u256 = try interp.ctx.stack.peek(5);
+
+    // Convert address U256 to Address (take last 20 bytes).
+    const target = Address.fromU256(address_u256);
+
+    // Convert offsets and lengths to usize.
+    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
+    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+
+    var total_gas: u64 = 0;
+
+    // 1. Base access cost (cold/warm).
+    const is_cold = interp.access_list.warmAddress(target);
+    total_gas +|= accountAccessCost(interp.spec, is_cold);
+
+    // 2. Memory expansion cost.
+    total_gas +|= callMemoryExpansion(interp, args_offset, args_size, ret_offset, ret_size);
+
+    // STATICCALL has no value transfer, so no additional costs.
+
+    return total_gas;
+}
+
+/// Compute dynamic gas for SLOAD operation (EIP-2929).
+///
+/// Stack: [key, ...]
+/// Gas depends on warm/cold status of the storage slot.
+///
+/// Pre-Berlin: Fixed cost (handled in base gas)
+/// Berlin+: 2100 (cold) or 100 (warm)
+pub fn opSload(interp: *Interpreter) !u64 {
+    const key = try interp.ctx.stack.peek(0);
+    const address = interp.ctx.contract.address;
+
+    // Warm the slot and get whether it was cold.
+    const is_cold = interp.access_list.warmSlot(address, key);
+
+    if (is_cold or interp.spec.fork.isBefore(.BERLIN)) {
+        return interp.spec.cold_sload_cost;
+    }
+    return interp.spec.warm_storage_read_cost;
 }
 
 /// Compute dynamic gas for SSTORE operation.
@@ -414,50 +556,41 @@ pub fn opSstore(interp: *Interpreter) !u64 {
     @panic("opSstore dynamic gas not implemented");
 }
 
-/// Compute dynamic gas for LOG0 operation.
+/// Generate LOG handler for given topic count.
 ///
-/// Stack: [offset, size]
+/// All LOG operations have identical logic except for the number of topics.
+/// This comptime function generates the handler at compile time.
+///
+/// For log0:
+/// Stack: [offset, size, ...]
 /// Formula: memory_expansion + log_base_cost + log_data_cost * data_size
-pub fn opLog0(interp: *Interpreter) !u64 {
-    const region = try memoryRegionExpansion(interp, 0, 1);
-    return region.expansion_gas +| logCost(interp.spec, 0, region.size);
+///
+/// For log4:
+/// Stack: [offset, size, topic1, topic2, topic3, topic4, ...]
+/// Formula: memory_expansion + log_base_cost + 4*log_topic_cost + log_data_cost * data_size
+inline fn makeLogHandler(comptime topic_count: u8) fn (*Interpreter) anyerror!u64 {
+    return struct {
+        fn handler(interp: *Interpreter) !u64 {
+            const region = try memoryRegionExpansion(interp, 0, 1);
+            return region.expansion_gas +| logCost(interp.spec, topic_count, region.size);
+        }
+    }.handler;
 }
+
+/// Compute dynamic gas for LOG0 operation.
+pub const opLog0 = makeLogHandler(0);
 
 /// Compute dynamic gas for LOG1 operation.
-///
-/// Stack: [offset, size, topic]
-/// Formula: memory_expansion + log_base_cost + log_topic_cost + log_data_cost * data_size
-pub fn opLog1(interp: *Interpreter) !u64 {
-    const region = try memoryRegionExpansion(interp, 0, 1);
-    return region.expansion_gas +| logCost(interp.spec, 1, region.size);
-}
+pub const opLog1 = makeLogHandler(1);
 
 /// Compute dynamic gas for LOG2 operation.
-///
-/// Stack: [offset, size, topic1, topic2]
-/// Formula: memory_expansion + log_base_cost + 2*log_topic_cost + log_data_cost * data_size
-pub fn opLog2(interp: *Interpreter) !u64 {
-    const region = try memoryRegionExpansion(interp, 0, 1);
-    return region.expansion_gas +| logCost(interp.spec, 2, region.size);
-}
+pub const opLog2 = makeLogHandler(2);
 
 /// Compute dynamic gas for LOG3 operation.
-///
-/// Stack: [offset, size, topic1, topic2, topic3]
-/// Formula: memory_expansion + log_base_cost + 3*log_topic_cost + log_data_cost * data_size
-pub fn opLog3(interp: *Interpreter) !u64 {
-    const region = try memoryRegionExpansion(interp, 0, 1);
-    return region.expansion_gas +| logCost(interp.spec, 3, region.size);
-}
+pub const opLog3 = makeLogHandler(3);
 
 /// Compute dynamic gas for LOG4 operation.
-///
-/// Stack: [offset, size, topic1, topic2, topic3, topic4]
-/// Formula: memory_expansion + log_base_cost + 4*log_topic_cost + log_data_cost * data_size
-pub fn opLog4(interp: *Interpreter) !u64 {
-    const region = try memoryRegionExpansion(interp, 0, 1);
-    return region.expansion_gas +| logCost(interp.spec, 4, region.size);
-}
+pub const opLog4 = makeLogHandler(4);
 
 /// Compute dynamic gas for CREATE operation.
 ///
@@ -516,41 +649,17 @@ test "accountAccessCost" {
         expected: u64,
         comment: []const u8,
     }{
-        // Pre-Berlin: no cold/warm distinction
-        .{ .fork = .HOMESTEAD, .is_cold = true, .expected = 700, .comment = "Pre-Berlin always returns cold_account_access_cost" },
-        .{ .fork = .HOMESTEAD, .is_cold = false, .expected = 700, .comment = "Pre-Berlin ignores is_cold flag" },
-        // Berlin+: cold/warm model (EIP-2929)
-        .{ .fork = .BERLIN, .is_cold = true, .expected = 2600, .comment = "Berlin cold access" },
-        .{ .fork = .BERLIN, .is_cold = false, .expected = 100, .comment = "Berlin warm access" },
+        // Pre-Berlin: no dynamic gas (returns 0).
+        .{ .fork = .HOMESTEAD, .is_cold = true, .expected = 0, .comment = "Pre-Berlin returns 0 (no dynamic gas)" },
+        .{ .fork = .HOMESTEAD, .is_cold = false, .expected = 0, .comment = "Pre-Berlin ignores is_cold flag" },
+        // Berlin+: cold/warm model (EIP-2929) - returns EXTRA cost beyond warm base.
+        .{ .fork = .BERLIN, .is_cold = true, .expected = 2500, .comment = "Berlin cold access (2600-100)" },
+        .{ .fork = .BERLIN, .is_cold = false, .expected = 0, .comment = "Berlin warm access (no extra cost)" },
     };
 
     for (test_cases) |tc| {
         const spec = Spec.forFork(tc.fork);
         try expectEqual(tc.expected, accountAccessCost(spec, tc.is_cold));
-    }
-}
-
-test "callBaseCost" {
-    const test_cases = [_]struct {
-        fork: Hardfork,
-        is_cold: bool,
-        expected: u64,
-        comment: []const u8,
-    }{
-        // Pre-Tangerine: 40 gas (no cold/warm)
-        .{ .fork = .FRONTIER, .is_cold = true, .expected = 40, .comment = "Frontier flat cost" },
-        .{ .fork = .FRONTIER, .is_cold = false, .expected = 40, .comment = "Frontier ignores is_cold" },
-        // Tangerine-Berlin: 700 gas (EIP-150, no cold/warm)
-        .{ .fork = .TANGERINE, .is_cold = true, .expected = 700, .comment = "Tangerine flat cost" },
-        .{ .fork = .TANGERINE, .is_cold = false, .expected = 700, .comment = "Tangerine ignores is_cold" },
-        // Berlin+: cold/warm model (EIP-2929)
-        .{ .fork = .BERLIN, .is_cold = true, .expected = 2600, .comment = "Berlin cold call" },
-        .{ .fork = .BERLIN, .is_cold = false, .expected = 100, .comment = "Berlin warm call" },
-    };
-
-    for (test_cases) |tc| {
-        const spec = Spec.forFork(tc.fork);
-        try expectEqual(tc.expected, callBaseCost(spec, tc.is_cold));
     }
 }
 
@@ -631,6 +740,62 @@ test "logCost" {
     }
 }
 
+test "EIP-2929: account access opcodes - cold/warm costs" {
+    const allocator = std.testing.allocator;
+    const spec = Spec.forFork(.BERLIN);
+    const bytecode = &[_]u8{0x00};
+    const Env = @import("../context.zig").Env;
+    const MockHost = @import("../host/mock.zig").MockHost;
+    const env = Env.default();
+
+    const GasCostFn = *const fn (*Interpreter) anyerror!u64;
+
+    const test_cases = [_]GasCostFn{
+        opBalance,
+        opExtcodesize,
+        opExtcodehash,
+    };
+
+    for (test_cases) |op_fn| {
+        var mock = MockHost.init(allocator);
+        defer mock.deinit();
+
+        const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+        const ctx = try CallContext.init(allocator, analyzed, Address.zero(), Address.zero(), U256.ZERO);
+        var return_data: []const u8 = &[_]u8{};
+
+        // Use a real AccessList to test actual warming behavior.
+        var access_list = AccessList.init(allocator);
+        defer access_list.deinit();
+
+        var interp = Interpreter.init(allocator, ctx, .{
+            .spec = spec,
+            .gas_limit = 1000000,
+            .env = &env,
+            .host = mock.host(),
+            .return_data_buffer = &return_data,
+            .is_static = false,
+            .call_executor = CallExecutor.noOp(),
+            .access_list = access_list.accessor(),
+        });
+        defer interp.deinit();
+
+        const test_addr = U256.fromU64(0x42424242);
+
+        // First call - cold access (returns 2500 and warms the address).
+        try interp.ctx.stack.push(test_addr);
+        const cold_gas = try op_fn(&interp);
+        try expectEqual(@as(u64, 2500), cold_gas);
+        _ = try interp.ctx.stack.pop();
+
+        // Second call - warm access (address already warmed, returns 0).
+        try interp.ctx.stack.push(test_addr);
+        const warm_gas = try op_fn(&interp);
+        try expectEqual(@as(u64, 0), warm_gas);
+        _ = try interp.ctx.stack.pop();
+    }
+}
+
 test "opcode gas: KECCAK256" {
     const allocator = std.testing.allocator;
     const spec = Spec.forFork(.CANCUN);
@@ -652,6 +817,7 @@ test "opcode gas: KECCAK256" {
         .return_data_buffer = &return_data,
         .is_static = false,
         .call_executor = CallExecutor.noOp(),
+        .access_list = AccessList.Accessor.alwaysCold(),
     });
     defer interp.deinit();
 
@@ -720,6 +886,7 @@ test "opcode gas: copy operations" {
         .return_data_buffer = &return_data,
         .is_static = false,
         .call_executor = CallExecutor.noOp(),
+        .access_list = AccessList.Accessor.alwaysCold(),
     });
     defer interp.deinit();
 
@@ -766,7 +933,13 @@ test "opcode gas: copy operations" {
         const copy_gas = words * 3;
         const new_size = tc.dest_offset + tc.length;
         const expansion_gas = interp.gas.memoryExpansionCost(old_size, new_size);
-        const expected = copy_gas + expansion_gas;
+        var expected: u64 = copy_gas + expansion_gas;
+
+        // EIP-2929: EXTCODECOPY has account access cost.
+        if (tc.has_address) {
+            // alwaysCold() returns true (cold), so we add cold access cost.
+            expected +|= accountAccessCost(interp.spec, true);
+        }
 
         try expectEqual(expected, gas);
 
@@ -834,21 +1007,21 @@ test "CALL" {
         // Cold access, no value, no memory expansion.
         .{
             .address = [_]u8{0} ** 18 ++ [_]u8{ 0x12, 0x34 },
-            .expected_access = 2600,
+            .expected_access = 2500,
         },
         // Value transfer to existing account.
         .{
             .address = [_]u8{0} ** 12 ++ [_]u8{ 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11 },
             .value = 100,
             .target_balance = 100,
-            .expected_access = 2600,
+            .expected_access = 2500,
             .expected_value = 9000,
         },
         // Value transfer to non-existent account (new account creation).
         .{
             .address = [_]u8{0} ** 18 ++ [_]u8{ 0x22, 0x22 },
             .value = 100,
-            .expected_access = 2600,
+            .expected_access = 2500,
             .expected_value = 9000,
             .expected_new_account = 25000,
         },
@@ -859,7 +1032,7 @@ test "CALL" {
             .args_size = 64,
             .ret_offset = 64,
             .ret_size = 32,
-            .expected_access = 2600,
+            .expected_access = 2500,
         },
         // Value transfer with memory expansion.
         .{
@@ -867,7 +1040,7 @@ test "CALL" {
             .value = 50,
             .args_size = 128,
             .target_balance = 1000,
-            .expected_access = 2600,
+            .expected_access = 2500,
             .expected_value = 9000,
         },
         // Zero-length regions at high offsets should not expand memory.
@@ -877,7 +1050,7 @@ test "CALL" {
             .args_size = 0,
             .ret_offset = 2000,
             .ret_size = 0,
-            .expected_access = 2600,
+            .expected_access = 2500,
         },
         // Overlapping memory regions (ret inside args).
         .{
@@ -886,13 +1059,13 @@ test "CALL" {
             .args_size = 128,
             .ret_offset = 32,
             .ret_size = 64,
-            .expected_access = 2600,
+            .expected_access = 2500,
         },
-        // Pre-Berlin flat cost (no cold/warm distinction).
+        // Pre-Berlin: no dynamic gas (all costs in base opcode cost).
         .{
             .fork = .ISTANBUL,
             .address = [_]u8{0} ** 18 ++ [_]u8{ 0x77, 0x77 },
-            .expected_access = 700,
+            .expected_access = 0,
         },
     };
 
@@ -924,6 +1097,7 @@ test "CALL" {
             .return_data_buffer = &return_data,
             .is_static = false,
             .call_executor = CallExecutor.noOp(),
+            .access_list = AccessList.Accessor.alwaysCold(),
         });
         defer interp.deinit();
 

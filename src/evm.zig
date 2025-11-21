@@ -30,6 +30,7 @@ const CallKind = call_types.CallKind;
 const CallInputs = call_types.CallInputs;
 const CallResult = call_types.CallResult;
 const CallExecutor = call_types.CallExecutor;
+const AccessList = @import("AccessList.zig");
 
 /// EVM execution engine.
 pub const Evm = struct {
@@ -66,10 +67,28 @@ pub const Evm = struct {
     /// called multiple times within or across transactions.
     jump_table_cache: JumpTable.Cache,
 
+    /// EIP-2929 access list for warm/cold tracking.
+    ///
+    /// Only created for Berlin+ forks. Tracks which addresses and storage
+    /// slots have been accessed during transaction execution.
+    access_list: ?AccessList,
+
+    /// Snapshots of access list for revert support.
+    ///
+    /// When a sub-call is made, we clone the access list. If the call reverts,
+    /// we restore from the snapshot.
+    access_list_snapshots: std.ArrayList(AccessList),
+
     const Self = @This();
 
     /// Initialize EVM with given context and spec.
     pub fn init(allocator: Allocator, env: *const Env, host: Host, spec: Spec) Self {
+        // Create access list for Berlin+ forks with transaction pre-warming.
+        const access_list = if (spec.fork.isAtLeast(.BERLIN))
+            AccessList.initForTransaction(allocator, env, spec)
+        else
+            null;
+
         return Self{
             .allocator = allocator,
             .env = env,
@@ -80,6 +99,8 @@ pub const Evm = struct {
             .is_static = false,
             .table = spec.instructionTable(),
             .jump_table_cache = JumpTable.Cache.init(allocator),
+            .access_list = access_list,
+            .access_list_snapshots = .{},
         };
     }
 
@@ -94,6 +115,15 @@ pub const Evm = struct {
         var it = self.jump_table_cache.valueIterator();
         while (it.next()) |jt| jt.deinit();
         self.jump_table_cache.deinit();
+
+        // Free access list and snapshots.
+        if (self.access_list) |*al| {
+            al.deinit();
+        }
+        for (self.access_list_snapshots.items) |*snapshot| {
+            snapshot.deinit();
+        }
+        self.access_list_snapshots.deinit(self.allocator);
     }
 
     /// Create a CallExecutor interface that delegates to this Evm.
@@ -112,6 +142,17 @@ pub const Evm = struct {
         return self.call(inputs);
     }
 
+    /// Create an Accessor interface that delegates to this Evm's access list.
+    ///
+    /// For pre-Berlin forks (no access list), returns alwaysCold accessor.
+    pub fn accessListAccessor(self: *Self) AccessList.Accessor {
+        if (self.access_list) |*al| {
+            return al.accessor();
+        } else {
+            return AccessList.Accessor.alwaysCold();
+        }
+    }
+
     /// Create an InterpreterConfig for this EVM.
     ///
     /// This bundles all the external context needed for interpreter execution.
@@ -124,6 +165,7 @@ pub const Evm = struct {
             .return_data_buffer = &self.return_data_buffer,
             .is_static = is_static,
             .call_executor = self.callExecutor(),
+            .access_list = self.accessListAccessor(),
         };
     }
 
@@ -189,6 +231,12 @@ pub const Evm = struct {
         // Create a snapshot before state changes.
         const snapshot = try self.host.snapshot();
         errdefer self.host.revertToSnapshot(snapshot);
+
+        // Snapshot access list for revert support.
+        if (self.access_list) |*al| {
+            const al_snapshot = try al.clone(self.allocator);
+            try self.access_list_snapshots.append(self.allocator, al_snapshot);
+        }
 
         // Transfer value if non-zero.
         if (inputs.transfer_value and !inputs.value.isZero()) {
@@ -274,6 +322,21 @@ pub const Evm = struct {
         if (result.status != .SUCCESS) {
             // Revert state on non-success.
             self.host.revertToSnapshot(snapshot);
+
+            // Restore access list from snapshot.
+            if (self.access_list) |*al| {
+                if (self.access_list_snapshots.items.len > 0) {
+                    const al_snapshot = self.access_list_snapshots.pop().?;
+                    al.deinit();
+                    self.access_list = al_snapshot;
+                }
+            }
+        } else {
+            // On success, discard the snapshot (keep current access list state).
+            if (self.access_list_snapshots.items.len > 0) {
+                var snapshot_copy = self.access_list_snapshots.pop().?;
+                snapshot_copy.deinit();
+            }
         }
 
         return CallResult{

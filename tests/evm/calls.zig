@@ -1,7 +1,4 @@
 //! Call mechanism integration tests.
-//!
-//! Tests call types, basic execution, and multi-call sequences.
-
 const std = @import("std");
 const zevm = @import("zevm");
 const th = @import("test_helpers.zig");

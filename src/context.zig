@@ -64,6 +64,14 @@ pub const TxEnv = struct {
     /// Transaction origin (tx.origin).
     origin: Address,
 
+    /// Transaction recipient (tx.to).
+    ///
+    /// For CALL transactions: the contract being called.
+    /// For CREATE transactions: null (address computed during execution).
+    ///
+    /// This is the ORIGINAL recipient, not the target of nested calls.
+    to: ?Address,
+
     /// Gas price.
     gas_price: U256,
 
@@ -85,6 +93,7 @@ pub const TxEnv = struct {
         return .{
             .caller = Address.zero(),
             .origin = Address.zero(),
+            .to = null,
             .gas_price = U256.ZERO,
             .value = U256.ZERO,
             .data = &[_]u8{},

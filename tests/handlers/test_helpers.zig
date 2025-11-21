@@ -49,6 +49,7 @@ pub fn createTestEnv(opts: struct {
     block_number: u64 = 1,
     timestamp: u64 = 0,
     caller: Address = Address.zero(),
+    to: ?Address = null,
     value: U256 = U256.ZERO,
 }) Env {
     return .{
@@ -63,6 +64,7 @@ pub fn createTestEnv(opts: struct {
         .tx = TxEnv{
             .caller = opts.caller,
             .origin = opts.caller,
+            .to = opts.to,
             .gas_price = U256.fromU64(1),
             .value = opts.value,
             .data = &[_]u8{},

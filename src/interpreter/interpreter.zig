@@ -22,6 +22,7 @@ const CallExecutor = @import("../call_types.zig").CallExecutor;
 const CallInputs = @import("../call_types.zig").CallInputs;
 const CallResult = @import("../call_types.zig").CallResult;
 const Contract = @import("../Contract.zig");
+const AccessListAccessor = @import("../lib.zig").AccessListAccessor;
 
 // Instruction handlers
 const handlers = @import("handlers/mod.zig");
@@ -96,6 +97,9 @@ pub const InterpreterConfig = struct {
 
     /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL/CREATE/CREATE2).
     call_executor: CallExecutor,
+
+    /// Access list accessor for EIP-2929 cold/warm tracking.
+    access_list: AccessListAccessor,
 };
 
 /// Call-scoped execution context.
@@ -218,6 +222,9 @@ pub const Interpreter = struct {
     /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL/CREATE/CREATE2).
     call_executor: CallExecutor,
 
+    /// Access list accessor for EIP-2929 cold/warm tracking.
+    access_list: AccessListAccessor,
+
     const Self = @This();
 
     /// Initialize interpreter with pre-created call context.
@@ -240,6 +247,7 @@ pub const Interpreter = struct {
             .return_data_buffer = config.return_data_buffer,
             .is_static = config.is_static,
             .call_executor = config.call_executor,
+            .access_list = config.access_list,
         };
     }
 

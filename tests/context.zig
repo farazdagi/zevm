@@ -55,6 +55,7 @@ test "TxEnv: custom initialization" {
     const tx = TxEnv{
         .caller = caller_addr,
         .origin = origin_addr,
+        .to = null,
         .gas_price = U256.fromU64(50),
         .value = U256.fromU64(1000),
         .data = &[_]u8{ 0xAA, 0xBB },

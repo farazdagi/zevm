@@ -788,6 +788,20 @@ pub const BERLIN = forkSpec(.BERLIN, ISTANBUL, .{
             table.costs[@intFromEnum(Opcode.STATICCALL)] = spec.warm_storage_read_cost; // 100
         }
     }.f,
+    .updateHandlers = struct {
+        fn f(table: *InstructionTable) void {
+            const t = &table.table;
+            // EIP-2929: Add dynamic gas cost for state access opcodes.
+            // BALANCE, EXTCODESIZE, EXTCODEHASH need warm/cold tracking.
+            // EXTCODECOPY is already wired in Frontier with dynamicGasCost.
+            t[@intFromEnum(Opcode.BALANCE)].dynamicGasCost = DynamicGasCosts.opBalance;
+            t[@intFromEnum(Opcode.EXTCODESIZE)].dynamicGasCost = DynamicGasCosts.opExtcodesize;
+            t[@intFromEnum(Opcode.EXTCODEHASH)].dynamicGasCost = DynamicGasCosts.opExtcodehash;
+
+            // SLOAD needs warm/cold storage slot tracking.
+            t[@intFromEnum(Opcode.SLOAD)].dynamicGasCost = DynamicGasCosts.opSload;
+        }
+    }.f,
 });
 
 /// London (August, 2021)

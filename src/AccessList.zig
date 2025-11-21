@@ -7,6 +7,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Address = @import("primitives/address.zig").Address;
 const U256 = @import("primitives/big.zig").U256;
+const Env = @import("context.zig").Env;
+const Spec = @import("hardfork.zig").Spec;
 
 const AccessList = @This();
 
@@ -29,6 +31,40 @@ pub fn init(allocator: Allocator) AccessList {
         .addresses = std.AutoHashMap(Address, void).init(allocator),
         .storage_keys = std.AutoHashMap(Address, std.AutoHashMap(U256, void)).init(allocator),
     };
+}
+
+/// Initialize access list with transaction-level preparation.
+pub fn initForTransaction(allocator: Allocator, env: *const Env, spec: Spec) AccessList {
+    var list = init(allocator);
+
+    // Pre-warm access list.
+    {
+        // Pre-warm sender address (EIP-2929).
+        // The sender is always accessed during transaction execution.
+        _ = list.warmAddress(env.tx.caller) catch {};
+
+        // Pre-warm transaction recipient (EIP-2929).
+        // For CALL: warm the target contract address.
+        // For CREATE: will be handled when CREATE is executed (address computed then).
+        if (env.tx.to) |recipient| {
+            _ = list.warmAddress(recipient) catch {};
+        }
+
+        // Pre-warm COINBASE for Shanghai+ (EIP-3651).
+        if (spec.fork.isAtLeast(.SHANGHAI)) {
+            _ = list.warmAddress(env.block.coinbase) catch {};
+        }
+
+        // Pre-warm precompile addresses (0x01 through 0x09).
+        // EIP-2929: Precompiles are considered warm from transaction start.
+        for (1..10) |i| {
+            var addr_bytes: [20]u8 = [_]u8{0} ** 20;
+            addr_bytes[19] = @intCast(i);
+            _ = list.warmAddress(Address.init(addr_bytes)) catch {};
+        }
+    }
+
+    return list;
 }
 
 /// Free all memory used by the access list.
@@ -78,6 +114,30 @@ pub fn isAddressWarm(self: *const AccessList, address: Address) bool {
 pub fn isSlotWarm(self: *const AccessList, address: Address, key: U256) bool {
     const slot_map = self.storage_keys.get(address) orelse return false;
     return slot_map.contains(key);
+}
+
+/// Create an Accessor interface for this access list.
+///
+/// Returns an Accessor that provides vtable-based access to this list's warming functions.
+pub fn accessor(self: *AccessList) Accessor {
+    const Impl = struct {
+        fn warmAddress(ptr: *anyopaque, address: Address) bool {
+            const list: *AccessList = @ptrCast(@alignCast(ptr));
+            return list.warmAddress(address) catch unreachable;
+        }
+        fn warmSlot(ptr: *anyopaque, address: Address, slot: U256) bool {
+            const list: *AccessList = @ptrCast(@alignCast(ptr));
+            return list.warmSlot(address, slot) catch unreachable;
+        }
+    };
+
+    return .{
+        .ptr = self,
+        .vtable = &.{
+            .warmAddress = Impl.warmAddress,
+            .warmSlot = Impl.warmSlot,
+        },
+    };
 }
 
 /// Create a deep copy of this access list for snapshots.
@@ -152,10 +212,10 @@ pub const Accessor = struct {
     /// can work uniformly across all forks.
     pub fn alwaysCold() Accessor {
         const S = struct {
-            fn warmAddr(_: *anyopaque, _: Address) bool {
+            fn warmAddress(_: *anyopaque, _: Address) bool {
                 return true; // Always cold.
             }
-            fn warmSlotFn(_: *anyopaque, _: Address, _: U256) bool {
+            fn warmSlot(_: *anyopaque, _: Address, _: U256) bool {
                 return true; // Always cold.
             }
         };
@@ -163,8 +223,8 @@ pub const Accessor = struct {
         return .{
             .ptr = undefined,
             .vtable = &.{
-                .warmAddress = S.warmAddr,
-                .warmSlot = S.warmSlotFn,
+                .warmAddress = S.warmAddress,
+                .warmSlot = S.warmSlot,
             },
         };
     }
@@ -376,32 +436,32 @@ test "AccessList: same slot different addresses" {
 }
 
 test "AccessList.Accessor: alwaysCold returns true for all addresses" {
-    const accessor = AccessList.Accessor.alwaysCold();
+    const acc = AccessList.Accessor.alwaysCold();
 
     const addr1 = Address.init([_]u8{0x01} ** 20);
     const addr2 = Address.init([_]u8{0x02} ** 20);
 
     // All addresses should be cold.
-    try expect(accessor.warmAddress(addr1));
-    try expect(accessor.warmAddress(addr2));
+    try expect(acc.warmAddress(addr1));
+    try expect(acc.warmAddress(addr2));
 
     // Even the same address again is cold (no state tracking).
-    try expect(accessor.warmAddress(addr1));
+    try expect(acc.warmAddress(addr1));
 }
 
 test "AccessList.Accessor: alwaysCold returns true for all slots" {
-    const accessor = AccessList.Accessor.alwaysCold();
+    const acc = AccessList.Accessor.alwaysCold();
 
     const addr = Address.init([_]u8{0x42} ** 20);
     const slot1 = U256.fromU64(1);
     const slot2 = U256.fromU64(2);
 
     // All slots should be cold.
-    try expect(accessor.warmSlot(addr, slot1));
-    try expect(accessor.warmSlot(addr, slot2));
+    try expect(acc.warmSlot(addr, slot1));
+    try expect(acc.warmSlot(addr, slot2));
 
     // Same slot again is cold.
-    try expect(accessor.warmSlot(addr, slot1));
+    try expect(acc.warmSlot(addr, slot1));
 }
 
 test "AccessList.Accessor: vtable dispatch works correctly" {
@@ -423,7 +483,7 @@ test "AccessList.Accessor: vtable dispatch works correctly" {
     };
 
     var impl = TestImpl{};
-    const accessor = AccessList.Accessor{
+    const acc = AccessList.Accessor{
         .ptr = &impl,
         .vtable = &.{
             .warmAddress = TestImpl.warmAddr,
@@ -434,10 +494,10 @@ test "AccessList.Accessor: vtable dispatch works correctly" {
     const addr = Address.init([_]u8{0x42} ** 20);
 
     // First call is cold.
-    try expect(accessor.warmAddress(addr));
+    try expect(acc.warmAddress(addr));
     try expect(impl.warm_count == 1);
 
     // Second call is warm.
-    try expect(!accessor.warmAddress(addr));
+    try expect(!acc.warmAddress(addr));
     try expect(impl.warm_count == 2);
 }

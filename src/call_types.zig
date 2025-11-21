@@ -72,7 +72,7 @@ pub const CallExecutor = struct {
     };
 
     /// Execute a nested call.
-    pub fn call(self: CallExecutor, inputs: CallInputs) !CallResult {
+    pub inline fn call(self: CallExecutor, inputs: CallInputs) !CallResult {
         return self.vtable.call(self.ptr, inputs);
     }
 
