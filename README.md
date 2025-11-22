@@ -10,7 +10,7 @@ Nested contract calls are working!
 
 CALL, DELEGATECALL, and STATICCALL all implemented with correct gas semantics. 
 
-Storage (SLOAD/SSTORE), logging (LOG0-4), and contract creation (CREATE/CREATE2) are the remaining pieces.
+Logging (LOG0-4), contract creation (CREATE/CREATE2) and pre-compiles are the remaining pieces.
 Once those land, we can run the official Ethereum test suite end-to-end.
 
 ## Quickstart
