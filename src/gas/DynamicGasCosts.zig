@@ -547,13 +547,26 @@ pub fn opSload(interp: *Interpreter) !u64 {
 
 /// Compute dynamic gas for SSTORE operation.
 ///
+/// Stack: [key, value, ...] (peek only, no modification)
 /// Gas cost depends on original, current, and new storage values.
 /// Implements EIP-2200 (Istanbul) and EIP-2929 (Berlin) gas metering.
 ///
-/// TODO: Implement when SSTORE opcode is fully implemented.
+/// This function reads state metadata WITHOUT performing the write.
+/// The actual write happens in the handler after gas is charged.
 pub fn opSstore(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opSstore dynamic gas not implemented");
+    const key = try interp.ctx.stack.peek(0);
+    const new_value = try interp.ctx.stack.peek(1);
+    const address = interp.ctx.contract.address;
+
+    // Read storage metadata (original and current values) without writing.
+    const metadata = interp.host.sstoreReadMeta(address, key);
+
+    // Warm the slot and check if it was cold.
+    const is_cold = interp.access_list.warmSlot(address, key);
+
+    // Calculate gas cost using the read metadata.
+    const sstore = @import("sstore.zig");
+    return sstore.sstoreCost(interp.spec, metadata, new_value, is_cold);
 }
 
 /// Generate LOG handler for given topic count.

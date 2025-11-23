@@ -199,6 +199,7 @@ pub const MockHost = struct {
         .nonce = nonceImpl,
         .accountExists = accountExistsImpl,
         .sload = sloadImpl,
+        .sstoreReadMeta = sstoreReadMetaImpl,
         .sstore = sstoreImpl,
         .tload = tloadImpl,
         .tstore = tstoreImpl,
@@ -464,6 +465,28 @@ pub const MockHost = struct {
             return slot_map.get(key) orelse U256.ZERO;
         }
         return U256.ZERO;
+    }
+
+    fn sstoreReadMetaImpl(ptr: *anyopaque, address: Address, key: U256) Host.SstoreResult {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+
+        // Get current value (read-only, no write).
+        const current_value = if (self.storage.get(address)) |slot_map|
+            slot_map.get(key) orelse U256.ZERO
+        else
+            U256.ZERO;
+
+        // Check if we already captured original value for this slot in this transaction.
+        // If not, current IS the original (lazy capture semantics).
+        const original_value = if (self.original_storage.get(address)) |addr_originals|
+            addr_originals.get(key) orelse current_value
+        else
+            current_value;
+
+        return .{
+            .original_value = original_value,
+            .current_value = current_value,
+        };
     }
 
     fn sstoreImpl(ptr: *anyopaque, address: Address, key: U256, value: U256) Host.SstoreResult {

@@ -1,12 +1,17 @@
 //! SSTORE gas cost and refund calculations.
 //!
 //! This module provides pure functions for calculating SSTORE gas costs and refunds.
-//! These are called from the opSstore handler AFTER host.sstore() performs the write.
-//! In that sense, sstore opcode is special, gas is charged after the store operation,
-//! however, it doesn't invalidate the core variant -- no commit without enough gas --
-//! since on out of gas error, opcode handler aborts with error, and state is reverted.
-//! So, since SSTORE uses state snapshots, the actual operation doesn't persist unless
-//! enough gas is paid.
+//!
+//! Gas handling uses two-phased process:
+//!
+//! 1. Gas calculation phase
+//! In `DynamicGasCosts.opSstore` original/current values are obtained
+//! using `host.sstoreReadMeta()`, then passed to `sstoreCost()` for calculation.
+//! Gas is calculated and charged BEFORE any state modification.
+//!
+//! 2. Write phase
+//! The `opSstore` opcode handler performs the actual write via `host.sstore()`.
+//! Uses `sstoreRefund()` to record gas refunds based on the result.
 //!
 //! Gas rules across forks:
 //! Frontier-Byzantium: Simple set/reset model
@@ -22,7 +27,8 @@ const Host = @import("../host/Host.zig");
 
 /// Calculate SSTORE gas cost.
 ///
-/// Called from opSstore handler AFTER `host.sstore()` writes and returns info.
+/// Called from `DynamicGasCosts.opSstore` BEFORE any write, `SstoreResult` is obtained using
+/// `host.sstoreReadMeta()` (no writes, just reads at this point).
 /// The `is_cold` parameter comes from `AccessList.warmSlot()`.
 ///
 /// Returns the gas cost to charge for this SSTORE operation.

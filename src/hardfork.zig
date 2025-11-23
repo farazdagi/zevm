@@ -533,9 +533,7 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.MSTORE)] = .{ .execute = handlers.opMstore, .dynamicGasCost = DynamicGasCosts.opMstore };
             t[@intFromEnum(Opcode.MSTORE8)] = .{ .execute = handlers.opMstore8, .dynamicGasCost = DynamicGasCosts.opMstore8 };
             t[@intFromEnum(Opcode.SLOAD)] = .{ .execute = handlers.opSload };
-            // SSTORE: dynamicGasCost = null because gas is calculated in handler.
-            // SSTORE gas depends on storage write result (original/current values).
-            t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore };
+            t[@intFromEnum(Opcode.SSTORE)] = .{ .execute = handlers.opSstore, .dynamicGasCost = DynamicGasCosts.opSstore };
             t[@intFromEnum(Opcode.JUMP)] = .{ .execute = handlers.opJump, .is_control_flow = true };
             t[@intFromEnum(Opcode.JUMPI)] = .{ .execute = handlers.opJumpi }; // PC change detected in step()
             t[@intFromEnum(Opcode.PC)] = .{ .execute = handlers.opPc };

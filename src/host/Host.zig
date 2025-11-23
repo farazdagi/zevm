@@ -96,6 +96,13 @@ pub const VTable = struct {
     /// Returns U256.zero() for uninitialized slots.
     sload: *const fn (ptr: *anyopaque, address: Address, key: U256) U256,
 
+    /// Read storage metadata without performing write (for gas calculation).
+    ///
+    /// Returns original and current values needed for SSTORE gas calculation.
+    /// Does NOT modify storage - use this in gas calculation phase.
+    /// The actual write happens in sstore() after gas is charged.
+    sstoreReadMeta: *const fn (ptr: *anyopaque, address: Address, key: U256) SstoreResult,
+
     /// Store value to persistent storage.
     ///
     /// Writes the value to the storage slot and returns metadata for gas calculation.
@@ -157,6 +164,10 @@ pub inline fn accountExists(self: Host, address: Address) bool {
 
 pub inline fn sload(self: Host, address: Address, key: U256) U256 {
     return self.vtable.sload(self.ptr, address, key);
+}
+
+pub inline fn sstoreReadMeta(self: Host, address: Address, key: U256) SstoreResult {
+    return self.vtable.sstoreReadMeta(self.ptr, address, key);
 }
 
 pub inline fn sstore(self: Host, address: Address, key: U256, value: U256) SstoreResult {

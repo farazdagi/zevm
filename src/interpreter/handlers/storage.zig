@@ -21,13 +21,7 @@ pub fn opSload(interp: *Interpreter) !void {
 /// Store word to storage (SSTORE).
 ///
 /// Stack: [key, value, ...] -> [...]
-///
-/// NOTE: This handler calculates gas internally rather than using dynamicGasCost.
-/// This is because SSTORE gas depends on the result of the storage write (original/current values).
-/// The write happens first, then gas is charged. If OutOfGas occurs, the entire call frame
-/// reverts via snapshot/revert, undoing the write.
-///
-/// IMPORTANT: hardfork.zig must set dynamicGasCost = null for SSTORE.
+/// Gas is charged in interpreter before calling this function.
 pub fn opSstore(interp: *Interpreter) !void {
     // SSTORE forbidden in static context.
     if (interp.is_static) {
@@ -44,15 +38,8 @@ pub fn opSstore(interp: *Interpreter) !void {
     const key = try interp.ctx.stack.pop();
     const new_value = try interp.ctx.stack.pop();
 
-    // Touch the slot (warms it) and obtain its previous state.
-    const is_cold = interp.access_list.warmSlot(interp.ctx.contract.address, key);
-
-    // Execute write AND get original/current values (for gas metering).
+    // Perform the write (gas already charged via DynamicGasCosts.opSstore).
     const result = interp.host.sstore(interp.ctx.contract.address, key, new_value);
-
-    // Calculate and charge gas (OutOfGas here causes frame revert, undoing write).
-    const gas_cost = sstore.sstoreCost(interp.spec, result, new_value, is_cold);
-    try interp.gas.consume(gas_cost);
 
     // Record refund (can be positive or negative).
     const refund = sstore.sstoreRefund(interp.spec, result, new_value);
