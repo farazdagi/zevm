@@ -1,143 +1,142 @@
+//! EVM stack implementation.
+//!
+//! The EVM uses a stack-based architecture with a maximum depth of 1024 items.
+//! Each item on the stack is a 256-bit word (U256).
+
 const std = @import("std");
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const U256 = @import("../primitives/big.zig").U256;
 
-/// EVM stack implementation.
-///
-/// The EVM uses a stack-based architecture with a maximum depth of 1024 items.
-/// Each item on the stack is a 256-bit word (U256).
-pub const Stack = struct {
-    /// Heap-allocated array (preallocated to capacity).
-    data: []U256,
+const Stack = @This();
 
-    /// Current number of items on the stack.
-    len: usize,
+/// Heap-allocated array (preallocated to capacity).
+data: []U256,
 
-    // Allocator for cleanup
-    allocator: Allocator,
+/// Current number of items on the stack.
+len: usize,
 
-    const Self = @This();
+/// Allocator for cleanup.
+allocator: Allocator,
 
-    /// Maximum stack capacity as defined by the Ethereum specification.
-    /// This matches spec.stack_limit (default 1024).
-    pub const CAPACITY: usize = 1024;
+/// Maximum stack capacity as defined by the Ethereum specification.
+/// This matches spec.stack_limit (default 1024).
+pub const CAPACITY: usize = 1024;
 
-    /// Errors that can occur during stack operations.
-    pub const Error = error{
-        StackOverflow,
-        StackUnderflow,
-    };
-
-    /// Initialize a new stack with the given allocator.
-    ///
-    /// Pre-allocates capacity for `STACK_LIMIT` items to avoid reallocation.
-    pub fn init(allocator: Allocator) !Self {
-        const data = try allocator.alloc(U256, CAPACITY);
-        return Self{
-            .data = data,
-            .len = 0,
-            .allocator = allocator,
-        };
-    }
-
-    /// Free the stack's memory.
-    ///
-    /// Must be called when done with the stack.
-    pub fn deinit(self: *Self) void {
-        self.allocator.free(self.data);
-    }
-
-    /// Push a value onto the stack.
-    ///
-    /// Returns `error.StackOverflow` if stack is full.
-    pub fn push(self: *Self, value: U256) Error!void {
-        if (self.len >= CAPACITY)
-            return error.StackOverflow;
-
-        self.data[self.len] = value;
-        self.len += 1;
-    }
-
-    /// Pop a value from the stack.
-    ///
-    /// Returns `error.StackUnderflow` if stack is empty.
-    pub fn pop(self: *Self) Error!U256 {
-        if (self.len == 0)
-            return error.StackUnderflow;
-
-        self.len -= 1;
-        return self.data[self.len];
-    }
-
-    /// Peek at the value at the given index from the top.
-    ///
-    /// Index 0 is the top of the stack, index 1 is second from top, etc.
-    /// Returns `error.StackUnderflow` if index is out of bounds.
-    pub fn peek(self: *const Self, index: usize) Error!U256 {
-        if (index >= self.len)
-            return error.StackUnderflow;
-        return self.data[self.len - 1 - index];
-    }
-
-    /// Get a mutable reference to the value at the given index from the top.
-    ///
-    /// This enables the peek-mutate optimization in operation handlers,
-    /// avoiding an extra pop+push by mutating the value in place.
-    pub fn peekMut(self: *Self, index: usize) Error!*U256 {
-        if (index >= self.len)
-            return error.StackUnderflow;
-        return &self.data[self.len - 1 - index];
-    }
-
-    /// Duplicate the value at the given index from the top (1-16).
-    ///
-    /// Returns `error.StackUnderflow` if index is invalid or out of bounds.
-    pub fn dup(self: *Self, index: usize) Error!void {
-        if (index == 0 or index > 16) {
-            return error.StackUnderflow;
-        }
-        const value = try self.peek(index - 1);
-        try self.push(value);
-    }
-
-    /// Swap the top value with the value at the given index (1-16).
-    ///
-    /// Returns `error.StackUnderflow` if index is invalid or out of bounds.
-    pub fn swap(self: *Self, index: usize) Error!void {
-        if (index == 0 or index > 16 or index >= self.len)
-            return error.StackUnderflow;
-
-        const top_idx = self.len - 1;
-        const swap_idx = self.len - 1 - index;
-        std.mem.swap(U256, &self.data[top_idx], &self.data[swap_idx]);
-    }
-
-    /// Check if the stack is empty.
-    pub fn isEmpty(self: *const Self) bool {
-        return self.len == 0;
-    }
-
-    /// Check if the stack is full (at maximum capacity).
-    pub fn isFull(self: *const Self) bool {
-        return self.len >= CAPACITY;
-    }
-
-    /// Compare two stacks for equality.
-    ///
-    /// Returns true if both stacks have the same depth and all values match in order.
-    /// Useful for testing expected stack states.
-    pub fn eql(self: *const Self, other: *const Self) bool {
-        if (self.len != other.len) return false;
-
-        var i: usize = 0;
-        while (i < self.len) : (i += 1) {
-            if (!self.data[i].eql(other.data[i])) return false;
-        }
-
-        return true;
-    }
+/// Errors that can occur during stack operations.
+pub const Error = error{
+    StackOverflow,
+    StackUnderflow,
 };
+
+/// Initialize a new stack with the given allocator.
+///
+/// Pre-allocates capacity for `STACK_LIMIT` items to avoid reallocation.
+pub fn init(allocator: Allocator) !Stack {
+    const data = try allocator.alloc(U256, CAPACITY);
+    return Stack{
+        .data = data,
+        .len = 0,
+        .allocator = allocator,
+    };
+}
+
+/// Free the stack's memory.
+///
+/// Must be called when done with the stack.
+pub fn deinit(self: *Stack) void {
+    self.allocator.free(self.data);
+}
+
+/// Push a value onto the stack.
+///
+/// Returns `error.StackOverflow` if stack is full.
+pub fn push(self: *Stack, value: U256) Error!void {
+    if (self.len >= CAPACITY)
+        return error.StackOverflow;
+
+    self.data[self.len] = value;
+    self.len += 1;
+}
+
+/// Pop a value from the stack.
+///
+/// Returns `error.StackUnderflow` if stack is empty.
+pub fn pop(self: *Stack) Error!U256 {
+    if (self.len == 0)
+        return error.StackUnderflow;
+
+    self.len -= 1;
+    return self.data[self.len];
+}
+
+/// Peek at the value at the given index from the top.
+///
+/// Index 0 is the top of the stack, index 1 is second from top, etc.
+/// Returns `error.StackUnderflow` if index is out of bounds.
+pub fn peek(self: *const Stack, index: usize) Error!U256 {
+    if (index >= self.len)
+        return error.StackUnderflow;
+    return self.data[self.len - 1 - index];
+}
+
+/// Get a mutable reference to the value at the given index from the top.
+///
+/// This enables the peek-mutate optimization in operation handlers,
+/// avoiding an extra pop+push by mutating the value in place.
+pub fn peekMut(self: *Stack, index: usize) Error!*U256 {
+    if (index >= self.len)
+        return error.StackUnderflow;
+    return &self.data[self.len - 1 - index];
+}
+
+/// Duplicate the value at the given index from the top (1-16).
+///
+/// Returns `error.StackUnderflow` if index is invalid or out of bounds.
+pub fn dup(self: *Stack, index: usize) Error!void {
+    if (index == 0 or index > 16) {
+        return error.StackUnderflow;
+    }
+    const value = try self.peek(index - 1);
+    try self.push(value);
+}
+
+/// Swap the top value with the value at the given index (1-16).
+///
+/// Returns `error.StackUnderflow` if index is invalid or out of bounds.
+pub fn swap(self: *Stack, index: usize) Error!void {
+    if (index == 0 or index > 16 or index >= self.len)
+        return error.StackUnderflow;
+
+    const top_idx = self.len - 1;
+    const swap_idx = self.len - 1 - index;
+    std.mem.swap(U256, &self.data[top_idx], &self.data[swap_idx]);
+}
+
+/// Check if the stack is empty.
+pub fn isEmpty(self: *const Stack) bool {
+    return self.len == 0;
+}
+
+/// Check if the stack is full (at maximum capacity).
+pub fn isFull(self: *const Stack) bool {
+    return self.len >= CAPACITY;
+}
+
+/// Compare two stacks for equality.
+///
+/// Returns true if both stacks have the same depth and all values match in order.
+/// Useful for testing expected stack states.
+pub fn eql(self: *const Stack, other: *const Stack) bool {
+    if (self.len != other.len) return false;
+
+    var i: usize = 0;
+    while (i < self.len) : (i += 1) {
+        if (!self.data[i].eql(other.data[i])) return false;
+    }
+
+    return true;
+}
 
 // ============================================================================
 // Tests

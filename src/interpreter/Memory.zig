@@ -1,185 +1,175 @@
+//! EVM memory implementation.
+//!
+//! Memory is a byte-addressable, dynamically expanding storage that exists only for the duration
+//! of a message call. It is a pure data structure with no gas tracking.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const U256 = @import("../primitives/big.zig").U256;
 
-/// EVM memory implementation.
-///
-/// Memory is a byte-addressable, dynamically expanding storage that exists only
-/// for the duration of a message call. It is a pure data structure with no gas
-/// tracking - gas calculations are handled by the Gas struct.
-///
-/// Properties:
-/// - Byte-addressable (any offset can be accessed)
-/// - Word-organized (operations work with 32-byte words)
-/// - Automatically expands on access
-/// - Always rounded to 32-byte boundaries (word alignment)
-/// - Zero-initialized (all new bytes are 0)
-/// - Volatile (destroyed at end of call context)
-pub const Memory = struct {
-    /// Dynamic byte array for memory storage.
-    data: std.ArrayList(u8),
+const Memory = @This();
 
-    /// Allocator for memory management.
-    allocator: Allocator,
+/// Dynamic byte array for memory storage.
+data: std.ArrayList(u8),
 
-    const Self = @This();
+/// Allocator for memory management.
+allocator: Allocator,
 
-    /// Memory operation errors.
-    pub const Error = error{
-        OutOfMemory,
-        InvalidOffset,
-        IntegerOverflow,
-    };
-
-    /// Initial capacity (128 words = 4096 bytes).
-    pub const INITIAL_CAPACITY: usize = 4096;
-
-    /// Maximum allowed memory size (128 MB).
-    /// This provides defense-in-depth against overflow attacks and unrealistic allocations.
-    pub const MAX_MEMORY_SIZE: usize = 128 * 1024 * 1024;
-
-    /// Initialize a new memory instance.
-    ///
-    /// Pre-allocates capacity to avoid reallocations for typical usage.
-    /// All memory starts at size 0, expanding on first access.
-    pub fn init(allocator: Allocator) !Self {
-        const data = try std.ArrayList(u8).initCapacity(allocator, INITIAL_CAPACITY);
-        return Self{
-            .data = data,
-            .allocator = allocator,
-        };
-    }
-
-    /// Free the memory's storage.
-    pub fn deinit(self: *Self) void {
-        self.data.deinit(self.allocator);
-    }
-
-    /// Get current memory size in bytes.
-    pub fn len(self: *const Self) usize {
-        return self.data.items.len;
-    }
-
-    /// Resize memory to at least the given size.
-    ///
-    /// Size is rounded up to next 32-byte (word) boundary per EVM spec.
-    /// New bytes are zero-initialized as required by the EVM specification.
-    ///
-    /// This is an internal method - use ensureCapacity for operations.
-    fn resize(self: *Self, new_size: usize) Error!void {
-        const aligned_size = try alignToWord(new_size);
-        if (aligned_size <= self.data.items.len) return;
-
-        const old_len = self.data.items.len;
-        try self.data.resize(self.allocator, aligned_size);
-
-        // Zero-initialize new bytes (EVM requirement)
-        @memset(self.data.items[old_len..], 0);
-    }
-
-    /// Ensure memory is large enough for operation at [offset..offset+size].
-    ///
-    /// Automatically expands memory if needed.
-    /// Zero-size operations do not trigger expansion.
-    pub fn ensureCapacity(self: *Self, offset: usize, size: usize) Error!void {
-        if (size == 0) return;
-
-        const end = try checkedAdd(offset, size);
-
-        // Enforce maximum memory size
-        if (end > MAX_MEMORY_SIZE) return error.InvalidOffset;
-
-        if (end > self.data.items.len) {
-            try self.resize(end);
-        }
-    }
-
-    /// Load a 32-byte word from memory at the given offset (MLOAD).
-    ///
-    /// Automatically expands memory if needed.
-    ///
-    /// Note: Caller must handle gas calculation before calling this method.
-    pub fn mload(self: *Self, offset: usize) Error!U256 {
-        try self.ensureCapacity(offset, 32);
-        const bytes = self.data.items[offset..][0..32];
-        return U256.fromBeBytes(bytes);
-    }
-
-    /// Store a 32-byte word to memory at the given offset (MSTORE).
-    ///
-    /// Automatically expands memory if needed.
-    ///
-    /// Note: Caller must handle gas calculation before calling this method.
-    pub fn mstore(self: *Self, offset: usize, value: U256) Error!void {
-        try self.ensureCapacity(offset, 32);
-        const bytes = value.toBeBytes();
-        @memcpy(self.data.items[offset..][0..32], &bytes);
-    }
-
-    /// Store a single byte to memory at the given offset (MSTORE8).
-    ///
-    /// Automatically expands memory if needed.
-    /// Only the lowest 8 bits of the value are used.
-    ///
-    /// Note: Caller must handle gas calculation before calling this method.
-    pub fn mstore8(self: *Self, offset: usize, value: u8) Error!void {
-        try self.ensureCapacity(offset, 1);
-        self.data.items[offset] = value;
-    }
-
-    /// Get a slice view of memory [offset..offset+size].
-    ///
-    /// Does NOT expand memory. Returns error if range is out of bounds.
-    /// Used for zero-copy operations like CALLDATACOPY, RETURN, etc.
-    ///
-    /// The returned slice is valid until the next memory modification.
-    pub fn getSlice(self: *const Self, offset: usize, size: usize) Error![]const u8 {
-        const end = try checkedAdd(offset, size);
-
-        if (end > self.data.items.len) {
-            return error.InvalidOffset;
-        }
-        return self.data.items[offset..][0..size];
-    }
-
-    /// Get a mutable slice view of memory [offset..offset+size].
-    ///
-    /// Does NOT expand memory. Returns error if range is out of bounds.
-    /// Used for operations that write directly to memory (CALLDATACOPY, etc.).
-    ///
-    /// The returned slice is valid until the next memory modification.
-    pub fn getSliceMut(self: *Self, offset: usize, size: usize) Error![]u8 {
-        const end = try checkedAdd(offset, size);
-
-        if (end > self.data.items.len) {
-            return error.InvalidOffset;
-        }
-        return self.data.items[offset..][0..size];
-    }
-
-    /// Copy data into memory at [offset..offset+bytes.len].
-    ///
-    /// Automatically expands memory if needed.
-    ///
-    /// Note: Caller must handle gas calculation before calling this method.
-    pub fn set(self: *Self, offset: usize, bytes: []const u8) Error!void {
-        if (bytes.len == 0) return;
-        try self.ensureCapacity(offset, bytes.len);
-        @memcpy(self.data.items[offset..][0..bytes.len], bytes);
-    }
-
-    /// Copy data from memory into a buffer.
-    ///
-    /// Returns error if range is out of bounds.
-    pub fn copy(self: *const Self, offset: usize, dest: []u8) Error!void {
-        const end = try checkedAdd(offset, dest.len);
-
-        if (end > self.data.items.len) {
-            return error.InvalidOffset;
-        }
-        @memcpy(dest, self.data.items[offset..][0..dest.len]);
-    }
+/// Memory operation errors.
+pub const Error = error{
+    OutOfMemory,
+    InvalidOffset,
+    IntegerOverflow,
 };
+
+/// Initial capacity (128 words = 4096 bytes).
+pub const INITIAL_CAPACITY: usize = 4096;
+
+/// Maximum allowed memory size (128 MB).
+/// This provides defense-in-depth against overflow attacks and unrealistic allocations.
+pub const MAX_MEMORY_SIZE: usize = 128 * 1024 * 1024;
+
+/// Initialize a new memory instance.
+///
+/// Pre-allocates capacity to avoid reallocations for typical usage.
+/// All memory starts at size 0, expanding on first access.
+pub fn init(allocator: Allocator) !Memory {
+    const data = try std.ArrayList(u8).initCapacity(allocator, INITIAL_CAPACITY);
+    return Memory{
+        .data = data,
+        .allocator = allocator,
+    };
+}
+
+/// Free the memory's storage.
+pub fn deinit(self: *Memory) void {
+    self.data.deinit(self.allocator);
+}
+
+/// Get current memory size in bytes.
+pub fn len(self: *const Memory) usize {
+    return self.data.items.len;
+}
+
+/// Resize memory to at least the given size.
+///
+/// Size is rounded up to next 32-byte (word) boundary per EVM spec.
+/// New bytes are zero-initialized as required by the EVM specification.
+///
+/// This is an internal method - use ensureCapacity for operations.
+fn resize(self: *Memory, new_size: usize) Error!void {
+    const aligned_size = try alignToWord(new_size);
+    if (aligned_size <= self.data.items.len) return;
+
+    const old_len = self.data.items.len;
+    try self.data.resize(self.allocator, aligned_size);
+
+    // Zero-initialize new bytes (EVM requirement)
+    @memset(self.data.items[old_len..], 0);
+}
+
+/// Ensure memory is large enough for operation at [offset..offset+size].
+///
+/// Automatically expands memory if needed.
+/// Zero-size operations do not trigger expansion.
+pub fn ensureCapacity(self: *Memory, offset: usize, size: usize) Error!void {
+    if (size == 0) return;
+
+    const end = try checkedAdd(offset, size);
+
+    // Enforce maximum memory size
+    if (end > MAX_MEMORY_SIZE) return error.InvalidOffset;
+
+    if (end > self.data.items.len) {
+        try self.resize(end);
+    }
+}
+
+/// Load a 32-byte word from memory at the given offset (MLOAD).
+///
+/// Automatically expands memory if needed.
+///
+/// Note: Caller must handle gas calculation before calling this method.
+pub fn mload(self: *Memory, offset: usize) Error!U256 {
+    try self.ensureCapacity(offset, 32);
+    const bytes = self.data.items[offset..][0..32];
+    return U256.fromBeBytes(bytes);
+}
+
+/// Store a 32-byte word to memory at the given offset (MSTORE).
+///
+/// Automatically expands memory if needed.
+///
+/// Note: Caller must handle gas calculation before calling this method.
+pub fn mstore(self: *Memory, offset: usize, value: U256) Error!void {
+    try self.ensureCapacity(offset, 32);
+    const bytes = value.toBeBytes();
+    @memcpy(self.data.items[offset..][0..32], &bytes);
+}
+
+/// Store a single byte to memory at the given offset (MSTORE8).
+///
+/// Automatically expands memory if needed.
+/// Only the lowest 8 bits of the value are used.
+///
+/// Note: Caller must handle gas calculation before calling this method.
+pub fn mstore8(self: *Memory, offset: usize, value: u8) Error!void {
+    try self.ensureCapacity(offset, 1);
+    self.data.items[offset] = value;
+}
+
+/// Get a slice view of memory [offset..offset+size].
+///
+/// Does NOT expand memory. Returns error if range is out of bounds.
+/// Used for zero-copy operations like CALLDATACOPY, RETURN, etc.
+///
+/// The returned slice is valid until the next memory modification.
+pub fn getSlice(self: *const Memory, offset: usize, size: usize) Error![]const u8 {
+    const end = try checkedAdd(offset, size);
+
+    if (end > self.data.items.len) {
+        return error.InvalidOffset;
+    }
+    return self.data.items[offset..][0..size];
+}
+
+/// Get a mutable slice view of memory [offset..offset+size].
+///
+/// Does NOT expand memory. Returns error if range is out of bounds.
+/// Used for operations that write directly to memory (CALLDATACOPY, etc.).
+///
+/// The returned slice is valid until the next memory modification.
+pub fn getSliceMut(self: *Memory, offset: usize, size: usize) Error![]u8 {
+    const end = try checkedAdd(offset, size);
+
+    if (end > self.data.items.len) {
+        return error.InvalidOffset;
+    }
+    return self.data.items[offset..][0..size];
+}
+
+/// Copy data into memory at [offset..offset+bytes.len].
+///
+/// Automatically expands memory if needed.
+///
+/// Note: Caller must handle gas calculation before calling this method.
+pub fn set(self: *Memory, offset: usize, bytes: []const u8) Error!void {
+    if (bytes.len == 0) return;
+    try self.ensureCapacity(offset, bytes.len);
+    @memcpy(self.data.items[offset..][0..bytes.len], bytes);
+}
+
+/// Copy data from memory into a buffer.
+///
+/// Returns error if range is out of bounds.
+pub fn copy(self: *const Memory, offset: usize, dest: []u8) Error!void {
+    const end = try checkedAdd(offset, dest.len);
+
+    if (end > self.data.items.len) {
+        return error.InvalidOffset;
+    }
+    @memcpy(dest, self.data.items[offset..][0..dest.len]);
+}
 
 /// Round size up to next 32-byte boundary.
 ///

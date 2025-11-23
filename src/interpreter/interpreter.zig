@@ -5,8 +5,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Stack = @import("stack.zig").Stack;
-const Memory = @import("memory.zig").Memory;
+const Stack = @import("Stack.zig");
+const Memory = @import("Memory.zig");
 const Gas = @import("../gas/accounting.zig").Gas;
 const Spec = @import("../Spec.zig");
 const Opcode = @import("opcode.zig").Opcode;
