@@ -6,11 +6,9 @@ The goal is to create a concise and readable implementation in idiomatic Zig, wi
 
 ## Status
 
-Nested contract calls are working! 
+Getting closer to wrapping up the core functionality! 
 
-CALL, DELEGATECALL, and STATICCALL all implemented with correct gas semantics. 
-
-Logging (LOG0-4), contract creation (CREATE/CREATE2) and pre-compiles are the remaining pieces.
+Contract creation (CREATE/CREATE2) and pre-compiles are the remaining pieces.
 Once those land, we can run the official Ethereum test suite end-to-end.
 
 ## Quickstart
