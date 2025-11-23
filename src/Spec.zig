@@ -1,10 +1,8 @@
-//! Hardfork specifications.
+//! Fork specifications.
 //!
-//! A Spec is the single source of truth on static/fixed configuration.
-//! Fixed/base opcode costs and opcode availability are defined for each
-//! fork via `updateCosts` and `updateHandlers` methods respectively.
-//!
-//! For dynamic costs see `DynamicGasCosts`.
+//! Spec is the single source of truth for all fork-specific configuration including
+//! gas costs (base and dynamic), refund rules, opcode availability, limits, and feature flags.
+
 const std = @import("std");
 
 const FixedGasCosts = @import("gas/FixedGasCosts.zig");
@@ -13,13 +11,15 @@ const InstructionTable = @import("interpreter/InstructionTable.zig");
 const handlers = @import("interpreter/handlers/mod.zig");
 const DynamicGasCosts = @import("gas/DynamicGasCosts.zig");
 
-/// Ethereum hard fork identifier.
+const Spec = @This();
+
+/// Fork identifier.
 ///
 /// A fork determines which rules, gas costs, and opcodes are active.
 ///
 /// Ordered chronologically from oldest to newest.
 /// See: https://ethereum.org/ethereum-forks/ for timeline of Ethereum forks.
-pub const Hardfork = enum(u8) {
+pub const Fork = enum(u8) {
     FRONTIER = 0,
     FRONTIER_THAWING = 1,
     HOMESTEAD = 2,
@@ -42,20 +42,20 @@ pub const Hardfork = enum(u8) {
     OSAKA = 19, // Q4, 2025
 
     /// Latest implemented fork
-    pub const LATEST = Hardfork.PRAGUE;
+    pub const LATEST = Fork.PRAGUE;
 
     /// Check if this fork is at least the specified fork
-    pub fn isAtLeast(self: Hardfork, other: Hardfork) bool {
+    pub fn isAtLeast(self: Fork, other: Fork) bool {
         return @intFromEnum(self) >= @intFromEnum(other);
     }
 
     /// Check if this fork is before the specified fork
-    pub fn isBefore(self: Hardfork, other: Hardfork) bool {
+    pub fn isBefore(self: Fork, other: Fork) bool {
         return @intFromEnum(self) < @intFromEnum(other);
     }
 
     /// Get fork name for display
-    pub fn name(self: Hardfork) []const u8 {
+    pub fn name(self: Fork) []const u8 {
         return switch (self) {
             .FRONTIER => "Frontier",
             .FRONTIER_THAWING => "Frontier Thawing",
@@ -81,229 +81,227 @@ pub const Hardfork = enum(u8) {
     }
 };
 
-/// Hard fork specification with all fork-specific rules.
+// ============================================================================
+// Fields
+// ============================================================================
+
+/// Fork identifier.
+fork: Fork,
+
+/// Base fork this fork is built upon (null only for FRONTIER)
+base_fork: ?Fork,
+
+/// Network chain identifier (EIP-155).
 ///
-/// Includes configuration for: gas costs and refund rules, opcode availability,
-/// limits and constraints, precompile addresses etc.
-pub const Spec = struct {
-    /// Fork
-    fork: Hardfork,
+/// Examples: 1 (Ethereum mainnet), 10 (Optimism), 11155111 (Sepolia)
+///
+/// NOTE: For multi-chain support, this will be derived from Fork enum
+/// when chain-specific fork variants are added (e.g., OPTIMISM_CANYON).
+chain_id: u64,
 
-    /// Base fork this fork is built upon (null only for FRONTIER)
-    base_fork: ?Hardfork,
+/// Optional function to update BASE gas costs for this fork.
+///
+/// If null, this fork introduces no gas cost changes from its base.
+updateCosts: ?*const fn (*[256]u64, Spec) void,
 
-    /// Network chain identifier (EIP-155).
-    ///
-    /// Examples: 1 (Ethereum mainnet), 10 (Optimism), 11155111 (Sepolia)
-    ///
-    /// NOTE: For multi-chain support, this will be derived from Hardfork enum
-    /// when chain-specific fork variants are added (e.g., OPTIMISM_CANYON).
-    chain_id: u64,
+/// Optional function to update instruction handlers for this fork.
+///
+/// If null, this fork introduces no handler changes from its base.
+/// This populates the instruction table with opcode handlers appropriate
+/// for the fork's features and enabled opcodes.
+updateHandlers: ?*const fn (*InstructionTable) void,
 
-    /// Optional function to update BASE gas costs for this fork.
-    ///
-    /// If null, this fork introduces no gas cost changes from its base.
-    updateCosts: ?*const fn (*[256]u64, Spec) void,
+/// Maximum operand stack depth.
+stack_limit: usize = 1024,
 
-    /// Optional function to update instruction handlers for this fork.
-    ///
-    /// If null, this fork introduces no handler changes from its base.
-    /// This populates the instruction table with opcode handlers appropriate
-    /// for the fork's features and enabled opcodes.
-    updateHandlers: ?*const fn (*InstructionTable) void,
+/// Maximum call depth (nested CALL/CREATE operations).
+call_depth_limit: usize = 1024,
 
-    /// Maximum operand stack depth.
-    stack_limit: usize = 1024,
+/// Number of block hashes accessible via BLOCKHASH (pre-Prague).
+block_hash_history: u64 = 256,
 
-    /// Maximum call depth (nested CALL/CREATE operations).
-    call_depth_limit: usize = 1024,
+/// EIP-3529: Reduction in refunds
+/// Pre-London: 2 (50%), Post-London: 5 (20%)
+max_refund_quotient: u64,
 
-    /// Number of block hashes accessible via BLOCKHASH (pre-Prague).
-    block_hash_history: u64 = 256,
+/// SSTORE refund when clearing storage
+/// Pre-EIP-3529: 15000, Post-EIP-3529: 4800
+sstore_clears_schedule: u64,
 
-    /// EIP-3529: Reduction in refunds
-    /// Pre-London: 2 (50%), Post-London: 5 (20%)
-    max_refund_quotient: u64,
+/// SELFDESTRUCT refund (removed in EIP-3529)
+/// Pre-EIP-3529: 24000, Post-EIP-3529: 0
+selfdestruct_refund: u64,
 
-    /// SSTORE refund when clearing storage
-    /// Pre-EIP-3529: 15000, Post-EIP-3529: 4800
-    sstore_clears_schedule: u64,
+/// EIP-2929: Gas cost increases for state access opcodes
+/// Cost of cold SLOAD
+cold_sload_cost: u64,
 
-    /// SELFDESTRUCT refund (removed in EIP-3529)
-    /// Pre-EIP-3529: 24000, Post-EIP-3529: 0
-    selfdestruct_refund: u64,
+/// Cost of cold account access (CALL, BALANCE, EXTCODESIZE, etc.)
+cold_account_access_cost: u64,
 
-    /// EIP-2929: Gas cost increases for state access opcodes
-    /// Cost of cold SLOAD
-    cold_sload_cost: u64,
+/// Cost of warm storage read
+warm_storage_read_cost: u64,
 
-    /// Cost of cold account access (CALL, BALANCE, EXTCODESIZE, etc.)
-    cold_account_access_cost: u64,
+/// EIP-2200: Base storage read cost used in SSTORE gas formulas (`SLOAD_GAS` constant).
+///
+/// Pre-Berlin: Tracks `cold_sload_cost` (the only SLOAD cost at the time).
+/// Berlin+: Uses `warm_storage_read_cost` (SSTORE assumes slot is already accessed).
+sload_gas: u64 = 50,
 
-    /// Cost of warm storage read
-    warm_storage_read_cost: u64,
+/// EIP-3860: Limit and meter initcode
+/// Maximum initcode size (null = no limit)
+max_initcode_size: ?usize,
 
-    /// EIP-2200: Base storage read cost used in SSTORE gas formulas (`SLOAD_GAS` constant).
-    ///
-    /// Pre-Berlin: Tracks `cold_sload_cost` (the only SLOAD cost at the time).
-    /// Berlin+: Uses `warm_storage_read_cost` (SSTORE assumes slot is already accessed).
-    sload_gas: u64 = 50,
+/// Cost per word of initcode
+initcode_word_cost: u64,
 
-    /// EIP-3860: Limit and meter initcode
-    /// Maximum initcode size (null = no limit)
-    max_initcode_size: ?usize,
+/// Cost per word (32 bytes) for KECCAK256 hashing.
+keccak256_word_cost: u64 = 6,
 
-    /// Cost per word of initcode
-    initcode_word_cost: u64,
+/// Cost per word (32 bytes) for memory copy operations.
+/// Used by CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY, MCOPY.
+copy_word_cost: u64 = 3,
 
-    /// Cost per word (32 bytes) for KECCAK256 hashing.
-    keccak256_word_cost: u64 = 6,
+/// Gas cost for SSTORE when setting storage (zero -> non-zero).
+sstore_set_gas: u64 = 20000,
 
-    /// Cost per word (32 bytes) for memory copy operations.
-    /// Used by CALLDATACOPY, CODECOPY, EXTCODECOPY, RETURNDATACOPY, MCOPY.
-    copy_word_cost: u64 = 3,
+/// Gas cost for SSTORE when resetting storage (non-zero -> different).
+sstore_reset_gas: u64 = 5000,
 
-    /// Gas cost for SSTORE when setting storage (zero -> non-zero).
-    sstore_set_gas: u64 = 20000,
+/// Log costs (constant across all forks).
+log_base_cost: u64 = 375,
+log_topic_cost: u64 = 375,
+log_data_cost: u64 = 8,
 
-    /// Gas cost for SSTORE when resetting storage (non-zero -> different).
-    sstore_reset_gas: u64 = 5000,
+/// Cost per zero byte in calldata.
+calldata_zero_cost: u64 = 4,
 
-    /// Log costs (constant across all forks).
-    log_base_cost: u64 = 375,
-    log_topic_cost: u64 = 375,
-    log_data_cost: u64 = 8,
+/// CALL costs.
+call_value_transfer_cost: u64 = 9000,
+call_new_account_cost: u64 = 25000,
+call_stipend: u64 = 2300,
 
-    /// Cost per zero byte in calldata.
-    calldata_zero_cost: u64 = 4,
+/// EIP-170: Contract code size limit
+/// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
+max_code_size: usize,
 
-    /// CALL costs.
-    call_value_transfer_cost: u64 = 9000,
-    call_new_account_cost: u64 = 25000,
-    call_stipend: u64 = 2300,
+/// EIP-3855: PUSH0 instruction
+/// Opcode availability
+has_push0: bool,
 
-    /// EIP-170: Contract code size limit
-    /// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
-    max_code_size: usize,
+/// EIP-3198: BASEFEE opcode
+has_basefee: bool,
 
-    /// EIP-3855: PUSH0 instruction
-    /// Opcode availability
-    has_push0: bool,
+/// EIP-4399: PREVRANDAO opcode (replaces DIFFICULTY post-Merge)
+has_prevrandao: bool,
 
-    /// EIP-3198: BASEFEE opcode
-    has_basefee: bool,
+/// SELFDESTRUCT still available (may be removed in future)
+has_selfdestruct: bool,
 
-    /// EIP-4399: PREVRANDAO opcode (replaces DIFFICULTY post-Merge)
-    has_prevrandao: bool,
+/// EIP-1153: Transient storage (TLOAD, TSTORE)
+has_tstore: bool,
 
-    /// SELFDESTRUCT still available (may be removed in future)
-    has_selfdestruct: bool,
+/// EIP-5656: MCOPY instruction
+has_mcopy: bool,
 
-    /// EIP-1153: Transient storage (TLOAD, TSTORE)
-    has_tstore: bool,
+/// EIP-1559: Base fee in block
+/// Block validation
+has_base_fee: bool,
 
-    /// EIP-5656: MCOPY instruction
-    has_mcopy: bool,
+/// EIP-4844: Blob opcodes (BLOBHASH, BLOBBASEFEE)
+has_blob_opcodes: bool,
 
-    /// EIP-1559: Base fee in block
-    /// Block validation
-    has_base_fee: bool,
+/// EIP-4844: Blob gas in block
+has_blob_gas: bool,
 
-    /// EIP-4844: Blob opcodes (BLOBHASH, BLOBBASEFEE)
-    has_blob_opcodes: bool,
+/// EIP-4844 & EIP-7691: Blob parameters
+/// Target number of blobs per block (3 for Cancun, 6 for Prague)
+target_blobs_per_block: u8,
 
-    /// EIP-4844: Blob gas in block
-    has_blob_gas: bool,
+/// Maximum number of blobs per block (6 for Cancun, 9 for Prague)
+max_blobs_per_block: u8,
 
-    /// EIP-4844 & EIP-7691: Blob parameters
-    /// Target number of blobs per block (3 for Cancun, 6 for Prague)
-    target_blobs_per_block: u8,
+/// EIP-7702: Set EOA account code for one transaction
+// Prague additions
+has_eip7702: bool,
 
-    /// Maximum number of blobs per block (6 for Cancun, 9 for Prague)
-    max_blobs_per_block: u8,
+/// EIP-2537: BLS12-381 curve precompiles
+has_bls_precompiles: bool,
 
-    /// EIP-7702: Set EOA account code for one transaction
-    // Prague additions
-    has_eip7702: bool,
+/// EIP-2935: Historical block hashes in state (8192 blocks)
+has_historical_block_hashes: bool,
 
-    /// EIP-2537: BLS12-381 curve precompiles
-    has_bls_precompiles: bool,
+/// Get the spec for a specific fork
+pub fn forFork(fork: Fork) Spec {
+    return switch (fork) {
+        .FRONTIER => FRONTIER,
+        .FRONTIER_THAWING => FRONTIER_THAWING,
+        .HOMESTEAD => HOMESTEAD,
+        .DAO_FORK => DAO_FORK,
+        .TANGERINE => TANGERINE,
+        .SPURIOUS_DRAGON => SPURIOUS_DRAGON,
+        .BYZANTIUM => BYZANTIUM,
+        .CONSTANTINOPLE => CONSTANTINOPLE,
+        .PETERSBURG => PETERSBURG,
+        .ISTANBUL => ISTANBUL,
+        .MUIR_GLACIER => MUIR_GLACIER,
+        .BERLIN => BERLIN,
+        .LONDON => LONDON,
+        .ARROW_GLACIER => ARROW_GLACIER,
+        .GRAY_GLACIER => GRAY_GLACIER,
+        .MERGE => MERGE,
+        .SHANGHAI => SHANGHAI,
+        .CANCUN => CANCUN,
+        .PRAGUE => PRAGUE,
+        .OSAKA => PRAGUE, // Future: use latest implemented
+    };
+}
 
-    /// EIP-2935: Historical block hashes in state (8192 blocks)
-    has_historical_block_hashes: bool,
+/// Get base gas costs for all defined opcodes.
+pub fn gasCosts(self: Spec) FixedGasCosts {
+    return FixedGasCosts.forFork(self.fork);
+}
 
-    /// Get the spec for a specific fork
-    pub fn forFork(fork: Hardfork) Spec {
-        return switch (fork) {
-            .FRONTIER => FRONTIER,
-            .FRONTIER_THAWING => FRONTIER_THAWING,
-            .HOMESTEAD => HOMESTEAD,
-            .DAO_FORK => DAO_FORK,
-            .TANGERINE => TANGERINE,
-            .SPURIOUS_DRAGON => SPURIOUS_DRAGON,
-            .BYZANTIUM => BYZANTIUM,
-            .CONSTANTINOPLE => CONSTANTINOPLE,
-            .PETERSBURG => PETERSBURG,
-            .ISTANBUL => ISTANBUL,
-            .MUIR_GLACIER => MUIR_GLACIER,
-            .BERLIN => BERLIN,
-            .LONDON => LONDON,
-            .ARROW_GLACIER => ARROW_GLACIER,
-            .GRAY_GLACIER => GRAY_GLACIER,
-            .MERGE => MERGE,
-            .SHANGHAI => SHANGHAI,
-            .CANCUN => CANCUN,
-            .PRAGUE => PRAGUE,
-            .OSAKA => PRAGUE, // Future: use latest implemented
-        };
-    }
+/// Get base gas cost for a given opcode.
+pub inline fn gasCost(self: Spec, opcode_byte: u8) u64 {
+    return FixedGasCosts.forFork(self.fork).costs[opcode_byte];
+}
 
-    /// Get base gas costs for all defined opcodes.
-    pub fn gasCosts(self: Spec) FixedGasCosts {
-        return FixedGasCosts.forFork(self.fork);
-    }
+/// Get instruction jump table for all defined opcodes.
+///
+/// Returns pointer to static comptime-generated table, avoiding copy.
+pub fn instructionTable(self: Spec) *const InstructionTable {
+    return InstructionTable.forFork(self.fork);
+}
 
-    /// Get base gas cost for a given opcode.
-    pub inline fn gasCost(self: Spec, opcode_byte: u8) u64 {
-        return FixedGasCosts.forFork(self.fork).costs[opcode_byte];
-    }
-
-    /// Get instruction jump table for all defined opcodes.
-    ///
-    /// Returns pointer to static comptime-generated table, avoiding copy.
-    pub fn instructionTable(self: Spec) *const InstructionTable {
-        return InstructionTable.forFork(self.fork);
-    }
-
-    /// Check if a specific EIP is active in this fork
-    pub fn hasEIP(self: Spec, comptime eip: u16) bool {
-        return switch (eip) {
-            // EIP-3529: Reduction in refunds
-            3529 => self.max_refund_quotient == 5,
-            // EIP-3855: PUSH0 instruction
-            3855 => self.has_push0,
-            // EIP-3198: BASEFEE opcode
-            3198 => self.has_basefee,
-            // EIP-4399: PREVRANDAO opcode
-            4399 => self.has_prevrandao,
-            // EIP-1153: Transient storage
-            1153 => self.has_tstore,
-            // EIP-4844: Shard blob transactions
-            4844 => self.has_blob_opcodes,
-            // EIP-5656: MCOPY instruction
-            5656 => self.has_mcopy,
-            // EIP-2929: Gas cost increases
-            2929 => self.cold_sload_cost == 2100,
-            // EIP-3860: Limit and meter initcode
-            3860 => self.max_initcode_size != null,
-            // EIP-170: Contract code size limit
-            170 => self.max_code_size == 24576,
-            // EIP-1559: Fee market
-            1559 => self.has_base_fee,
-            else => false,
-        };
-    }
-};
+/// Check if a specific EIP is active in this fork
+pub fn hasEIP(self: Spec, comptime eip: u16) bool {
+    return switch (eip) {
+        // EIP-3529: Reduction in refunds
+        3529 => self.max_refund_quotient == 5,
+        // EIP-3855: PUSH0 instruction
+        3855 => self.has_push0,
+        // EIP-3198: BASEFEE opcode
+        3198 => self.has_basefee,
+        // EIP-4399: PREVRANDAO opcode
+        4399 => self.has_prevrandao,
+        // EIP-1153: Transient storage
+        1153 => self.has_tstore,
+        // EIP-4844: Shard blob transactions
+        4844 => self.has_blob_opcodes,
+        // EIP-5656: MCOPY instruction
+        5656 => self.has_mcopy,
+        // EIP-2929: Gas cost increases
+        2929 => self.cold_sload_cost == 2100,
+        // EIP-3860: Limit and meter initcode
+        3860 => self.max_initcode_size != null,
+        // EIP-170: Contract code size limit
+        170 => self.max_code_size == 24576,
+        // EIP-1559: Fee market
+        1559 => self.has_base_fee,
+        else => false,
+    };
+}
 
 /// Build a new Spec based on a previous fork with specified field overrides.
 ///
@@ -318,7 +316,7 @@ pub const Spec = struct {
 /// });
 /// ```
 fn forkSpec(
-    comptime fork: Hardfork,
+    comptime fork: Fork,
     comptime base: Spec,
     comptime changes: anytype,
 ) Spec {
@@ -333,6 +331,10 @@ fn forkSpec(
 
     return result;
 }
+
+// ============================================================================
+// Specs
+// ============================================================================
 
 /// Frontier (July, 2015)
 ///
@@ -982,25 +984,25 @@ pub const PRAGUE = forkSpec(.PRAGUE, CANCUN, .{
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 
-test "Hardfork: ordering" {
-    try expect(Hardfork.FRONTIER.isBefore(.HOMESTEAD));
-    try expect(Hardfork.BERLIN.isBefore(.LONDON));
-    try expect(Hardfork.LONDON.isAtLeast(.BERLIN));
-    try expect(Hardfork.CANCUN.isAtLeast(.CANCUN));
+test "Fork: ordering" {
+    try expect(Fork.FRONTIER.isBefore(.HOMESTEAD));
+    try expect(Fork.BERLIN.isBefore(.LONDON));
+    try expect(Fork.LONDON.isAtLeast(.BERLIN));
+    try expect(Fork.CANCUN.isAtLeast(.CANCUN));
 }
 
-test "Hardfork: name" {
-    try expectEqual("Frontier", Hardfork.FRONTIER.name());
-    try expectEqual("London", Hardfork.LONDON.name());
-    try expectEqual("Cancun", Hardfork.CANCUN.name());
+test "Fork: name" {
+    try expectEqual("Frontier", Fork.FRONTIER.name());
+    try expectEqual("London", Fork.LONDON.name());
+    try expectEqual("Cancun", Fork.CANCUN.name());
 }
 
 test "Spec: forFork" {
     const frontier = Spec.forFork(.FRONTIER);
-    try expectEqual(Hardfork.FRONTIER, frontier.fork);
+    try expectEqual(Fork.FRONTIER, frontier.fork);
 
     const london = Spec.forFork(.LONDON);
-    try expectEqual(Hardfork.LONDON, london.fork);
+    try expectEqual(Fork.LONDON, london.fork);
 }
 
 test "Spec: hasEIP - EIP-3529" {

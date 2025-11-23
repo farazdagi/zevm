@@ -3,7 +3,7 @@
 //! Reference: https://www.evm.codes/
 
 const std = @import("std");
-const Spec = @import("../hardfork.zig").Spec;
+const Spec = @import("../Spec.zig").Spec;
 
 /// EVM Opcode.
 ///

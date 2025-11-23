@@ -1,8 +1,8 @@
 const std = @import("std");
 const zevm = @import("zevm");
 
-const Hardfork = zevm.hardfork.Hardfork;
-const Spec = zevm.hardfork.Spec;
+const Hardfork = zevm.Spec.Fork;
+const Spec = zevm.Spec;
 const Gas = zevm.interpreter.Gas;
 const Opcode = zevm.interpreter.Opcode;
 const FixedGasCosts = zevm.interpreter.gas.FixedGasCosts;

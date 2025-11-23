@@ -9,7 +9,7 @@ const CallContext = @import("../interpreter.zig").CallContext;
 const AnalyzedBytecode = @import("../bytecode.zig").AnalyzedBytecode;
 const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
-const Spec = @import("../../hardfork.zig").Spec;
+const Spec = @import("../../Spec.zig");
 const Evm = @import("../../evm.zig").Evm;
 
 const expectEqual = std.testing.expectEqual;

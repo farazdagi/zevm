@@ -416,7 +416,7 @@ test "storage: sequential transactions track original values correctly" {
 }
 
 const sstore = zevm.gas.sstore;
-const Hardfork = zevm.hardfork.Hardfork;
+const Hardfork = zevm.Spec.Fork;
 const Host = zevm.host.Host;
 
 test "storage: SSTORE gas and refund across forks" {

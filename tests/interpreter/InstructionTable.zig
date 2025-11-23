@@ -1,8 +1,8 @@
 const std = @import("std");
 const zevm = @import("zevm");
 const InstructionTable = zevm.interpreter.InstructionTable;
-const Spec = zevm.hardfork.Spec;
-const Hardfork = zevm.hardfork.Hardfork;
+const Spec = zevm.Spec;
+const Hardfork = zevm.Spec.Fork;
 
 const expectError = std.testing.expectError;
 const expect = std.testing.expect;

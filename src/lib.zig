@@ -3,7 +3,7 @@
 const std = @import("std");
 pub const primitives = @import("primitives/mod.zig");
 pub const interpreter = @import("interpreter/mod.zig");
-pub const hardfork = @import("hardfork.zig");
+pub const Spec = @import("Spec.zig");
 pub const gas = @import("gas/mod.zig");
 pub const context = @import("context.zig");
 pub const host = @import("host/mod.zig");
@@ -28,7 +28,7 @@ test {
     std.testing.refAllDecls(@This());
     _ = primitives;
     _ = interpreter;
-    _ = hardfork;
+    _ = Spec;
     _ = gas;
     _ = context;
     _ = host;

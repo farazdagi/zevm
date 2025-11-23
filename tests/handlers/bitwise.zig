@@ -6,7 +6,7 @@ const test_helpers = @import("test_helpers.zig");
 
 const Interpreter = zevm.interpreter.Interpreter;
 const ExecutionStatus = zevm.interpreter.ExecutionStatus;
-const Spec = zevm.hardfork.Spec;
+const Spec = zevm.Spec;
 const U256 = zevm.primitives.U256;
 const TestCase = test_helpers.TestCase;
 const runOpcodeTests = test_helpers.runOpcodeTests;

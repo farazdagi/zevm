@@ -3,9 +3,7 @@
 //! This provides O(1) lookup for base gas costs.
 
 const std = @import("std");
-const hardfork = @import("../hardfork.zig");
-const Hardfork = hardfork.Hardfork;
-const Spec = hardfork.Spec;
+const Spec = @import("../Spec.zig");
 
 /// Gas cost tier constants (shared across all forks).
 pub const ZERO: u64 = 0;
@@ -22,26 +20,26 @@ const FixedGasCosts = @This();
 costs: [256]u64,
 
 /// Pre-computed gas cost tables for each fork.
-pub const FRONTIER: FixedGasCosts = computeCostsForSpec(hardfork.FRONTIER);
-pub const HOMESTEAD: FixedGasCosts = computeCostsForSpec(hardfork.HOMESTEAD);
-pub const TANGERINE: FixedGasCosts = computeCostsForSpec(hardfork.TANGERINE);
-pub const SPURIOUS_DRAGON: FixedGasCosts = computeCostsForSpec(hardfork.SPURIOUS_DRAGON);
-pub const BYZANTIUM: FixedGasCosts = computeCostsForSpec(hardfork.BYZANTIUM);
-pub const CONSTANTINOPLE: FixedGasCosts = computeCostsForSpec(hardfork.CONSTANTINOPLE);
-pub const PETERSBURG: FixedGasCosts = computeCostsForSpec(hardfork.PETERSBURG);
-pub const ISTANBUL: FixedGasCosts = computeCostsForSpec(hardfork.ISTANBUL);
-pub const MUIR_GLACIER: FixedGasCosts = computeCostsForSpec(hardfork.MUIR_GLACIER);
-pub const BERLIN: FixedGasCosts = computeCostsForSpec(hardfork.BERLIN);
-pub const LONDON: FixedGasCosts = computeCostsForSpec(hardfork.LONDON);
-pub const ARROW_GLACIER: FixedGasCosts = computeCostsForSpec(hardfork.ARROW_GLACIER);
-pub const GRAY_GLACIER: FixedGasCosts = computeCostsForSpec(hardfork.GRAY_GLACIER);
-pub const MERGE: FixedGasCosts = computeCostsForSpec(hardfork.MERGE);
-pub const SHANGHAI: FixedGasCosts = computeCostsForSpec(hardfork.SHANGHAI);
-pub const CANCUN: FixedGasCosts = computeCostsForSpec(hardfork.CANCUN);
-pub const PRAGUE: FixedGasCosts = computeCostsForSpec(hardfork.PRAGUE);
+pub const FRONTIER: FixedGasCosts = computeCostsForSpec(Spec.FRONTIER);
+pub const HOMESTEAD: FixedGasCosts = computeCostsForSpec(Spec.HOMESTEAD);
+pub const TANGERINE: FixedGasCosts = computeCostsForSpec(Spec.TANGERINE);
+pub const SPURIOUS_DRAGON: FixedGasCosts = computeCostsForSpec(Spec.SPURIOUS_DRAGON);
+pub const BYZANTIUM: FixedGasCosts = computeCostsForSpec(Spec.BYZANTIUM);
+pub const CONSTANTINOPLE: FixedGasCosts = computeCostsForSpec(Spec.CONSTANTINOPLE);
+pub const PETERSBURG: FixedGasCosts = computeCostsForSpec(Spec.PETERSBURG);
+pub const ISTANBUL: FixedGasCosts = computeCostsForSpec(Spec.ISTANBUL);
+pub const MUIR_GLACIER: FixedGasCosts = computeCostsForSpec(Spec.MUIR_GLACIER);
+pub const BERLIN: FixedGasCosts = computeCostsForSpec(Spec.BERLIN);
+pub const LONDON: FixedGasCosts = computeCostsForSpec(Spec.LONDON);
+pub const ARROW_GLACIER: FixedGasCosts = computeCostsForSpec(Spec.ARROW_GLACIER);
+pub const GRAY_GLACIER: FixedGasCosts = computeCostsForSpec(Spec.GRAY_GLACIER);
+pub const MERGE: FixedGasCosts = computeCostsForSpec(Spec.MERGE);
+pub const SHANGHAI: FixedGasCosts = computeCostsForSpec(Spec.SHANGHAI);
+pub const CANCUN: FixedGasCosts = computeCostsForSpec(Spec.CANCUN);
+pub const PRAGUE: FixedGasCosts = computeCostsForSpec(Spec.PRAGUE);
 
 /// Get pre-computed gas cost table for a specific fork.
-pub fn forFork(fork: Hardfork) FixedGasCosts {
+pub fn forFork(fork: Spec.Fork) FixedGasCosts {
     return switch (fork) {
         .FRONTIER => FRONTIER,
         .FRONTIER_THAWING => FRONTIER,

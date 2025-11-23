@@ -1,7 +1,7 @@
 const std = @import("std");
 const zevm = @import("zevm");
 const FixedGasCosts = zevm.interpreter.gas.FixedGasCosts;
-const Hardfork = zevm.hardfork.Hardfork;
+const Hardfork = zevm.Spec.Fork;
 const Opcode = zevm.interpreter.Opcode;
 
 const expect = std.testing.expect;

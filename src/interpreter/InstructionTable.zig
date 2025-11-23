@@ -4,8 +4,7 @@
 //! Invalid/unimplemented opcodes map to a stub handler that returns error.InvalidOpcode.
 
 const Interpreter = @import("interpreter.zig").Interpreter;
-const hardfork = @import("../hardfork.zig");
-const Spec = hardfork.Spec;
+const Spec = @import("../Spec.zig");
 
 const InstructionTable = @This();
 
@@ -46,26 +45,26 @@ table: [256]InstructionInfo,
 spec: Spec,
 
 /// Pre-computed instruction tables for each fork.
-pub const FRONTIER: InstructionTable = computeHandlersForSpec(hardfork.FRONTIER);
-pub const HOMESTEAD: InstructionTable = computeHandlersForSpec(hardfork.HOMESTEAD);
-pub const TANGERINE: InstructionTable = computeHandlersForSpec(hardfork.TANGERINE);
-pub const SPURIOUS_DRAGON: InstructionTable = computeHandlersForSpec(hardfork.SPURIOUS_DRAGON);
-pub const BYZANTIUM: InstructionTable = computeHandlersForSpec(hardfork.BYZANTIUM);
-pub const CONSTANTINOPLE: InstructionTable = computeHandlersForSpec(hardfork.CONSTANTINOPLE);
-pub const PETERSBURG: InstructionTable = computeHandlersForSpec(hardfork.PETERSBURG);
-pub const ISTANBUL: InstructionTable = computeHandlersForSpec(hardfork.ISTANBUL);
-pub const MUIR_GLACIER: InstructionTable = computeHandlersForSpec(hardfork.MUIR_GLACIER);
-pub const BERLIN: InstructionTable = computeHandlersForSpec(hardfork.BERLIN);
-pub const LONDON: InstructionTable = computeHandlersForSpec(hardfork.LONDON);
-pub const ARROW_GLACIER: InstructionTable = computeHandlersForSpec(hardfork.ARROW_GLACIER);
-pub const GRAY_GLACIER: InstructionTable = computeHandlersForSpec(hardfork.GRAY_GLACIER);
-pub const MERGE: InstructionTable = computeHandlersForSpec(hardfork.MERGE);
-pub const SHANGHAI: InstructionTable = computeHandlersForSpec(hardfork.SHANGHAI);
-pub const CANCUN: InstructionTable = computeHandlersForSpec(hardfork.CANCUN);
-pub const PRAGUE: InstructionTable = computeHandlersForSpec(hardfork.PRAGUE);
+pub const FRONTIER: InstructionTable = computeHandlersForSpec(Spec.FRONTIER);
+pub const HOMESTEAD: InstructionTable = computeHandlersForSpec(Spec.HOMESTEAD);
+pub const TANGERINE: InstructionTable = computeHandlersForSpec(Spec.TANGERINE);
+pub const SPURIOUS_DRAGON: InstructionTable = computeHandlersForSpec(Spec.SPURIOUS_DRAGON);
+pub const BYZANTIUM: InstructionTable = computeHandlersForSpec(Spec.BYZANTIUM);
+pub const CONSTANTINOPLE: InstructionTable = computeHandlersForSpec(Spec.CONSTANTINOPLE);
+pub const PETERSBURG: InstructionTable = computeHandlersForSpec(Spec.PETERSBURG);
+pub const ISTANBUL: InstructionTable = computeHandlersForSpec(Spec.ISTANBUL);
+pub const MUIR_GLACIER: InstructionTable = computeHandlersForSpec(Spec.MUIR_GLACIER);
+pub const BERLIN: InstructionTable = computeHandlersForSpec(Spec.BERLIN);
+pub const LONDON: InstructionTable = computeHandlersForSpec(Spec.LONDON);
+pub const ARROW_GLACIER: InstructionTable = computeHandlersForSpec(Spec.ARROW_GLACIER);
+pub const GRAY_GLACIER: InstructionTable = computeHandlersForSpec(Spec.GRAY_GLACIER);
+pub const MERGE: InstructionTable = computeHandlersForSpec(Spec.MERGE);
+pub const SHANGHAI: InstructionTable = computeHandlersForSpec(Spec.SHANGHAI);
+pub const CANCUN: InstructionTable = computeHandlersForSpec(Spec.CANCUN);
+pub const PRAGUE: InstructionTable = computeHandlersForSpec(Spec.PRAGUE);
 
 /// Get pre-computed instruction table for a specific fork.
-pub fn forFork(fork: hardfork.Hardfork) *const InstructionTable {
+pub fn forFork(fork: Spec.Fork) *const InstructionTable {
     return switch (fork) {
         .FRONTIER => &FRONTIER,
         .FRONTIER_THAWING => &FRONTIER,
@@ -97,7 +96,7 @@ pub inline fn get(self: *const InstructionTable, opcode: u8) InstructionInfo {
 
 /// Handler for unimplemented opcodes.
 ///
-/// This is used as the default handler for opcodes that are not valid in a particular hardfork.
+/// This is used as the default handler for opcodes that are not valid in a particular fork.
 pub fn unimplementedOpcodeHandler(interp: *Interpreter) Interpreter.Error!void {
     _ = interp;
     return error.UnimplementedOpcode;

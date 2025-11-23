@@ -8,7 +8,7 @@ const Allocator = std.mem.Allocator;
 const Address = @import("primitives/address.zig").Address;
 const U256 = @import("primitives/big.zig").U256;
 const Env = @import("context.zig").Env;
-const Spec = @import("hardfork.zig").Spec;
+const Spec = @import("Spec.zig");
 
 const AccessList = @This();
 

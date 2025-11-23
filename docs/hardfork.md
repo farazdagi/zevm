@@ -1,4 +1,4 @@
-# Hardfork Specification System
+# Fork Specification System
 
 ## Overview
 
@@ -8,6 +8,8 @@ The hardfork specification system is the central configuration mechanism in Zevm
 - **Dynamic gas cost functions** for operations with variable costs
 - **Instruction handlers** that implement opcode behavior
 - **Feature flags** and **limits** (EIP activation, blob counts, refund rules, etc.)
+
+**Note**: The implementation uses a file-as-struct pattern with `Spec.zig` as the primary type and `Spec.Fork` as the nested hardfork identifier enum.
 
 The system is designed to be:
 - **Comptime-evaluated**: Zero runtime overhead for fork selection
@@ -190,11 +192,10 @@ pub fn opMload(interp: *Interpreter) !u64 {
 Instead of branching, move fork-specific values to `Spec` fields with defaults:
 
 ```zig
-// In Spec struct
-pub const Spec = struct {
-    // ... existing fields ...
+// In Spec (file-as-struct in Spec.zig)
+// ... existing fields ...
 
-    // Dynamic cost parameters (with defaults)
+// Dynamic cost parameters (with defaults)
     exp_byte_cost: u64 = 10, // Default for Frontier
     // ... other cost params ...
 };
@@ -357,9 +358,9 @@ This allows completely different implementations per fork without any runtime br
 Beyond costs and handlers, `Spec` contains many configuration fields that control EVM behavior:
 
 ```zig
-pub const Spec = struct {
-    fork: Hardfork,
-    base_fork: ?Hardfork,
+// Spec.zig (file-as-struct pattern)
+fork: Spec.Fork,
+base_fork: ?Spec.Fork,
 
     // Gas and refund parameters
     max_refund_quotient: u64,       // EIP-3529: refund cap
@@ -413,10 +414,11 @@ if (is_cold_access) {
 
 ### Step-by-Step Guide
 
-1. **Add enum variant** to `Hardfork`:
+1. **Add enum variant** to `Fork` (nested in Spec.zig):
 
 ```zig
-pub const Hardfork = enum(u8) {
+// In Spec.zig
+pub const Fork = enum(u8) {
     // ... existing forks ...
     CANCUN = 17,
     PRAGUE = 18,
@@ -461,7 +463,8 @@ pub const OSAKA = forkSpec(.OSAKA, PRAGUE, .{
 3. **Update `Spec.forFork()`**:
 
 ```zig
-pub fn forFork(fork: Hardfork) Spec {
+// In Spec.zig
+pub fn forFork(fork: Spec.Fork) Spec {
     return switch (fork) {
         // ... existing cases ...
         .PRAGUE => PRAGUE,
@@ -470,10 +473,11 @@ pub fn forFork(fork: Hardfork) Spec {
 }
 ```
 
-4. **Update `Hardfork.name()`** (optional, for display):
+4. **Update `Fork.name()`** (optional, for display):
 
 ```zig
-pub fn name(self: Hardfork) []const u8 {
+// In Spec.Fork enum
+pub fn name(self: Fork) []const u8 {
     return switch (self) {
         // ... existing cases ...
         .OSAKA => "Osaka",
@@ -603,9 +607,10 @@ pub const CALL_DEPTH_LIMIT: usize = 1024;
 The current system supports Ethereum mainnet forks (Frontier → Prague). Support for **L2 chains** (Optimism, Arbitrum, Polygon, etc.) is planned:
 
 **Approach:**
-1. Extend `Hardfork` enum with chain-specific variants:
+1. Extend `Fork` enum (in Spec.zig) with chain-specific variants:
    ```zig
-   pub const Hardfork = enum(u8) {
+   // In Spec.zig
+   pub const Fork = enum(u8) {
        // Ethereum mainnet
        FRONTIER = 0, ..., PRAGUE = 18,
        // Optimism
@@ -618,10 +623,10 @@ The current system supports Ethereum mainnet forks (Frontier → Prague). Suppor
 
 2. Add optional chain-specific fields to `Spec`:
    ```zig
-   pub const Spec = struct {
-       // ... existing fields ...
+   // In Spec.zig (file-as-struct)
+   // ... existing fields ...
 
-       // L2-specific (optional)
+   // L2-specific (optional)
        l1_fee_overhead: ?u64 = null,  // Optimism L1 data fee
        fee_vault: ?Address = null,    // Optimism fee recipient
        // ... more chain-specific fields

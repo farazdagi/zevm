@@ -20,8 +20,7 @@
 //! London (EIP-3529): Reduced refunds
 
 const std = @import("std");
-const Spec = @import("../hardfork.zig").Spec;
-const Hardfork = @import("../hardfork.zig").Hardfork;
+const Spec = @import("../Spec.zig");
 const U256 = @import("../primitives/big.zig").U256;
 const Host = @import("../host/Host.zig");
 
@@ -158,7 +157,7 @@ fn makeResult(original: u64, current: u64) Host.SstoreResult {
 
 test "SSTORE gas costs" {
     const test_cases = [_]struct {
-        fork: Hardfork,
+        fork: Spec.Fork,
         original: u64,
         current: u64,
         new_value: u64,
@@ -248,7 +247,7 @@ test "SSTORE gas costs" {
 
 test "SSTORE refund calculations" {
     const test_cases = [_]struct {
-        fork: Hardfork,
+        fork: Spec.Fork,
         original: u64,
         current: u64,
         new_value: u64,

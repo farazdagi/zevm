@@ -12,8 +12,7 @@
 //! or malicious input. Saturating ensures such cases are safely rejected.
 
 const std = @import("std");
-const Spec = @import("../hardfork.zig").Spec;
-const Hardfork = @import("../hardfork.zig").Hardfork;
+const Spec = @import("../Spec.zig");
 const Interpreter = @import("../interpreter/mod.zig").Interpreter;
 const CallContext = @import("../interpreter/interpreter.zig").CallContext;
 const AnalyzedBytecode = @import("../interpreter/bytecode.zig").AnalyzedBytecode;
@@ -642,7 +641,7 @@ test "memoryCost" {
 
 test "accountAccessCost" {
     const test_cases = [_]struct {
-        fork: Hardfork,
+        fork: Spec.Fork,
         is_cold: bool,
         expected: u64,
         comment: []const u8,
@@ -663,7 +662,7 @@ test "accountAccessCost" {
 
 test "sloadCost" {
     const test_cases = [_]struct {
-        fork: Hardfork,
+        fork: Spec.Fork,
         is_cold: bool,
         expected: u64,
         comment: []const u8,
@@ -692,7 +691,7 @@ test "sloadCost" {
 
 test "calldataCost" {
     const test_cases = [_]struct {
-        fork: Hardfork,
+        fork: Spec.Fork,
         data: []const u8,
         expected: u64,
         comment: []const u8,
@@ -984,7 +983,7 @@ test "CALL" {
     const env = Env.default();
 
     const TestCase = struct {
-        fork: Hardfork = .CANCUN,
+        fork: Spec.Fork = .CANCUN,
         // Stack values
         gas_limit: u64 = 10000,
         address: [20]u8 = [_]u8{0} ** 20,

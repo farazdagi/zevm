@@ -12,7 +12,7 @@ pub const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 pub const Address = zevm.primitives.Address;
 pub const U256 = zevm.primitives.U256;
 pub const Env = zevm.context.Env;
-pub const Spec = zevm.hardfork.Spec;
+pub const Spec = zevm.Spec;
 pub const MockHost = zevm.host.MockHost;
 
 pub const expect = std.testing.expect;

@@ -48,7 +48,7 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
-const Spec = @import("../../hardfork.zig").Spec;
+const Spec = @import("../../Spec.zig");
 const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
 const CallContext = @import("../interpreter.zig").CallContext;
