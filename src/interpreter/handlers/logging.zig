@@ -2,73 +2,49 @@
 
 const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
+const B256 = @import("../../primitives/bytes.zig").B256;
 const Interpreter = @import("../interpreter.zig").Interpreter;
+const Log = @import("../../Log.zig");
 
-/// Emit log with 0 topics (LOG0).
+/// Generic LOG handler for LOG0-LOG4.
 ///
-/// Stack: [..., offset, length] -> [...]
-/// Note: This operation requires access to memory and log state.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opLog0(interp: *Interpreter) !void {
-    // LOG operations are not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
-}
+/// Stack: [offset, size, topic1, topic2, ..., topicN]
+/// EIP-214: Static calls cannot emit logs.
+pub fn makeOpLogFn(comptime topic_count: u3) *const fn (*Interpreter) Interpreter.Error!void {
+    return struct {
+        fn handler(interp: *Interpreter) Interpreter.Error!void {
+            // EIP-214: Static calls cannot emit logs
+            if (interp.is_static) {
+                return error.StateWriteInStaticCall;
+            }
 
-/// Emit log with 1 topic (LOG1).
-///
-/// Stack: [..., offset, length, topic1] -> [...]
-/// Note: This operation requires access to memory and log state.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opLog1(interp: *Interpreter) !void {
-    // LOG operations are not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
-}
+            // Pop offset and size from stack
+            const offset_u256 = try interp.ctx.stack.pop();
+            const size_u256 = try interp.ctx.stack.pop();
 
-/// Emit log with 2 topics (LOG2).
-///
-/// Stack: [..., offset, length, topic1, topic2] -> [...]
-/// Note: This operation requires access to memory and log state.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opLog2(interp: *Interpreter) !void {
-    // LOG operations are not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
-}
+            const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+            const size = size_u256.toUsize() orelse return error.InvalidOffset;
 
-/// Emit log with 3 topics (LOG3).
-///
-/// Stack: [..., offset, length, topic1, topic2, topic3] -> [...]
-/// Note: This operation requires access to memory and log state.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opLog3(interp: *Interpreter) !void {
-    // LOG operations are not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
-}
+            // Pop topics from stack (topic_count is comptime, so this loop unrolls)
+            var topics: [4]B256 = undefined;
+            comptime var i: u3 = 0;
+            inline while (i < topic_count) : (i += 1) {
+                const topic_u256 = try interp.ctx.stack.pop();
+                topics[i] = B256.init(topic_u256.toBeBytes());
+            }
 
-/// Emit log with 4 topics (LOG4).
-///
-/// Stack: [..., offset, length, topic1, topic2, topic3, topic4] -> [...]
-/// Note: This operation requires access to memory and log state.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opLog4(interp: *Interpreter) !void {
-    // LOG operations are not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
-}
+            // Get data from memory (zero-copy - just borrow the slice)
+            const data = try interp.ctx.memory.getSlice(offset, size);
 
-// ============================================================================
-// Tests
-// ============================================================================
+            // Create log entry
+            const log_entry = Log.init(
+                interp.ctx.contract.address,
+                topics[0..topic_count],
+                data,
+            );
+
+            // Emit log via host
+            interp.host.log(log_entry);
+        }
+    }.handler;
+}

@@ -27,8 +27,6 @@ const Host = @import("../host/Host.zig");
 
 /// Calculate SSTORE gas cost.
 ///
-/// Called from `DynamicGasCosts.opSstore` BEFORE any write, `SstoreResult` is obtained using
-/// `host.sstoreReadMeta()` (no writes, just reads at this point).
 /// The `is_cold` parameter comes from `AccessList.warmSlot()`.
 ///
 /// Returns the gas cost to charge for this SSTORE operation.

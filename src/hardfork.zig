@@ -343,7 +343,6 @@ pub const FRONTIER = Spec{
     .chain_id = 1, // Ethereum mainnet
     .updateCosts = struct {
         fn f(costs: *[256]u64, spec: Spec) void {
-            _ = spec;
             // Frontier base costs - all opcodes that existed in the genesis fork
 
             // 0x00-0x0B: Arithmetic Operations
@@ -423,29 +422,27 @@ pub const FRONTIER = Spec{
             // Note: PUSH0 added in Shanghai
 
             // 0x60-0x7F: PUSH1-PUSH32
-            var i: u8 = @intFromEnum(Opcode.PUSH1);
-            while (i <= @intFromEnum(Opcode.PUSH32)) : (i += 1) {
+            for (@intFromEnum(Opcode.PUSH1)..@intFromEnum(Opcode.PUSH32) + 1) |i| {
                 costs[i] = FixedGasCosts.VERYLOW;
             }
 
             // 0x80-0x8F: DUP1-DUP16
-            i = @intFromEnum(Opcode.DUP1);
-            while (i <= @intFromEnum(Opcode.DUP16)) : (i += 1) {
+            for (@intFromEnum(Opcode.DUP1)..@intFromEnum(Opcode.DUP16) + 1) |i| {
                 costs[i] = FixedGasCosts.VERYLOW;
             }
 
             // 0x90-0x9F: SWAP1-SWAP16
-            i = @intFromEnum(Opcode.SWAP1);
-            while (i <= @intFromEnum(Opcode.SWAP16)) : (i += 1) {
+            for (@intFromEnum(Opcode.SWAP1)..@intFromEnum(Opcode.SWAP16) + 1) |i| {
                 costs[i] = FixedGasCosts.VERYLOW;
             }
 
             // 0xA0-0xA4: Logging Operations
-            costs[@intFromEnum(Opcode.LOG0)] = 375;
-            costs[@intFromEnum(Opcode.LOG1)] = 375 + 375;
-            costs[@intFromEnum(Opcode.LOG2)] = 375 + 2 * 375;
-            costs[@intFromEnum(Opcode.LOG3)] = 375 + 3 * 375;
-            costs[@intFromEnum(Opcode.LOG4)] = 375 + 4 * 375;
+            // Note: Static cost is just base (375). Dynamic gas adds topics + data + memory.
+            costs[@intFromEnum(Opcode.LOG0)] = spec.log_base_cost;
+            costs[@intFromEnum(Opcode.LOG1)] = spec.log_base_cost;
+            costs[@intFromEnum(Opcode.LOG2)] = spec.log_base_cost;
+            costs[@intFromEnum(Opcode.LOG3)] = spec.log_base_cost;
+            costs[@intFromEnum(Opcode.LOG4)] = spec.log_base_cost;
 
             // 0xF0-0xFF: System Operations (excluding DELEGATECALL, CREATE2, STATICCALL, REVERT)
             costs[@intFromEnum(Opcode.CREATE)] = 32000;
@@ -545,29 +542,28 @@ pub const FRONTIER = Spec{
             // Note: PUSH0(0x5F) added in Shanghai
 
             // 0x60-0x7F: PUSH1-PUSH32
-            var i: u8 = @intFromEnum(Opcode.PUSH1);
-            while (i <= @intFromEnum(Opcode.PUSH32)) : (i += 1) {
+            for (@intFromEnum(Opcode.PUSH1)..@intFromEnum(Opcode.PUSH32) + 1) |i| {
                 t[i] = .{ .execute = handlers.opPushN };
             }
 
             // 0x80-0x8F: DUP1-DUP16
-            i = @intFromEnum(Opcode.DUP1);
-            while (i <= @intFromEnum(Opcode.DUP16)) : (i += 1) {
+            for (@intFromEnum(Opcode.DUP1)..@intFromEnum(Opcode.DUP16) + 1) |i| {
                 t[i] = .{ .execute = handlers.opDupN };
             }
 
             // 0x90-0x9F: SWAP1-SWAP16
-            i = @intFromEnum(Opcode.SWAP1);
-            while (i <= @intFromEnum(Opcode.SWAP16)) : (i += 1) {
+            for (@intFromEnum(Opcode.SWAP1)..@intFromEnum(Opcode.SWAP16) + 1) |i| {
                 t[i] = .{ .execute = handlers.opSwapN };
             }
 
             // 0xA0-0xA4: Logging operations
-            t[@intFromEnum(Opcode.LOG0)] = .{ .execute = handlers.opLog0, .dynamicGasCost = DynamicGasCosts.opLog0 };
-            t[@intFromEnum(Opcode.LOG1)] = .{ .execute = handlers.opLog1, .dynamicGasCost = DynamicGasCosts.opLog1 };
-            t[@intFromEnum(Opcode.LOG2)] = .{ .execute = handlers.opLog2, .dynamicGasCost = DynamicGasCosts.opLog2 };
-            t[@intFromEnum(Opcode.LOG3)] = .{ .execute = handlers.opLog3, .dynamicGasCost = DynamicGasCosts.opLog3 };
-            t[@intFromEnum(Opcode.LOG4)] = .{ .execute = handlers.opLog4, .dynamicGasCost = DynamicGasCosts.opLog4 };
+            inline for (0..5) |topic_count| {
+                const i = @intFromEnum(Opcode.LOG0) + topic_count;
+                t[i] = .{
+                    .execute = handlers.makeOpLogFn(@intCast(topic_count)),
+                    .dynamicGasCost = DynamicGasCosts.makeOpLogFn(@intCast(topic_count)),
+                };
+            }
 
             // 0xF0-0xFF: System operations
             t[@intFromEnum(Opcode.CREATE)] = .{ .execute = handlers.opCreate, .dynamicGasCost = DynamicGasCosts.opCreate };

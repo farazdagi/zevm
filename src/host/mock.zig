@@ -8,6 +8,7 @@ const Host = @import("Host.zig");
 const Address = @import("../primitives/mod.zig").Address;
 const U256 = @import("../primitives/mod.zig").U256;
 const B256 = @import("../primitives/mod.zig").B256;
+const Log = @import("../Log.zig");
 
 /// Per-address storage map type.
 const StorageMap = std.AutoHashMap(U256, U256);
@@ -22,6 +23,7 @@ const Snapshot = struct {
     nonces: std.AutoHashMap(Address, u64),
     storage: AccountStorageMap,
     transient_storage: AccountStorageMap,
+    log_index: usize, // For truncating logs on revert
 
     fn deinit(self: *Snapshot, allocator: Allocator) void {
         // Free all stored code in snapshot
@@ -72,6 +74,9 @@ pub const MockHost = struct {
     /// Transient storage (EIP-1153): cleared at end of transaction
     transient_storage: AccountStorageMap,
 
+    /// Event logs emitted during execution
+    logs: std.ArrayList(Log),
+
     /// Snapshots for state revert
     snapshots: std.ArrayList(Snapshot),
 
@@ -84,6 +89,7 @@ pub const MockHost = struct {
             .storage = AccountStorageMap.init(allocator),
             .original_storage = AccountStorageMap.init(allocator),
             .transient_storage = AccountStorageMap.init(allocator),
+            .logs = std.ArrayList(Log){},
             .snapshots = std.ArrayList(Snapshot){},
         };
     }
@@ -94,6 +100,12 @@ pub const MockHost = struct {
             snapshot.deinit(self.allocator);
         }
         self.snapshots.deinit(self.allocator);
+
+        // Free log data (host owns the data after copying)
+        for (self.logs.items) |log_entry| {
+            self.allocator.free(log_entry.data);
+        }
+        self.logs.deinit(self.allocator);
 
         // Free all stored code
         var code_iter = self.codes.valueIterator();
@@ -203,6 +215,7 @@ pub const MockHost = struct {
         .sstore = sstoreImpl,
         .tload = tloadImpl,
         .tstore = tstoreImpl,
+        .log = logImpl,
     };
 
     fn balanceImpl(ptr: *anyopaque, address: Address) U256 {
@@ -306,6 +319,7 @@ pub const MockHost = struct {
             .nonces = snapshot_nonces,
             .storage = snapshot_storage,
             .transient_storage = snapshot_transient,
+            .log_index = self.logs.items.len,
         };
 
         try self.snapshots.append(self.allocator, snapshot);
@@ -410,6 +424,14 @@ pub const MockHost = struct {
                 @panic("Out of memory during revert");
             };
         }
+
+        // Free logs that will be discarded (after snapshot point)
+        for (self.logs.items[snapshot.log_index..]) |log_entry| {
+            self.allocator.free(log_entry.data);
+        }
+
+        // Truncate logs to checkpoint.
+        self.logs.shrinkRetainingCapacity(snapshot.log_index);
 
         // Discard all snapshots created after this one
         while (self.snapshots.items.len > snapshot_id + 1) {
@@ -552,6 +574,31 @@ pub const MockHost = struct {
         slot_map.put(key, value) catch {
             @panic("Out of memory during tstore");
         };
+    }
+
+    fn logImpl(ptr: *anyopaque, log_entry: Log) void {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+
+        // Copy the log data (host takes ownership)
+        const data_copy = self.allocator.dupe(u8, log_entry.data) catch @panic("OOM");
+
+        var log_copy = log_entry;
+        log_copy.data = data_copy;
+
+        self.logs.append(self.allocator, log_copy) catch @panic("OOM");
+    }
+
+    /// Get all emitted logs (transaction-level).
+    pub fn getLogs(self: *const MockHost) []const Log {
+        return self.logs.items;
+    }
+
+    /// Clear all logs (for transaction boundaries).
+    pub fn clearLogs(self: *MockHost) void {
+        for (self.logs.items) |log_entry| {
+            self.allocator.free(log_entry.data);
+        }
+        self.logs.clearRetainingCapacity();
     }
 };
 
@@ -1050,4 +1097,93 @@ test "MockHost: storage reverts with snapshot" {
 
     // Value should be back to 100
     try expectEqual(U256.fromU64(100), h.sload(addr, key));
+}
+
+test "MockHost: log collection" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const data1 = try std.testing.allocator.dupe(u8, "event1");
+    defer std.testing.allocator.free(data1);
+    const log1 = Log.init(Address.zero(), &[_]B256{}, data1);
+
+    const data2 = try std.testing.allocator.dupe(u8, "event2");
+    defer std.testing.allocator.free(data2);
+    const log2 = Log.init(Address.zero(), &[_]B256{}, data2);
+
+    mock.host().log(log1);
+    mock.host().log(log2);
+
+    const logs = mock.getLogs();
+    try expectEqual(2, logs.len);
+    try expectEqualSlices(u8, "event1", logs[0].data);
+    try expectEqualSlices(u8, "event2", logs[1].data);
+}
+
+test "MockHost: logs discarded on revert" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    // Emit log1
+    const data1 = try std.testing.allocator.dupe(u8, "before");
+    defer std.testing.allocator.free(data1);
+    const log1 = Log.init(Address.zero(), &[_]B256{}, data1);
+    mock.host().log(log1);
+
+    try expectEqual(1, mock.getLogs().len);
+
+    // Take snapshot (log_index = 1)
+    const snap_id = try mock.host().snapshot();
+
+    // Emit log2 after snapshot
+    const data2 = try std.testing.allocator.dupe(u8, "after");
+    defer std.testing.allocator.free(data2);
+    const log2 = Log.init(Address.zero(), &[_]B256{}, data2);
+    mock.host().log(log2);
+
+    try expectEqual(2, mock.getLogs().len);
+
+    // Revert to snapshot - log2 should be discarded
+    mock.host().revertToSnapshot(snap_id);
+
+    const logs = mock.getLogs();
+    try expectEqual(1, logs.len);
+    try expectEqualSlices(u8, "before", logs[0].data);
+}
+
+test "MockHost: clearLogs frees memory" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const data = try std.testing.allocator.dupe(u8, "test");
+    defer std.testing.allocator.free(data);
+    const log_entry = Log.init(Address.zero(), &[_]B256{}, data);
+
+    mock.host().log(log_entry);
+    try expectEqual(1, mock.getLogs().len);
+
+    mock.clearLogs();
+    try expectEqual(0, mock.getLogs().len);
+}
+
+test "MockHost: log data survives source modification" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    // Create temporary buffer for log data
+    var temp_buffer = [_]u8{ 'o', 'r', 'i', 'g', 'i', 'n', 'a', 'l' };
+
+    // Create log with borrowed data
+    const log_entry = Log.init(Address.zero(), &[_]B256{}, &temp_buffer);
+
+    // Host copies the data
+    mock.host().log(log_entry);
+
+    // Modify the source buffer
+    temp_buffer[0] = 'X';
+
+    // Verify host's copy is unchanged (ownership transferred)
+    const logs = mock.getLogs();
+    try expectEqual(1, logs.len);
+    try expectEqualSlices(u8, "original", logs[0].data);
 }

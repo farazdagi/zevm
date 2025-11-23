@@ -581,7 +581,7 @@ pub fn opSstore(interp: *Interpreter) !u64 {
 /// For log4:
 /// Stack: [offset, size, topic1, topic2, topic3, topic4, ...]
 /// Formula: memory_expansion + log_base_cost + 4*log_topic_cost + log_data_cost * data_size
-inline fn makeLogHandler(comptime topic_count: u8) fn (*Interpreter) anyerror!u64 {
+pub inline fn makeOpLogFn(comptime topic_count: u8) fn (*Interpreter) anyerror!u64 {
     return struct {
         fn handler(interp: *Interpreter) !u64 {
             const region = try memoryRegionExpansion(interp, 0, 1);
@@ -589,21 +589,6 @@ inline fn makeLogHandler(comptime topic_count: u8) fn (*Interpreter) anyerror!u6
         }
     }.handler;
 }
-
-/// Compute dynamic gas for LOG0 operation.
-pub const opLog0 = makeLogHandler(0);
-
-/// Compute dynamic gas for LOG1 operation.
-pub const opLog1 = makeLogHandler(1);
-
-/// Compute dynamic gas for LOG2 operation.
-pub const opLog2 = makeLogHandler(2);
-
-/// Compute dynamic gas for LOG3 operation.
-pub const opLog3 = makeLogHandler(3);
-
-/// Compute dynamic gas for LOG4 operation.
-pub const opLog4 = makeLogHandler(4);
 
 /// Compute dynamic gas for CREATE operation.
 ///

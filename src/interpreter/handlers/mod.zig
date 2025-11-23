@@ -97,11 +97,7 @@ pub const opBlobhash = environmental.opBlobhash;
 pub const opBlobbasefee = environmental.opBlobbasefee;
 
 // Logging operations
-pub const opLog0 = logging.opLog0;
-pub const opLog1 = logging.opLog1;
-pub const opLog2 = logging.opLog2;
-pub const opLog3 = logging.opLog3;
-pub const opLog4 = logging.opLog4;
+pub const makeOpLogFn = logging.makeOpLogFn;
 
 // Memory operations
 pub const opMload = memory.opMload;

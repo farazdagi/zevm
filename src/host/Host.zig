@@ -4,6 +4,7 @@ const std = @import("std");
 const Address = @import("../primitives/mod.zig").Address;
 const U256 = @import("../primitives/mod.zig").U256;
 const B256 = @import("../primitives/mod.zig").B256;
+const Log = @import("../Log.zig");
 
 const Host = @This();
 
@@ -120,6 +121,12 @@ pub const VTable = struct {
     ///
     /// Writes the value to the transient storage slot.
     tstore: *const fn (ptr: *anyopaque, address: Address, key: U256, value: U256) void,
+
+    /// Emit an event log.
+    ///
+    /// The log's data field is borrowed from the interpreter's memory.
+    /// The host implementation must copy the data if it needs to persist the log.
+    log: *const fn (ptr: *anyopaque, log_entry: Log) void,
 };
 
 pub inline fn balance(self: Host, address: Address) U256 {
@@ -180,4 +187,8 @@ pub inline fn tload(self: Host, address: Address, key: U256) U256 {
 
 pub inline fn tstore(self: Host, address: Address, key: U256, value: U256) void {
     self.vtable.tstore(self.ptr, address, key, value);
+}
+
+pub inline fn log(self: Host, log_entry: Log) void {
+    self.vtable.log(self.ptr, log_entry);
 }
