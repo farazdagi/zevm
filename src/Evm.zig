@@ -342,7 +342,6 @@ pub fn call(self: *Evm, inputs: CallExecutor.Inputs) !CallExecutor.Result {
                 al.deinit();
                 self.access_list = al_snapshot;
             }
-            try self.host.transfer(inputs.caller, inputs.target, inputs.value);
         }
     } else {
         // On success, discard the snapshot (keep current access list state).
@@ -766,6 +765,41 @@ test "Evm: value transfer scenarios" {
         try expect(h.balance(TestHelper.caller).eql(U256.fromU64(tc.expected_caller_balance)));
         try expect(h.balance(TestHelper.target).eql(U256.fromU64(tc.expected_target_balance)));
     }
+}
+
+test "Evm: value transfer reverted on execution failure" {
+    const allocator = std.testing.allocator;
+    var env = Env.default();
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+    const spec = Spec.forFork(.CANCUN); // Berlin+ for access list path
+
+    var evm = Evm.init(allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    // Setup: caller has 5000, target has 0.
+    try mock.setBalance(TestHelper.caller, U256.fromU64(5000));
+    try mock.setBalance(TestHelper.target, U256.ZERO);
+
+    // Target code: REVERT with no data (0xFD with zero offset/size).
+    // PUSH1 0, PUSH1 0, REVERT -> 0x60 0x00 0x60 0x00 0xFD
+    const revert_bytecode = &[_]u8{ 0x60, 0x00, 0x60, 0x00, 0xFD };
+    try mock.setCode(TestHelper.target, revert_bytecode);
+
+    var inputs = TestHelper.defaultInputs();
+    inputs.value = U256.fromU64(1000);
+    inputs.transfer_value = true;
+
+    const result = try evm.call(inputs);
+
+    // Execution should revert.
+    try expectEqual(ExecutionStatus.REVERT, result.status);
+
+    // Balances must be restored to pre-call state.
+    // This is a regression test: a bug previously caused double-transfer on revert.
+    const h = mock.host();
+    try expectEqual(U256.fromU64(5000), h.balance(TestHelper.caller));
+    try expectEqual(U256.ZERO, h.balance(TestHelper.target));
 }
 
 test "Evm: call creates snapshot" {
