@@ -122,25 +122,25 @@ block_hash_history: u64 = 256,
 
 /// EIP-3529: Reduction in refunds
 /// Pre-London: 2 (50%), Post-London: 5 (20%)
-max_refund_quotient: u64,
+max_refund_quotient: u64 = 2,
 
 /// SSTORE refund when clearing storage
 /// Pre-EIP-3529: 15000, Post-EIP-3529: 4800
-sstore_clears_schedule: u64,
+sstore_clears_schedule: u64 = 15000,
 
 /// SELFDESTRUCT refund (removed in EIP-3529)
 /// Pre-EIP-3529: 24000, Post-EIP-3529: 0
-selfdestruct_refund: u64,
+selfdestruct_refund: u64 = 24000,
 
 /// EIP-2929: Gas cost increases for state access opcodes
 /// Cost of cold SLOAD
-cold_sload_cost: u64,
+cold_sload_cost: u64 = 50,
 
 /// Cost of cold account access (CALL, BALANCE, EXTCODESIZE, etc.)
-cold_account_access_cost: u64,
+cold_account_access_cost: u64 = 0,
 
 /// Cost of warm storage read
-warm_storage_read_cost: u64,
+warm_storage_read_cost: u64 = 50,
 
 /// EIP-2200: Base storage read cost used in SSTORE gas formulas (`SLOAD_GAS` constant).
 ///
@@ -150,10 +150,10 @@ sload_gas: u64 = 50,
 
 /// EIP-3860: Limit and meter initcode
 /// Maximum initcode size (null = no limit)
-max_initcode_size: ?usize,
+max_initcode_size: ?usize = null,
 
 /// Cost per word of initcode
-initcode_word_cost: u64,
+initcode_word_cost: u64 = 0,
 
 /// Cost per word (32 bytes) for KECCAK256 hashing.
 keccak256_word_cost: u64 = 6,
@@ -183,53 +183,56 @@ call_stipend: u64 = 2300,
 
 /// EIP-170: Contract code size limit
 /// Maximum contract code size (0x6000 = 2**14 + 2**13 = 24576 bytes = 24KB)
-max_code_size: usize,
+max_code_size: usize = 0x6000,
 
 /// EIP-3855: PUSH0 instruction
 /// Opcode availability
-has_push0: bool,
+has_push0: bool = false,
 
 /// EIP-3198: BASEFEE opcode
-has_basefee: bool,
-
-/// EIP-4399: PREVRANDAO opcode (replaces DIFFICULTY post-Merge)
-has_prevrandao: bool,
-
-/// SELFDESTRUCT still available (may be removed in future)
-has_selfdestruct: bool,
-
-/// EIP-1153: Transient storage (TLOAD, TSTORE)
-has_tstore: bool,
-
-/// EIP-5656: MCOPY instruction
-has_mcopy: bool,
-
-/// EIP-1559: Base fee in block
-/// Block validation
-has_base_fee: bool,
-
-/// EIP-4844: Blob opcodes (BLOBHASH, BLOBBASEFEE)
-has_blob_opcodes: bool,
-
-/// EIP-4844: Blob gas in block
-has_blob_gas: bool,
-
-/// EIP-4844 & EIP-7691: Blob parameters
-/// Target number of blobs per block (3 for Cancun, 6 for Prague)
-target_blobs_per_block: u8,
-
-/// Maximum number of blobs per block (6 for Cancun, 9 for Prague)
-max_blobs_per_block: u8,
+has_basefee: bool = false,
 
 /// EIP-7702: Set EOA account code for one transaction
 // Prague additions
-has_eip7702: bool,
+has_eip7702: bool = false,
+
+/// EIP-3541: Reject code starting with 0xEF (London+)
+has_eip3541: bool = false,
+
+/// EIP-4399: PREVRANDAO opcode (replaces DIFFICULTY post-Merge)
+has_prevrandao: bool = false,
+
+/// SELFDESTRUCT still available (may be removed in future)
+has_selfdestruct: bool = true,
+
+/// EIP-1153: Transient storage (TLOAD, TSTORE)
+has_tstore: bool = false,
+
+/// EIP-5656: MCOPY instruction
+has_mcopy: bool = false,
+
+/// EIP-1559: Base fee in block
+/// Block validation
+has_base_fee: bool = false,
+
+/// EIP-4844: Blob opcodes (BLOBHASH, BLOBBASEFEE)
+has_blob_opcodes: bool = false,
+
+/// EIP-4844: Blob gas in block
+has_blob_gas: bool = false,
+
+/// EIP-4844 & EIP-7691: Blob parameters
+/// Target number of blobs per block (3 for Cancun, 6 for Prague)
+target_blobs_per_block: u8 = 0,
+
+/// Maximum number of blobs per block (6 for Cancun, 9 for Prague)
+max_blobs_per_block: u8 = 0,
 
 /// EIP-2537: BLS12-381 curve precompiles
-has_bls_precompiles: bool,
+has_bls_precompiles: bool = false,
 
 /// EIP-2935: Historical block hashes in state (8192 blocks)
-has_historical_block_hashes: bool,
+has_historical_block_hashes: bool = false,
 
 /// Get the spec for a specific fork
 pub fn forFork(fork: Fork) Spec {
@@ -283,6 +286,8 @@ pub fn hasEIP(self: Spec, comptime eip: u16) bool {
         3855 => self.has_push0,
         // EIP-3198: BASEFEE opcode
         3198 => self.has_basefee,
+        // EIP-3541: Reject code starting with 0xEF
+        3541 => self.has_eip3541,
         // EIP-4399: PREVRANDAO opcode
         4399 => self.has_prevrandao,
         // EIP-1153: Transient storage
@@ -580,30 +585,6 @@ pub const FRONTIER = Spec{
             t[@intFromEnum(Opcode.SELFDESTRUCT)] = .{ .execute = handlers.opSelfdestruct, .is_control_flow = true };
         }
     }.f,
-    // TODO: review and prune, base cost is calculated in updateCosts.
-    .max_refund_quotient = 2,
-    .sstore_clears_schedule = 15000,
-    .selfdestruct_refund = 24000,
-    .cold_sload_cost = 50,
-    .cold_account_access_cost = 0,
-    .warm_storage_read_cost = 50,
-    .max_initcode_size = null,
-    .initcode_word_cost = 0,
-    .max_code_size = 24576,
-    .has_push0 = false,
-    .has_basefee = false,
-    .has_prevrandao = false,
-    .has_selfdestruct = true,
-    .has_blob_opcodes = false,
-    .has_tstore = false,
-    .has_mcopy = false,
-    .has_base_fee = false,
-    .has_blob_gas = false,
-    .target_blobs_per_block = 0,
-    .max_blobs_per_block = 0,
-    .has_eip7702 = false,
-    .has_bls_precompiles = false,
-    .has_historical_block_hashes = false,
 };
 
 /// Frontier Thawing (September, 2015)
@@ -845,6 +826,7 @@ pub const LONDON = forkSpec(.LONDON, BERLIN, .{
     .sstore_clears_schedule = 4800, // EIP-3529: Reduced from 15000
     .selfdestruct_refund = 0, // EIP-3529: Removed
     .has_basefee = true, // EIP-3198
+    .has_eip3541 = true, // EIP-3541
     .has_base_fee = true, // EIP-1559
     .updateCosts = struct {
         fn f(costs: *[256]u64, spec: Spec) void {
