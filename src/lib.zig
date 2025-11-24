@@ -8,6 +8,7 @@ pub const gas = @import("gas/mod.zig");
 pub const context = @import("context.zig");
 pub const host = @import("host/mod.zig");
 pub const CallExecutor = @import("CallExecutor.zig");
+pub const CreateExecutor = @import("CreateExecutor.zig");
 pub const Evm = @import("Evm.zig");
 pub const Contract = @import("Contract.zig");
 pub const AccessList = @import("AccessList.zig");
@@ -28,6 +29,7 @@ test {
     _ = context;
     _ = host;
     _ = CallExecutor;
+    _ = CreateExecutor;
     _ = Evm;
     _ = AccessList;
     _ = Log;

@@ -19,6 +19,7 @@ const InstructionTable = @import("InstructionTable.zig");
 const Env = @import("../context.zig").Env;
 const Host = @import("../host/Host.zig");
 const CallExecutor = @import("../CallExecutor.zig");
+const CreateExecutor = @import("../CreateExecutor.zig");
 const Contract = @import("../Contract.zig");
 const AccessListAccessor = @import("../lib.zig").AccessListAccessor;
 
@@ -97,6 +98,9 @@ pub const InterpreterConfig = struct {
     /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL).
     call_executor: CallExecutor,
 
+    /// Interface for contract creation (CREATE/CREATE2).
+    create_executor: CreateExecutor,
+
     /// Access list accessor for EIP-2929 cold/warm tracking.
     access_list: AccessListAccessor,
 };
@@ -171,14 +175,38 @@ pub const CallContext = struct {
 pub const Interpreter = struct {
     /// All errors that can occur during interpreter execution.
     pub const Error = Stack.Error || Memory.Error || Gas.Error || error{
+        // Opcode byte has no defined meaning.
         InvalidOpcode,
+
+        // Valid opcode but handler not yet implemented.
         UnimplementedOpcode,
+
+        // JUMP/JUMPI target is not a JUMPDEST.
         InvalidJump,
+
+        // PC beyond bytecode bounds.
         InvalidProgramCounter,
+
+        // U256 offset/size too large for usize.
         InvalidOffset,
+
+        // Malformed bytecode (e.g., truncated PUSH immediate).
         InvalidBytecode,
+
+        // REVERT opcode executed.
         Revert,
+
+        // EIP-214: state modification in STATICCALL context.
         StateWriteInStaticCall,
+
+        // EIP-3860: init code > max size.
+        CreateInitCodeSizeLimit,
+
+        // Account already has code or nonce.
+        CreateCollision,
+
+        // EIP-3541: runtime code starts with 0xEF.
+        CreateContractStartingWithEF,
     };
 
     /// Call-scoped execution context (stack, memory, bytecode).
@@ -221,6 +249,9 @@ pub const Interpreter = struct {
     /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL).
     call_executor: CallExecutor,
 
+    /// Interface for contract creation (CREATE/CREATE2).
+    create_executor: CreateExecutor,
+
     /// Access list accessor for EIP-2929 cold/warm tracking.
     access_list: AccessListAccessor,
 
@@ -246,6 +277,7 @@ pub const Interpreter = struct {
             .return_data_buffer = config.return_data_buffer,
             .is_static = config.is_static,
             .call_executor = config.call_executor,
+            .create_executor = config.create_executor,
             .access_list = config.access_list,
         };
     }
@@ -420,6 +452,10 @@ pub const Interpreter = struct {
             error.InvalidJump => .INVALID_JUMP,
             error.Revert => .REVERT,
             error.StateWriteInStaticCall => .REVERT,
+            error.CreateInitCodeSizeLimit,
+            error.CreateCollision,
+            error.CreateContractStartingWithEF,
+            => .REVERT,
         };
 
         return InterpreterResult{

@@ -5,32 +5,112 @@ const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
 const CallExecutor = @import("../../CallExecutor.zig");
+const CreateExecutor = @import("../../CreateExecutor.zig");
 const ExecutionStatus = @import("../interpreter.zig").ExecutionStatus;
 
 /// Create a new contract (CREATE).
 ///
-/// Stack: [value, offset, length, ...] -> [address, ...]
-/// Note: This operation requires complex state management and sub-context execution.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opCreate(interp: *Interpreter) !void {
-    // CREATE is not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
+/// Stack: [value, offset, size, ...] → [address, ...]
+///
+/// Performs contract creation by executing init code and deploying the resulting runtime code.
+/// The new contract's address is deterministically calculated from the creator's address and nonce.
+///
+/// EIPs: EIP-150 (63/64 gas rule), EIP-3860 (init code size limit in Shanghai+)
+pub fn opCreate(interp: *Interpreter) Interpreter.Error!void {
+    return createImpl(interp, .CREATE);
 }
 
 /// Create a new contract with deterministic address (CREATE2) - EIP-1014.
 ///
-/// Stack: [value, offset, length, salt, ...] -> [address, ...]
-/// Note: This operation requires complex state management and sub-context execution.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opCreate2(interp: *Interpreter) !void {
-    // CREATE2 is not allowed in static call context (STATICCALL).
-    if (interp.is_static) {
-        return error.StateWriteInStaticCall;
-    }
-    return error.UnimplementedOpcode;
+/// Stack: [value, offset, size, salt, ...] → [address, ...]
+///
+/// Like CREATE, but the address is deterministically calculated from:
+/// keccak256(0xff ++ sender ++ salt ++ keccak256(init_code))[12:]
+///
+/// This enables counterfactual instantiation and proxy patterns.
+///
+/// EIPs: EIP-1014 (CREATE2), EIP-150 (63/64 gas), EIP-3860 (init code size limit)
+pub fn opCreate2(interp: *Interpreter) Interpreter.Error!void {
+    return createImpl(interp, .CREATE2);
+}
+
+/// Variant for comptime-parameterized create implementation.
+const CreateVariant = enum { CREATE, CREATE2 };
+
+/// Shared implementation for CREATE and CREATE2 opcodes.
+///
+/// EIPs: EIP-150 (63/64 gas rule), EIP-1014 (CREATE2), EIP-3860 (init code size limit)
+fn createImpl(interp: *Interpreter, comptime variant: CreateVariant) Interpreter.Error!void {
+    // Disallow in static context.
+    if (interp.is_static) return error.StateWriteInStaticCall;
+
+    // Pop common stack parameters.
+    const value = try interp.ctx.stack.pop();
+    const offset_u256 = try interp.ctx.stack.pop();
+    const size_u256 = try interp.ctx.stack.pop();
+
+    // Pop salt for CREATE2 only.
+    const salt = if (variant == .CREATE2) try interp.ctx.stack.pop() else undefined;
+
+    // Convert offset and size to usize.
+    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+
+    // Read init_code from memory.
+    // Note: Dynamic gas for memory expansion already charged.
+    const init_code = if (size > 0)
+        try interp.ctx.memory.getSlice(offset, size)
+    else
+        &[_]u8{};
+
+    // Calculate gas to send using EIP-150 63/64 rule.
+    // Available gas = gas remaining after dynamic costs (including init code metering) charged.
+    const gas_remaining = interp.gas.limit -| interp.gas.used;
+
+    // Cap at 63/64 of remaining gas.
+    const max_gas = gas_remaining -| (gas_remaining / 64);
+
+    // CREATE/CREATE2 sends all available gas (no user-specified limit).
+    const gas_limit = max_gas;
+    if (gas_limit == 0) return error.OutOfGas;
+
+    // Consume the gas_limit from current frame.
+    // This will be refunded based on actual usage.
+    try interp.gas.consume(gas_limit);
+
+    // Build creation inputs.
+    const inputs = CreateExecutor.Inputs{
+        .caller = interp.ctx.contract.address,
+        .kind = if (variant == .CREATE2) .{ .CREATE2 = salt } else .CREATE,
+        .value = value,
+        .init_code = init_code,
+        .gas_limit = gas_limit,
+    };
+
+    // Execute the creation via CreateExecutor.
+    const result = interp.create_executor.create(inputs) catch {
+        // Handle errors from creation as failed creation.
+        // All gas sent is consumed on error.
+        // No return data on error.
+        interp.return_data_buffer.* = &[_]u8{};
+        try interp.ctx.stack.push(U256.ZERO);
+        return;
+    };
+
+    // Refund unused gas.
+    const gas_refund = gas_limit -| result.gas_used;
+    interp.gas.used -|= gas_refund;
+
+    // Update return data buffer.
+    interp.return_data_buffer.* = result.output;
+
+    // Push result address to stack (0x0 on failure).
+    const return_address = if (result.address) |addr|
+        U256.fromBeBytesPadded(&addr.inner.bytes)
+    else
+        U256.ZERO;
+
+    try interp.ctx.stack.push(return_address);
 }
 
 /// Call another contract (CALL).

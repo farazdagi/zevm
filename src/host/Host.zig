@@ -85,6 +85,20 @@ pub const VTable = struct {
     /// Returns 0 for non-existent accounts (default nonce value).
     nonce: *const fn (ptr: *anyopaque, address: Address) u64,
 
+    /// Increment account nonce by 1.
+    ///
+    /// Used during contract creation to increment both the creator's nonce
+    /// and set the new contract's nonce to 1 (per EIP-161).
+    /// Creates the account with nonce=1 if it doesn't exist.
+    incrementNonce: *const fn (ptr: *anyopaque, address: Address) void,
+
+    /// Set account code (deploy contract bytecode).
+    ///
+    /// Deploys runtime bytecode to the given address.
+    /// The implementation must copy the code - ownership is NOT transferred.
+    /// Used after successful contract creation to deploy the runtime code.
+    setCode: *const fn (ptr: *anyopaque, address: Address, bytecode: []const u8) std.mem.Allocator.Error!void,
+
     /// Check if an account exists.
     ///
     /// Returns true if the account exists in state (has balance, code, or nonce).
@@ -163,6 +177,14 @@ pub inline fn transfer(self: Host, from: Address, to: Address, value: U256) !voi
 
 pub inline fn nonce(self: Host, address: Address) u64 {
     return self.vtable.nonce(self.ptr, address);
+}
+
+pub inline fn incrementNonce(self: Host, address: Address) void {
+    self.vtable.incrementNonce(self.ptr, address);
+}
+
+pub inline fn setCode(self: Host, address: Address, bytecode: []const u8) !void {
+    return self.vtable.setCode(self.ptr, address, bytecode);
 }
 
 pub inline fn accountExists(self: Host, address: Address) bool {

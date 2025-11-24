@@ -253,8 +253,8 @@ Each entry contains:
 
 ```zig
 pub const Instruction = struct {
-    execute: ?*const fn (*Interpreter) InterpreterError!void,
-    dynamicGasCost: ?*const fn (*Interpreter) InterpreterError!u64,
+    execute: ?*const fn (*Interpreter) Interpreter.Error!void,
+    dynamicGasCost: ?*const fn (*Interpreter) Interpreter.Error!u64,
     is_control_flow: bool = false,
 };
 ```

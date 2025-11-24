@@ -1,6 +1,10 @@
 const std = @import("std");
 const bytes = @import("bytes.zig");
 const B160 = bytes.B160;
+const B256 = bytes.B256;
+const U256 = @import("big.zig").U256;
+const rlp = @import("rlp.zig");
+const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 /// Ethereum address type.
 ///
@@ -262,6 +266,60 @@ pub const Address = struct {
         // We know the buffer is large enough, so this can't fail with BufferTooSmall
         const hex = self.toChecksummedHex(&buf, null) catch unreachable;
         try writer.writeAll(hex);
+    }
+
+    /// Calculate CREATE address: keccak256(rlp([sender, nonce]))[12:].
+    ///
+    /// This is the standard Ethereum contract creation address derivation.
+    /// The address depends on the sender and their current nonce, ensuring
+    /// that each CREATE from the same account produces a unique address.
+    pub fn createAddress(allocator: std.mem.Allocator, sender: Address, nonce: u64) !Address {
+        // RLP encode [sender, nonce].
+        const encoded = try rlp.encodeAddressNonce(allocator, sender, nonce);
+        defer allocator.free(encoded);
+
+        // Hash with Keccak256.
+        var hash: [32]u8 = undefined;
+        Keccak256.hash(encoded, &hash, .{});
+
+        // Take last 20 bytes as address.
+        var addr_bytes: [20]u8 = undefined;
+        @memcpy(&addr_bytes, hash[12..32]);
+
+        return Address.init(addr_bytes);
+    }
+
+    /// Calculate CREATE2 address
+    ///
+    /// keccak256(0xff ++ sender ++ salt ++ keccak256(init_code))[12:]
+    ///
+    /// This is the deterministic contract creation address derivation introduced
+    /// in EIP-1014. The address depends on the sender, a user-provided salt, and
+    /// the initialization code hash, allowing for counterfactual contract deployment.
+    ///
+    /// Reference: EIP-1014
+    pub fn create2Address(sender: Address, salt: U256, init_code_hash: B256) Address {
+        // Build the input: 0xff ++ sender (20 bytes) ++ salt (32 bytes) ++ init_code_hash (32 bytes).
+        // Total: 1 + 20 + 32 + 32 = 85 bytes.
+        var input: [85]u8 = undefined;
+
+        input[0] = 0xff;
+        @memcpy(input[1..21], &sender.inner.bytes);
+
+        const salt_bytes = salt.toBeBytes();
+        @memcpy(input[21..53], &salt_bytes);
+
+        @memcpy(input[53..85], &init_code_hash.bytes);
+
+        // Hash with Keccak256.
+        var hash: [32]u8 = undefined;
+        Keccak256.hash(&input, &hash, .{});
+
+        // Take last 20 bytes as address.
+        var addr_bytes: [20]u8 = undefined;
+        @memcpy(&addr_bytes, hash[12..32]);
+
+        return Address.init(addr_bytes);
     }
 };
 
@@ -754,33 +812,32 @@ test "Address.fromHexComptime" {
     }
 }
 
-test "Address round-trip: hex -> Address -> hex" {
-    const test_cases = [_][]const u8{
-        "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
-        "0x0000000000000000000000000000000000000000",
-        "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed",
+test "Address round-trip" {
+    const test_cases = [_]struct {
+        input: []const u8,
+        use_checksum: bool,
+    }{
+        // Plain hex round-trips (lowercase).
+        .{ .input = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", .use_checksum = false },
+        .{ .input = "0x0000000000000000000000000000000000000000", .use_checksum = false },
+        .{ .input = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", .use_checksum = false },
+        // Checksummed hex round-trips (EIP-55 mixed case).
+        .{ .input = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", .use_checksum = true },
+        .{ .input = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", .use_checksum = true },
+        .{ .input = "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB", .use_checksum = true },
     };
 
-    for (test_cases) |original| {
-        const addr = try Address.fromHex(original);
+    for (test_cases) |tc| {
         var buf: [42]u8 = undefined;
-        const result = try addr.toHex(&buf);
-        try expectEqualStrings(original, result);
-    }
-}
-
-test "Address round-trip: checksummed hex -> Address -> checksummed hex" {
-    const test_cases = [_][]const u8{
-        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
-        "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
-        "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
-    };
-
-    for (test_cases) |original| {
-        const addr = try Address.fromChecksummedHex(original, null);
-        var buf: [42]u8 = undefined;
-        const result = try addr.toChecksummedHex(&buf, null);
-        try expectEqualStrings(original, result);
+        if (tc.use_checksum) {
+            const addr = try Address.fromChecksummedHex(tc.input, null);
+            const result = try addr.toChecksummedHex(&buf, null);
+            try expectEqualStrings(tc.input, result);
+        } else {
+            const addr = try Address.fromHex(tc.input);
+            const result = try addr.toHex(&buf);
+            try expectEqualStrings(tc.input, result);
+        }
     }
 }
 
@@ -843,78 +900,159 @@ test "Address.format" {
     }
 }
 
-test "Address.fromU256 - extracts lower 20 bytes" {
-    const U256 = @import("big.zig").U256;
-
-    const test_cases = [_]struct {
-        value: u64,
+test "Address.fromU256" {
+    // Test cases for u64 inputs.
+    const u64_cases = [_]struct {
+        input: u64,
         expected_bytes: [20]u8,
     }{
         // Small value fits in lower bytes.
         .{
-            .value = 0x123456789ABCDEF0,
+            .input = 0x123456789ABCDEF0,
             .expected_bytes = [_]u8{0} ** 12 ++ [_]u8{ 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 },
         },
         // Zero value.
         .{
-            .value = 0,
+            .input = 0,
             .expected_bytes = [_]u8{0} ** 20,
         },
         // Max u64 value.
         .{
-            .value = 0xFFFFFFFFFFFFFFFF,
+            .input = 0xFFFFFFFFFFFFFFFF,
             .expected_bytes = [_]u8{0} ** 12 ++ [_]u8{0xFF} ** 8,
         },
     };
 
-    for (test_cases) |tc| {
-        const value = U256.fromU64(tc.value);
+    for (u64_cases) |tc| {
+        const value = U256.fromU64(tc.input);
         const addr = Address.fromU256(value);
         try expectEqualSlices(u8, &tc.expected_bytes, &addr.inner.bytes);
     }
-}
 
-test "Address.fromU256 - upper bits ignored" {
-    const U256 = @import("big.zig").U256;
-
-    // Create U256 with non-zero upper 12 bytes and zero lower 20 bytes.
-    const test_bytes = [_]u8{0xFF} ** 12 ++ [_]u8{0x00} ** 20;
-    const value = U256.fromBeBytesPadded(&test_bytes);
-    const addr = Address.fromU256(value);
-
-    // Address should be all zeros (upper 12 bytes ignored).
-    try expect(addr.isZero());
-}
-
-test "Address.fromU256 - known address pattern" {
-    const U256 = @import("big.zig").U256;
-
-    // Create a U256 from a known address.
-    const expected_addr = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-
-    // Convert address to U256 (pad with zeros on left).
-    const value = U256.fromBeBytesPadded(&expected_addr.inner.bytes);
-
-    // Convert back to address.
-    const result_addr = Address.fromU256(value);
-
-    // Should match original.
-    try expect(result_addr.eql(expected_addr));
-}
-
-test "Address.fromU256 - round trip with upper bits" {
-    const U256 = @import("big.zig").U256;
-
-    // Create U256 with non-zero upper bits.
-    const full_bytes = [_]u8{0xAA} ** 12 ++ [_]u8{
-        0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d,
-        0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3,
-        0x7a, 0xa9, 0x60, 0x45,
+    // Test cases for 32-byte inputs (tests upper bits behavior).
+    const bytes_cases = [_]struct {
+        input_bytes: [32]u8,
+        expected_hex: []const u8,
+    }{
+        // Upper bits (first 12 bytes) should be ignored - all zeros expected.
+        .{
+            .input_bytes = [_]u8{0xFF} ** 12 ++ [_]u8{0x00} ** 20,
+            .expected_hex = "0x0000000000000000000000000000000000000000",
+        },
+        // Known address pattern (20-byte address padded with zeros on left).
+        .{
+            .input_bytes = [_]u8{0x00} ** 12 ++ [_]u8{
+                0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d,
+                0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3,
+                0x7a, 0xa9, 0x60, 0x45,
+            },
+            .expected_hex = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        },
+        // Round-trip with upper bits set (garbage in upper bits should be ignored).
+        .{
+            .input_bytes = [_]u8{0xAA} ** 12 ++ [_]u8{
+                0xd8, 0xda, 0x6b, 0xf2, 0x69, 0x64, 0xaf, 0x9d,
+                0x7e, 0xed, 0x9e, 0x03, 0xe5, 0x34, 0x15, 0xd3,
+                0x7a, 0xa9, 0x60, 0x45,
+            },
+            .expected_hex = "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+        },
     };
-    const value = U256.fromBeBytesPadded(&full_bytes);
-    const addr = Address.fromU256(value);
 
-    // Check that we got the lower 20 bytes.
-    const expected_addr = try Address.fromHex("0xd8da6bf26964af9d7eed9e03e53415d37aa96045");
-    try expect(addr.eql(expected_addr));
+    for (bytes_cases) |tc| {
+        const value = U256.fromBeBytesPadded(&tc.input_bytes);
+        const addr = Address.fromU256(value);
+        const expected_addr = try Address.fromHex(tc.expected_hex);
+        try expect(addr.eql(expected_addr));
+    }
+}
+
+test "Address.createAddress" {
+    const allocator = std.testing.allocator;
+
+    const test_cases = [_]struct {
+        sender_hex: []const u8,
+        nonce: u64,
+        expected_hex: []const u8,
+    }{
+        // Zero address with nonce 0.
+        .{
+            .sender_hex = "0x0000000000000000000000000000000000000000",
+            .nonce = 0,
+            .expected_hex = "0xbd770416a3345f91e4b34576cb804a576fa48eb1",
+        },
+        // Known sender with nonce 0.
+        .{
+            .sender_hex = "0x6ac7ea33f8831ea9dcc53393aaa88b25a785dbf0",
+            .nonce = 0,
+            .expected_hex = "0xcd234a471b72ba2f1ccf0a70fcaba648a5eecd8d",
+        },
+    };
+
+    for (test_cases) |tc| {
+        const sender = try Address.fromHex(tc.sender_hex);
+        const result = try Address.createAddress(allocator, sender, tc.nonce);
+        const expected = try Address.fromHex(tc.expected_hex);
+        try expect(result.eql(expected));
+    }
+}
+
+test "Address.create2Address - EIP-1014 vectors" {
+    // All EIP-1014 test vectors use init_code = 0x00.
+    var init_code_hash: B256 = undefined;
+    const init_code = [_]u8{0x00};
+    Keccak256.hash(&init_code, &init_code_hash.bytes, .{});
+
+    const test_cases = [_]struct {
+        sender_hex: []const u8,
+        salt: U256,
+        expected_hex: []const u8,
+    }{
+        // Example 0: zero address, zero salt.
+        .{
+            .sender_hex = "0x0000000000000000000000000000000000000000",
+            .salt = U256.ZERO,
+            .expected_hex = "0x4D1A2e2bB4F88F0250f26Ffff098B0b30B26BF38",
+        },
+        // Example 1: deadbeef address, zero salt.
+        .{
+            .sender_hex = "0xdeadbeef00000000000000000000000000000000",
+            .salt = U256.ZERO,
+            .expected_hex = "0xB928f69Bb1D91Cd65274e3c79d8986362984fDA3",
+        },
+    };
+
+    for (test_cases) |tc| {
+        const sender = try Address.fromHex(tc.sender_hex);
+        const result = Address.create2Address(sender, tc.salt, init_code_hash);
+        const expected = try Address.fromHex(tc.expected_hex);
+        try expect(result.eql(expected));
+    }
+}
+
+test "Address.create2Address - properties" {
+    // Different salts produce different addresses.
+    {
+        const sender = Address.zero();
+        var init_code_hash: B256 = undefined;
+        const init_code = [_]u8{0x00};
+        Keccak256.hash(&init_code, &init_code_hash.bytes, .{});
+
+        const result1 = Address.create2Address(sender, U256.ZERO, init_code_hash);
+        const result2 = Address.create2Address(sender, U256.ONE, init_code_hash);
+        try expect(!result1.eql(result2));
+    }
+
+    // Same salt and code always produces same address.
+    {
+        const sender = try Address.fromHex("0x1234567890123456789012345678901234567890");
+        const salt = U256.fromU64(42);
+        var init_code_hash: B256 = undefined;
+        const init_code = [_]u8{ 0x60, 0x80, 0x60, 0x40 };
+        Keccak256.hash(&init_code, &init_code_hash.bytes, .{});
+
+        const result1 = Address.create2Address(sender, salt, init_code_hash);
+        const result2 = Address.create2Address(sender, salt, init_code_hash);
+        try expect(result1.eql(result2));
+    }
 }

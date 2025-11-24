@@ -589,25 +589,48 @@ pub inline fn makeOpLogFn(comptime topic_count: u8) fn (*Interpreter) anyerror!u
     }.handler;
 }
 
+/// Gas calculation for CREATE and CREATE2 operations.
+///
+/// Components:
+/// 1. Memory expansion for init code region
+/// 2. EIP-3860 initcode metering (2 gas/word, Shanghai+)
+/// 3. CREATE2: keccak256 cost for address derivation (6 gas/word)
+inline fn createGas(interp: *Interpreter, comptime is_create2: bool) !u64 {
+    const region = try memoryRegionExpansion(interp, 1, 2);
+    var total = region.expansion_gas;
+
+    if (region.size == 0) return total;
+
+    const words: u64 = @intCast((region.size +| 31) / 32);
+
+    // EIP-3860 (Shanghai+): Initcode metering (2 gas/word).
+    if (interp.spec.hasEIP(3860)) {
+        total +|= 2 *| words;
+    }
+
+    // CREATE2: keccak256 cost for address derivation.
+    if (is_create2) {
+        total +|= interp.spec.keccak256_word_cost *| words;
+    }
+
+    return total;
+}
+
 /// Compute dynamic gas for CREATE operation.
 ///
+/// Stack: [value, offset, size, ...]
 /// Gas cost includes memory expansion and init code metering (EIP-3860).
-///
-/// TODO: Implement when CREATE opcode is fully implemented.
 pub fn opCreate(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opCreate dynamic gas not implemented");
+    return createGas(interp, false);
 }
 
 /// Compute dynamic gas for CREATE2 operation.
 ///
-/// Gas cost includes memory expansion, init code metering (EIP-3860),
-/// and hash cost for address derivation.
-///
-/// TODO: Implement when CREATE2 opcode is fully implemented.
+/// Stack: [value, offset, size, salt, ...]
+/// Gas cost includes memory expansion, init code metering (EIP-3860), and keccak256 cost
+/// for address derivation.
 pub fn opCreate2(interp: *Interpreter) !u64 {
-    _ = interp;
-    @panic("opCreate2 dynamic gas not implemented");
+    return createGas(interp, true);
 }
 
 // ============================================================================
@@ -618,6 +641,7 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 const CallExecutor = @import("../CallExecutor.zig");
+const CreateExecutor = @import("../CreateExecutor.zig");
 
 test "memoryCost" {
     const test_cases = [_]struct {
@@ -773,6 +797,7 @@ test "EIP-2929: account access opcodes - cold/warm costs" {
             .return_data_buffer = &return_data,
             .is_static = false,
             .call_executor = CallExecutor.noOp(),
+            .create_executor = CreateExecutor.noOp(),
             .access_list = access_list.accessor(),
         });
         defer interp.deinit();
@@ -814,6 +839,7 @@ test "opcode gas: KECCAK256" {
         .return_data_buffer = &return_data,
         .is_static = false,
         .call_executor = CallExecutor.noOp(),
+        .create_executor = CreateExecutor.noOp(),
         .access_list = AccessList.Accessor.alwaysCold(),
     });
     defer interp.deinit();
@@ -883,6 +909,7 @@ test "opcode gas: copy operations" {
         .return_data_buffer = &return_data,
         .is_static = false,
         .call_executor = CallExecutor.noOp(),
+        .create_executor = CreateExecutor.noOp(),
         .access_list = AccessList.Accessor.alwaysCold(),
     });
     defer interp.deinit();
@@ -1094,6 +1121,7 @@ test "CALL" {
             .return_data_buffer = &return_data,
             .is_static = false,
             .call_executor = CallExecutor.noOp(),
+            .create_executor = CreateExecutor.noOp(),
             .access_list = AccessList.Accessor.alwaysCold(),
         });
         defer interp.deinit();

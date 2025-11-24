@@ -53,7 +53,7 @@ const Env = @import("../../context.zig").Env;
 const MockHost = @import("../../host/mock.zig").MockHost;
 const CallContext = @import("../interpreter.zig").CallContext;
 const AnalyzedBytecode = @import("../bytecode.zig").AnalyzedBytecode;
-const Evm = @import("../../evm.zig").Evm;
+const Evm = @import("../../Evm.zig");
 
 test "opKeccak256: empty string" {
     const allocator = std.testing.allocator;

@@ -25,7 +25,10 @@ const AnalyzedBytecode = @import("interpreter/bytecode.zig").AnalyzedBytecode;
 const Eip7702Bytecode = @import("interpreter/bytecode.zig").Eip7702Bytecode;
 const JumpTable = @import("interpreter/JumpTable.zig");
 const CallExecutor = @import("CallExecutor.zig");
+const CreateExecutor = @import("CreateExecutor.zig");
 const AccessList = @import("AccessList.zig");
+const B256 = @import("primitives/mod.zig").B256;
+const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 const Evm = @This();
 
@@ -135,6 +138,21 @@ fn callImpl(ptr: *anyopaque, inputs: CallExecutor.Inputs) anyerror!CallExecutor.
     return self.call(inputs);
 }
 
+pub fn createExecutor(self: *Evm) CreateExecutor {
+    return .{
+        .ptr = self,
+        .vtable = &.{
+            .create = createImpl,
+        },
+    };
+}
+
+/// Vtable wrapper for create().
+fn createImpl(ptr: *anyopaque, inputs: CreateExecutor.Inputs) anyerror!CreateExecutor.Result {
+    const self: *Evm = @ptrCast(@alignCast(ptr));
+    return self.create(inputs);
+}
+
 /// Create an Accessor interface that delegates to this Evm's access list.
 ///
 /// For pre-Berlin forks (no access list), returns alwaysCold accessor.
@@ -158,6 +176,7 @@ pub fn interpreterConfig(self: *Evm, gas_limit: u64, is_static: bool) Interprete
         .return_data_buffer = &self.return_data_buffer,
         .is_static = is_static,
         .call_executor = self.callExecutor(),
+        .create_executor = self.createExecutor(),
         .access_list = self.accessListAccessor(),
     };
 }
@@ -341,95 +360,252 @@ pub fn call(self: *Evm, inputs: CallExecutor.Inputs) !CallExecutor.Result {
     };
 }
 
-        // On empty code, return success with no output.
-        if (resolved.len == 0) {
-            self.allocator.free(resolved);
-            return CallExecutor.Result{
-                .status = .SUCCESS,
-                .gas_used = 0,
+/// Execute a contract creation operation.
+///
+/// Calculates the new contract address, executes init code, and deploys runtime code.
+///
+/// Handles value transfers, nonce increments, collision detection, and code validation.
+///
+/// EIP-158: Account collision detection
+/// EIP-161: New contracts start with nonce=1
+/// EIP-170: Max code size limit
+/// EIP-3541: Reject code starting with 0xEF (London+)
+/// EIP-3860: Init code size limit (Shanghai+)
+pub fn create(self: *Evm, inputs: CreateExecutor.Inputs) !CreateExecutor.Result {
+    // Limit the depth.
+    if (self.depth >= self.spec.call_depth_limit) {
+        return CreateExecutor.Result{
+            .status = .CALL_DEPTH_EXCEEDED,
+            .gas_used = inputs.gas_limit,
+            .gas_refund = 0,
+            .address = null,
+            .output = &[_]u8{},
+        };
+    }
+
+    // Increment depth (decrement on exit).
+    self.depth += 1;
+    defer self.depth -= 1;
+
+    // Calculate new contract address.
+    const address = switch (inputs.kind) {
+        .CREATE => blk: {
+            const nonce = self.host.nonce(inputs.caller);
+            break :blk try Address.createAddress(self.allocator, inputs.caller, nonce);
+        },
+        .CREATE2 => |salt| blk: {
+            var init_code_hash: [32]u8 = undefined;
+            Keccak256.hash(inputs.init_code, &init_code_hash, .{});
+            const hash = B256.init(init_code_hash);
+            break :blk Address.create2Address(inputs.caller, salt, hash);
+        },
+    };
+
+    // Check address collisions (EIP-158).
+    if (self.host.accountExists(address)) {
+        const code_size = self.host.codeSize(address);
+        const nonce_val = self.host.nonce(address);
+        if (code_size > 0 or nonce_val > 0) {
+            // Collision detected - consume all gas and return failure.
+            return CreateExecutor.Result{
+                .status = .REVERT,
+                .gas_used = inputs.gas_limit,
                 .gas_refund = 0,
+                .address = null,
                 .output = &[_]u8{},
             };
         }
+    }
 
-        // Determine context address based on call kind.
-        // CALL/CALLCODE/STATICCALL: storage applies to target.
-        // DELEGATECALL: storage applies to caller (code borrowed from target).
-        const context_address = switch (inputs.kind) {
-            .DELEGATECALL => inputs.caller, // execute in caller's context
-            else => inputs.target,
-        };
+    // Create snapshot for potential revert.
+    const snapshot = try self.host.snapshot();
+    errdefer self.host.revertToSnapshot(snapshot);
 
-        // Analyze bytecode (uses cache for efficiency).
-        const analyzed = try AnalyzedBytecode.init(
-            self.allocator,
-            resolved,
-            &self.jump_table_cache,
-        );
-        errdefer analyzed.deinit();
+    // Snapshot access list for revert support.
+    if (self.access_list) |*al| {
+        const al_snapshot = try al.clone(self.allocator);
+        try self.access_list_snapshots.append(self.allocator, al_snapshot);
+    }
 
-        // Create call context with pre-analyzed bytecode.
-        const ctx = try CallContext.init(
-            self.allocator,
-            analyzed,
-            context_address,
-            inputs.caller,
-            inputs.value,
-        );
+    // Increment caller nonce.
+    self.host.incrementNonce(inputs.caller);
 
-        // Create interpreter (takes ownership of ctx).
-        var interp = Interpreter.init(
-            self.allocator,
-            ctx,
-            self.interpreterConfig(inputs.gas_limit, self.is_static),
-        );
-        defer interp.deinit(); // This will also clean up ctx
-
-        // Execute bytecode instructions.
-        const result = try interp.run();
-
-        // Free any previously stored data (from previous calls).
-        if (self.return_data_buffer.len > 0) {
-            self.allocator.free(self.return_data_buffer);
-        }
-
-        // Update return_data_buffer with result output.
-        if (result.return_data) |data| {
-            // Take ownership of return_data (interpreter allocated, we free).
-            self.return_data_buffer = data;
-        } else {
-            self.return_data_buffer = &[_]u8{};
-        }
-
-        // Handle execution result.
-        if (result.status != .SUCCESS) {
-            // Revert state on non-success.
+    // Transfer value to new contract.
+    if (!inputs.value.isZero()) {
+        // Check caller has sufficient balance.
+        const caller_balance = self.host.balance(inputs.caller);
+        if (caller_balance.lt(inputs.value)) {
             self.host.revertToSnapshot(snapshot);
-
-            // Restore access list from snapshot.
-            if (self.access_list) |*al| {
-                if (self.access_list_snapshots.items.len > 0) {
-                    const al_snapshot = self.access_list_snapshots.pop().?;
+            if (self.access_list_snapshots.items.len > 0) {
+                const al_snapshot = self.access_list_snapshots.pop().?;
+                if (self.access_list) |*al| {
                     al.deinit();
                     self.access_list = al_snapshot;
                 }
             }
-        } else {
-            // On success, discard the snapshot (keep current access list state).
+            return CreateExecutor.Result{
+                .status = .REVERT,
+                .gas_used = inputs.gas_limit,
+                .gas_refund = 0,
+                .address = null,
+                .output = &[_]u8{},
+            };
+        }
+        try self.host.transfer(inputs.caller, address, inputs.value);
+    }
+
+    // Set new contract nonce to 1 (EIP-161).
+    self.host.incrementNonce(address);
+
+    // Check init code size limit (EIP-3860, Shanghai+).
+    if (self.spec.max_initcode_size) |max_size| {
+        if (inputs.init_code.len > max_size) {
+            self.host.revertToSnapshot(snapshot);
             if (self.access_list_snapshots.items.len > 0) {
-                var snapshot_copy = self.access_list_snapshots.pop().?;
-                snapshot_copy.deinit();
+                const al_snapshot = self.access_list_snapshots.pop().?;
+                if (self.access_list) |*al| {
+                    al.deinit();
+                    self.access_list = al_snapshot;
+                }
+            }
+            return CreateExecutor.Result{
+                .status = .REVERT,
+                .gas_used = inputs.gas_limit,
+                .gas_refund = 0,
+                .address = null,
+                .output = &[_]u8{},
+            };
+        }
+    }
+
+    // Execute initialization code.
+    // Init code has no EIP-7702 delegation (it's raw bytecode).
+    const init_code_owned = try self.allocator.dupe(u8, inputs.init_code);
+
+    // Analyze bytecode.
+    const analyzed = try AnalyzedBytecode.init(
+        self.allocator,
+        init_code_owned,
+        &self.jump_table_cache,
+    );
+    errdefer analyzed.deinit();
+
+    // Create init context.
+    const ctx = try CallContext.init(
+        self.allocator,
+        analyzed,
+        address, // new contract's address
+        inputs.caller, // msg.sender
+        inputs.value, // msg.value
+    );
+
+    // Create interpreter (takes ownership of ctx).
+    var interp = Interpreter.init(
+        self.allocator,
+        ctx,
+        self.interpreterConfig(inputs.gas_limit, false), // CREATE is never static
+    );
+    defer interp.deinit();
+
+    // Execute init code.
+    const result = try interp.run();
+
+    // Free any previously stored data (from previous calls).
+    if (self.return_data_buffer.len > 0) {
+        self.allocator.free(self.return_data_buffer);
+    }
+
+    // Update return_data_buffer with result output.
+    if (result.return_data) |data| {
+        self.return_data_buffer = data;
+    } else {
+        self.return_data_buffer = &[_]u8{};
+    }
+
+    // Handle execution result.
+    if (result.status == .SUCCESS) {
+        // Check return data is valid runtime code.
+        if (result.return_data) |runtime_code| {
+            if (runtime_code.len > 0) {
+                // EIP-3541 (London+): reject code starting with 0xEF.
+                if (self.spec.hasEIP(3541) and runtime_code[0] == 0xEF) {
+                    self.host.revertToSnapshot(snapshot);
+                    if (self.access_list_snapshots.items.len > 0) {
+                        const al_snapshot = self.access_list_snapshots.pop().?;
+                        if (self.access_list) |*al| {
+                            al.deinit();
+                            self.access_list = al_snapshot;
+                        }
+                    }
+                    return CreateExecutor.Result{
+                        .status = .INVALID_OPCODE,
+                        .gas_used = result.gas_used,
+                        .gas_refund = result.gas_refund,
+                        .address = null,
+                        .output = runtime_code,
+                    };
+                }
+
+                // EIP-170: max code size check.
+                if (runtime_code.len > self.spec.max_code_size) {
+                    self.host.revertToSnapshot(snapshot);
+                    if (self.access_list_snapshots.items.len > 0) {
+                        const al_snapshot = self.access_list_snapshots.pop().?;
+                        if (self.access_list) |*al| {
+                            al.deinit();
+                            self.access_list = al_snapshot;
+                        }
+                    }
+                    return CreateExecutor.Result{
+                        .status = .INVALID_OPCODE,
+                        .gas_used = result.gas_used,
+                        .gas_refund = result.gas_refund,
+                        .address = null,
+                        .output = runtime_code,
+                    };
+                }
+
+                // Deploy runtime code.
+                try self.host.setCode(address, runtime_code);
+            }
+            // Empty return data is valid (contract with no code).
+        }
+
+        // Success - discard snapshot.
+        if (self.access_list_snapshots.items.len > 0) {
+            var snapshot_copy = self.access_list_snapshots.pop().?;
+            snapshot_copy.deinit();
+        }
+
+        return CreateExecutor.Result{
+            .status = .SUCCESS,
+            .gas_used = result.gas_used,
+            .gas_refund = result.gas_refund,
+            .address = address,
+            .output = result.return_data orelse &[_]u8{},
+        };
+    } else {
+        // Init code reverted - revert state.
+        self.host.revertToSnapshot(snapshot);
+
+        // Restore access list from snapshot.
+        if (self.access_list_snapshots.items.len > 0) {
+            const al_snapshot = self.access_list_snapshots.pop().?;
+            if (self.access_list) |*al| {
+                al.deinit();
+                self.access_list = al_snapshot;
             }
         }
 
-        return CallExecutor.Result{
+        return CreateExecutor.Result{
             .status = result.status,
             .gas_used = result.gas_used,
             .gas_refund = result.gas_refund,
+            .address = null,
             .output = result.return_data orelse &[_]u8{},
         };
     }
-};
+}
 
 // ============================================================================
 // Tests

@@ -172,6 +172,14 @@ pub const MockHost = struct {
         try slot_map.put(key, value);
     }
 
+    pub fn setNonce(self: *MockHost, address: Address, nonce_value: u64) !void {
+        try self.nonces.put(address, nonce_value);
+    }
+
+    pub fn nonce(self: *MockHost, address: Address) !u64 {
+        return self.nonces.get(address) orelse 0;
+    }
+
     /// Clear transaction-scoped state between transactions.
     ///
     /// Must be called after each transaction completes (success or revert).
@@ -209,6 +217,8 @@ pub const MockHost = struct {
         .revertToSnapshot = revertToSnapshotImpl,
         .transfer = transferImpl,
         .nonce = nonceImpl,
+        .incrementNonce = incrementNonceImpl,
+        .setCode = setCodeImpl,
         .accountExists = accountExistsImpl,
         .sload = sloadImpl,
         .sstoreReadMeta = sstoreReadMetaImpl,
@@ -472,6 +482,27 @@ pub const MockHost = struct {
         return self.nonces.get(address) orelse 0;
     }
 
+    fn incrementNonceImpl(ptr: *anyopaque, address: Address) void {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+        const current = self.nonces.get(address) orelse 0;
+        self.nonces.put(address, current + 1) catch {
+            @panic("Out of memory during incrementNonce");
+        };
+    }
+
+    fn setCodeImpl(ptr: *anyopaque, address: Address, bytecode: []const u8) Allocator.Error!void {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+
+        // Free existing code if present.
+        if (self.codes.get(address)) |old_code| {
+            self.allocator.free(old_code);
+        }
+
+        // Copy the new code.
+        const code_copy = try self.allocator.dupe(u8, bytecode);
+        try self.codes.put(address, code_copy);
+    }
+
     fn accountExistsImpl(ptr: *anyopaque, address: Address) bool {
         const self: *MockHost = @ptrCast(@alignCast(ptr));
         // Account exists if it has balance, code, or nonce
@@ -606,6 +637,7 @@ pub const MockHost = struct {
 // Tests
 // ============================================================================
 
+const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
@@ -1186,4 +1218,108 @@ test "MockHost: log data survives source modification" {
     const logs = mock.getLogs();
     try expectEqual(1, logs.len);
     try expectEqualSlices(u8, "original", logs[0].data);
+}
+
+test "MockHost: accountExists returns true for non-empty account" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+
+    // Account doesn't exist initially.
+    try expect(!mock.host().accountExists(addr));
+
+    // Set balance - account should exist.
+    try mock.setBalance(addr, U256.fromU64(100));
+    try expect(mock.host().accountExists(addr));
+
+    // New account with code should exist.
+    const addr2 = Address.fromHex("0x2234567890123456789012345678901234567890") catch unreachable;
+    const code = [_]u8{ 0x60, 0x00 };
+    try mock.host().setCode(addr2, &code);
+    try expect(mock.host().accountExists(addr2));
+
+    // New account with nonce should exist.
+    const addr3 = Address.fromHex("0x3234567890123456789012345678901234567890") catch unreachable;
+    mock.host().incrementNonce(addr3);
+    try expect(mock.host().accountExists(addr3));
+}
+
+test "MockHost: accountExists returns false for empty account" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+
+    // Non-existent account.
+    try expect(!mock.host().accountExists(addr));
+}
+
+test "MockHost: setCode stores bytecode" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const code = [_]u8{ 0x60, 0x00, 0x60, 0x00, 0xf3 };
+
+    // Set code.
+    try mock.host().setCode(addr, &code);
+
+    // Verify code was stored.
+    const retrieved = try mock.host().code(addr);
+    defer std.testing.allocator.free(retrieved);
+    try expectEqualSlices(u8, &code, retrieved);
+}
+
+test "MockHost: setCode replaces existing code" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const old_code = [_]u8{ 0x60, 0x00 };
+    const new_code = [_]u8{ 0x60, 0xff, 0x60, 0x00, 0xf3 };
+
+    // Set initial code.
+    try mock.host().setCode(addr, &old_code);
+
+    // Replace with new code.
+    try mock.host().setCode(addr, &new_code);
+
+    // Verify new code is stored.
+    const retrieved = try mock.host().code(addr);
+    defer std.testing.allocator.free(retrieved);
+    try expectEqualSlices(u8, &new_code, retrieved);
+}
+
+test "MockHost: incrementNonce increases nonce" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+
+    // Set initial nonce.
+    try mock.nonces.put(addr, 5);
+    try expectEqual(5, mock.host().nonce(addr));
+
+    // Increment.
+    mock.host().incrementNonce(addr);
+    try expectEqual(6, mock.host().nonce(addr));
+
+    // Increment again.
+    mock.host().incrementNonce(addr);
+    try expectEqual(7, mock.host().nonce(addr));
+}
+
+test "MockHost: incrementNonce starts from 0 for new account" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+
+    // New account has nonce 0.
+    try expectEqual(0, mock.host().nonce(addr));
+
+    // Increment creates nonce entry with value 1.
+    mock.host().incrementNonce(addr);
+    try expectEqual(1, mock.host().nonce(addr));
 }

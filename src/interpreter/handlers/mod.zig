@@ -112,9 +112,11 @@ pub const opSstore = storage.opSstore;
 pub const opTload = storage.opTload;
 pub const opTstore = storage.opTstore;
 
-// System operations
+// Contract creation operations
 pub const opCreate = system.opCreate;
 pub const opCreate2 = system.opCreate2;
+
+// System operations
 pub const opCall = system.opCall;
 pub const opCallcode = system.opCallcode;
 pub const opDelegatecall = system.opDelegatecall;
