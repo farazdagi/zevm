@@ -7,7 +7,7 @@ const zevm = @import("zevm");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const U256 = th.U256;
 const Env = th.Env;
@@ -188,7 +188,7 @@ test "LOGn: basic event emission (LOG0-LOG4)" {
 
         try mock.setCode(th.SIMPLE_TARGET, case.bytecode);
 
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = .CALL,
             .target = th.SIMPLE_TARGET,
             .caller = th.SIMPLE_CALLER,
@@ -229,7 +229,7 @@ test "LOG0: with 32 bytes of data" {
 
     try mock.setCode(th.SIMPLE_TARGET, createLog0WithData());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -266,7 +266,7 @@ test "Multiple logs in single transaction" {
 
     try mock.setCode(th.SIMPLE_TARGET, createMultipleLogs());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -298,7 +298,7 @@ test "STATICCALL: cannot emit logs (EIP-214)" {
 
     try mock.setCode(th.SIMPLE_TARGET, createLog0EmptyData());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .STATICCALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -337,7 +337,7 @@ test "Log snapshot/revert: logs truncated on revert" {
     };
     try mock.setCode(th.SIMPLE_TARGET, code);
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -386,7 +386,7 @@ test "LOG gas precision" {
 
         try mock.setCode(th.SIMPLE_TARGET, case.bytecode);
 
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = .CALL,
             .target = th.SIMPLE_TARGET,
             .caller = th.SIMPLE_CALLER,

@@ -13,8 +13,7 @@ const MockHost = helpers.MockHost;
 const ExecutionStatus = helpers.ExecutionStatus;
 const expect = helpers.expect;
 const expectEqual = helpers.expectEqual;
-const CallInputs = helpers.CallInputs;
-const CallKind = helpers.CallKind;
+const CallExecutor = helpers.CallExecutor;
 
 const CALLER = helpers.CALLER;
 const TARGET = helpers.TARGET;
@@ -185,7 +184,7 @@ test "BALANCE account access costs" {
             try mock.setCode(TARGET, &bytecode);
         }
 
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = .CALL,
             .target = TARGET,
             .caller = CALLER,
@@ -224,7 +223,7 @@ test "Pre-Berlin forks use fixed costs" {
     const bytecode = createDoubleBalanceContract(EXTERNAL);
     try mock.setCode(TARGET, &bytecode);
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,

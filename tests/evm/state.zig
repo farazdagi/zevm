@@ -7,8 +7,7 @@ const zevm = @import("zevm");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
-const CallKind = th.CallKind;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const U256 = th.U256;
 const Env = th.Env;
@@ -132,7 +131,7 @@ test "large value transfer" {
     try mock.setBalance(th.TARGET, U256.ZERO);
     try mock.setCode(th.TARGET, th.createStopContract());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -220,7 +219,7 @@ test "REVERT preserves return data" {
 
     try mock.setCode(th.TARGET, th.createRevertWithData());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -255,7 +254,7 @@ test "Static mode restored after revert" {
     // Verify not static initially.
     try expect(!evm.is_static);
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .STATICCALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -285,7 +284,7 @@ test "Snapshot count increases during call" {
 
     const initial_snapshots = mock.snapshots.items.len;
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -313,7 +312,7 @@ test "Multiple calls each create snapshots" {
 
     try mock.setCode(th.TARGET, th.createStopContract());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -397,7 +396,7 @@ test "Return data cleared between calls" {
     try mock.setCode(th.TARGET2, th.createStopContract());
 
     // First call returns 32 bytes.
-    const inputs1 = CallInputs{
+    const inputs1 = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -412,7 +411,7 @@ test "Return data cleared between calls" {
     try expectEqual(32, evm.return_data_buffer.len);
 
     // Second call returns nothing.
-    const inputs2 = CallInputs{
+    const inputs2 = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET2,
         .caller = th.CALLER,
@@ -441,7 +440,7 @@ test "Return data buffer updated on each call" {
     // First call: return 42.
     try mock.setCode(th.TARGET, th.createValueReturner(42));
 
-    const inputs1 = CallInputs{
+    const inputs1 = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -457,7 +456,7 @@ test "Return data buffer updated on each call" {
     // Second call: return 99.
     try mock.setCode(th.TARGET, th.createValueReturner(99));
 
-    const inputs2 = CallInputs{
+    const inputs2 = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.TARGET,
         .caller = th.CALLER,
@@ -483,10 +482,10 @@ test "Return data from all call types" {
     try mock.setCode(th.TARGET, th.createValueReturner(55));
 
     // Test all call types return data correctly.
-    const call_types = [_]CallKind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
+    const call_types = [_]CallExecutor.Kind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
 
     for (call_types) |kind| {
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = kind,
             .target = th.TARGET,
             .caller = th.CALLER,

@@ -6,8 +6,7 @@ const std = @import("std");
 const zevm = @import("zevm");
 
 pub const Evm = zevm.Evm;
-pub const CallInputs = zevm.CallInputs;
-pub const CallKind = zevm.CallKind;
+pub const CallExecutor = zevm.CallExecutor;
 pub const ExecutionStatus = zevm.interpreter.ExecutionStatus;
 pub const Address = zevm.primitives.Address;
 pub const U256 = zevm.primitives.U256;
@@ -225,7 +224,7 @@ pub fn extractByteFromReturn(output: []const u8) u8 {
 /// Universal test case for EVM call tests.
 pub const TestCase = struct {
     // Call configuration.
-    kind: CallKind = .CALL,
+    kind: CallExecutor.Kind = .CALL,
     caller: Address = SIMPLE_CALLER,
     target: Address = SIMPLE_TARGET,
     value: u64 = 0,
@@ -297,7 +296,7 @@ pub fn runTestCase(tc: TestCase) !void {
     evm.is_static = tc.is_static;
 
     // Execute call.
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = tc.kind,
         .target = tc.target,
         .caller = tc.caller,

@@ -4,7 +4,7 @@ const std = @import("std");
 const U256 = @import("../../primitives/big.zig").U256;
 const Address = @import("../../primitives/address.zig").Address;
 const Interpreter = @import("../interpreter.zig").Interpreter;
-const CallInputs = @import("../../call_types.zig").CallInputs;
+const CallExecutor = @import("../../CallExecutor.zig");
 const ExecutionStatus = @import("../interpreter.zig").ExecutionStatus;
 
 /// Create a new contract (CREATE).
@@ -87,7 +87,7 @@ pub fn opCall(interp: *Interpreter) !void {
         &[_]u8{};
 
     // Build call inputs.
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = target,
         .caller = interp.ctx.contract.address,
@@ -191,7 +191,7 @@ pub fn opDelegatecall(interp: *Interpreter) !void {
     // Build call inputs.
     // DELEGATECALL preserves caller and value from the current frame.
     // The context address (for storage) is set to caller by Evm.call().
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .DELEGATECALL,
         .target = target,
         .caller = interp.ctx.contract.caller, // Preserved from parent
@@ -277,7 +277,7 @@ pub fn opStaticcall(interp: *Interpreter) !void {
 
     // Build call inputs.
     // STATICCALL: caller is current contract, value is always zero.
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .STATICCALL,
         .target = target,
         .caller = interp.ctx.contract.address, // Current contract

@@ -7,8 +7,7 @@ const zevm = @import("zevm");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
-const CallKind = th.CallKind;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const U256 = th.U256;
 const Env = th.Env;
@@ -49,11 +48,11 @@ test "All call types consume same bytecode gas" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createComputeContract());
 
-    const call_types = [_]CallKind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
+    const call_types = [_]CallExecutor.Kind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
     var gas_values: [4]u64 = undefined;
 
     for (call_types, 0..) |kind, i| {
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = kind,
             .target = th.SIMPLE_TARGET,
             .caller = th.SIMPLE_CALLER,
@@ -119,7 +118,7 @@ test "Out of gas uses all provided gas" {
     try mock.setCode(th.SIMPLE_TARGET, th.createOogContract());
 
     const gas_limit: u64 = 1000;
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -145,11 +144,11 @@ test "Different call types have same gas accounting" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createComputeContract());
 
-    const call_types = [_]CallKind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
+    const call_types = [_]CallExecutor.Kind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
     var gas_values: [4]u64 = undefined;
 
     for (call_types, 0..) |kind, i| {
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = kind,
             .target = th.SIMPLE_TARGET,
             .caller = th.SIMPLE_CALLER,
@@ -182,7 +181,7 @@ test "Gas used less than gas limit on success" {
     try mock.setCode(th.SIMPLE_TARGET, th.createValueReturner(42));
 
     const gas_limit: u64 = 100000;
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -208,7 +207,7 @@ test "Insufficient gas fails immediately" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createValueReturner(42));
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,

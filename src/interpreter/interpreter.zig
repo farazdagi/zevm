@@ -18,9 +18,7 @@ const JumpTable = @import("JumpTable.zig");
 const InstructionTable = @import("InstructionTable.zig");
 const Env = @import("../context.zig").Env;
 const Host = @import("../host/Host.zig");
-const CallExecutor = @import("../call_types.zig").CallExecutor;
-const CallInputs = @import("../call_types.zig").CallInputs;
-const CallResult = @import("../call_types.zig").CallResult;
+const CallExecutor = @import("../CallExecutor.zig");
 const Contract = @import("../Contract.zig");
 const AccessListAccessor = @import("../lib.zig").AccessListAccessor;
 
@@ -96,7 +94,7 @@ pub const InterpreterConfig = struct {
     /// Whether state modifications are forbidden (STATICCALL context).
     is_static: bool,
 
-    /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL/CREATE/CREATE2).
+    /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL).
     call_executor: CallExecutor,
 
     /// Access list accessor for EIP-2929 cold/warm tracking.
@@ -220,7 +218,7 @@ pub const Interpreter = struct {
     /// Whether state modifications are forbidden (STATICCALL context).
     is_static: bool,
 
-    /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL/CREATE/CREATE2).
+    /// Interface for nested calls (CALL/DELEGATECALL/STATICCALL).
     call_executor: CallExecutor,
 
     /// Access list accessor for EIP-2929 cold/warm tracking.

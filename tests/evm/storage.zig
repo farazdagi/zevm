@@ -7,8 +7,7 @@ const zevm = @import("zevm");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
-const CallKind = th.CallKind;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const Address = th.Address;
 const U256 = th.U256;
@@ -105,7 +104,7 @@ test "storage: basic SLOAD returns zero for uninitialized slot" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -134,7 +133,7 @@ test "storage: SSTORE then SLOAD returns stored value" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -165,7 +164,7 @@ test "storage: SLOAD reads pre-existing storage" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -193,7 +192,7 @@ test "storage: TLOAD returns zero for uninitialized transient slot" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -221,7 +220,7 @@ test "storage: TSTORE then TLOAD returns stored value" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -249,7 +248,7 @@ test "storage: SSTORE SET gas (zero to non-zero)" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -280,7 +279,7 @@ test "storage: SSTORE RESET gas (non-zero to non-zero)" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -311,7 +310,7 @@ test "storage: SSTORE no-op same value" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,
@@ -380,7 +379,7 @@ test "storage: sequential transactions track original values correctly" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = TARGET,
         .caller = CALLER,

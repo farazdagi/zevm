@@ -11,7 +11,7 @@ const Env = th.Env;
 const Spec = th.Spec;
 const Address = th.Address;
 const U256 = th.U256;
-const CallInputs = th.CallInputs;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const MockHost = th.MockHost;
 
@@ -57,7 +57,7 @@ fn runTestCase(tc: TestCase) !void {
         addr_bytes[19] = call.target_suffix;
         const target = Address.init(addr_bytes);
 
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = .CALL,
             .target = target,
             .caller = Address.zero(),

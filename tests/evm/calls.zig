@@ -4,8 +4,7 @@ const zevm = @import("zevm");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
-const CallKind = th.CallKind;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const Address = th.Address;
 const U256 = th.U256;
@@ -96,7 +95,7 @@ test "Gas is consumed during call" {
     };
     try mock.setCode(th.SIMPLE_TARGET, bytecode);
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -191,7 +190,7 @@ test "CALL: value transfer, new context" {
     try mock.setBalance(th.SIMPLE_TARGET, U256.fromU64(0));
     try mock.setCode(th.SIMPLE_TARGET, th.createAddressReturner());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -227,7 +226,7 @@ test "DELEGATECALL: no value transfer, preserved context" {
     try mock.setBalance(th.SIMPLE_TARGET, U256.fromU64(0));
     try mock.setCode(th.SIMPLE_TARGET, th.createAddressReturner());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .DELEGATECALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -261,7 +260,7 @@ test "CALLCODE: uses caller's context address" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createAddressReturner());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALLCODE,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -291,7 +290,7 @@ test "DELEGATECALL preserves msg.value" {
     const value: u64 = 12345;
     try mock.setCode(th.SIMPLE_TARGET, th.createCallvalueReturner());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .DELEGATECALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -323,7 +322,7 @@ test "Sequential calls to same target" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createValueReturner(42));
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -362,7 +361,7 @@ test "Sequential calls to different targets" {
     const expected = [_]u8{ 10, 20, 30 };
 
     for (targets, expected) |target, exp| {
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = .CALL,
             .target = target,
             .caller = th.SIMPLE_CALLER,
@@ -389,10 +388,10 @@ test "Mixed call types in sequence" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createStopContract());
 
-    const call_types = [_]CallKind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
+    const call_types = [_]CallExecutor.Kind{ .CALL, .DELEGATECALL, .STATICCALL, .CALLCODE };
 
     for (call_types) |kind| {
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = kind,
             .target = th.SIMPLE_TARGET,
             .caller = th.SIMPLE_CALLER,
@@ -418,7 +417,7 @@ test "Depth tracking across multiple calls" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createStopContract());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -448,7 +447,7 @@ test "Calls at different initial depths" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createStopContract());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -489,7 +488,7 @@ test "Value transfers in sequence" {
     try mock.setCode(target2, th.createStopContract());
 
     // First transfer: 300 to target1.
-    const inputs1 = CallInputs{
+    const inputs1 = CallExecutor.Inputs{
         .kind = .CALL,
         .target = target1,
         .caller = th.SIMPLE_CALLER,
@@ -503,7 +502,7 @@ test "Value transfers in sequence" {
     try expectEqual(ExecutionStatus.SUCCESS, result1.status);
 
     // Second transfer: 200 to target2.
-    const inputs2 = CallInputs{
+    const inputs2 = CallExecutor.Inputs{
         .kind = .CALL,
         .target = target2,
         .caller = th.SIMPLE_CALLER,
@@ -532,7 +531,7 @@ test "Mixed success and failure in sequence" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -571,7 +570,7 @@ test "Static mode not persisted between calls" {
     try mock.setCode(th.SIMPLE_TARGET, th.createStopContract());
 
     // STATICCALL.
-    const static_inputs = CallInputs{
+    const static_inputs = CallExecutor.Inputs{
         .kind = .STATICCALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -586,7 +585,7 @@ test "Static mode not persisted between calls" {
     try expect(!evm.is_static); // Restored after call.
 
     // Normal CALL.
-    const call_inputs = CallInputs{
+    const call_inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -615,7 +614,7 @@ test "Calls with varying gas limits" {
     const gas_limits = [_]u64{ 1000, 10000, 100000, 1000000 };
 
     for (gas_limits) |gas_limit| {
-        const inputs = CallInputs{
+        const inputs = CallExecutor.Inputs{
             .kind = .CALL,
             .target = th.SIMPLE_TARGET,
             .caller = th.SIMPLE_CALLER,
@@ -640,7 +639,7 @@ test "Return data buffer updates between calls" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,

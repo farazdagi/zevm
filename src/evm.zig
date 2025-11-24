@@ -24,11 +24,7 @@ const InterpreterConfig = @import("interpreter/interpreter.zig").InterpreterConf
 const AnalyzedBytecode = @import("interpreter/bytecode.zig").AnalyzedBytecode;
 const Eip7702Bytecode = @import("interpreter/bytecode.zig").Eip7702Bytecode;
 const JumpTable = @import("interpreter/JumpTable.zig");
-const call_types = @import("call_types.zig");
-const CallKind = call_types.CallKind;
-const CallInputs = call_types.CallInputs;
-const CallResult = call_types.CallResult;
-const CallExecutor = call_types.CallExecutor;
+const CallExecutor = @import("CallExecutor.zig");
 const AccessList = @import("AccessList.zig");
 
 /// EVM execution engine.
@@ -136,7 +132,7 @@ pub const Evm = struct {
     }
 
     /// Vtable wrapper for call().
-    fn callImpl(ptr: *anyopaque, inputs: CallInputs) anyerror!CallResult {
+    fn callImpl(ptr: *anyopaque, inputs: CallExecutor.Inputs) anyerror!CallExecutor.Result {
         const self: *Self = @ptrCast(@alignCast(ptr));
         return self.call(inputs);
     }
@@ -203,10 +199,10 @@ pub const Evm = struct {
     /// and executes the bytecode.
     ///
     /// Handles value transfers, snapshots, and return data buffer management.
-    pub fn call(self: *Self, inputs: CallInputs) !CallResult {
+    pub fn call(self: *Self, inputs: CallExecutor.Inputs) !CallExecutor.Result {
         // Assert depth limit.
         if (self.depth >= self.spec.call_depth_limit) {
-            return CallResult{
+            return CallExecutor.Result{
                 .status = .CALL_DEPTH_EXCEEDED,
                 .gas_used = inputs.gas_limit,
                 .gas_refund = 0,
@@ -242,7 +238,7 @@ pub const Evm = struct {
             // Check caller has sufficient balance before transfer.
             const caller_balance = self.host.balance(inputs.caller);
             if (caller_balance.lt(inputs.value)) {
-                return CallResult{
+                return CallExecutor.Result{
                     .status = .REVERT,
                     .gas_used = inputs.gas_limit,
                     .gas_refund = 0,
@@ -260,7 +256,7 @@ pub const Evm = struct {
         // On empty code, return success with no output.
         if (resolved.len == 0) {
             self.allocator.free(resolved);
-            return CallResult{
+            return CallExecutor.Result{
                 .status = .SUCCESS,
                 .gas_used = 0,
                 .gas_refund = 0,
@@ -338,7 +334,7 @@ pub const Evm = struct {
             }
         }
 
-        return CallResult{
+        return CallExecutor.Result{
             .status = result.status,
             .gas_used = result.gas_used,
             .gas_refund = result.gas_refund,
@@ -362,7 +358,7 @@ const TestHelper = struct {
     const stop_bytecode = &[_]u8{0x00};
     const default_gas_limit: u64 = 100000;
 
-    fn defaultInputs() CallInputs {
+    fn defaultInputs() CallExecutor.Inputs {
         return .{
             .kind = .CALL,
             .target = target,
@@ -536,7 +532,7 @@ test "Evm: call creates snapshot" {
 
 test "Evm: call kinds" {
     const TestCase = struct {
-        kind: CallKind,
+        kind: CallExecutor.Kind,
         value: u64,
         transfer_value: bool,
         check_static_restored: bool,

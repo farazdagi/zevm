@@ -617,7 +617,7 @@ pub fn opCreate2(interp: *Interpreter) !u64 {
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
-const CallExecutor = @import("../call_types.zig").CallExecutor;
+const CallExecutor = @import("../CallExecutor.zig");
 
 test "memoryCost" {
     const test_cases = [_]struct {

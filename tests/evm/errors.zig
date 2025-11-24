@@ -6,7 +6,7 @@ const std = @import("std");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const U256 = th.U256;
 const Env = th.Env;
@@ -97,7 +97,7 @@ test "Multiple errors in sequence" {
     var evm = Evm.init(allocator, &env, mock.host(), spec);
     defer evm.deinit();
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,

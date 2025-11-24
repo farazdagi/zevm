@@ -7,7 +7,7 @@ const zevm = @import("zevm");
 const th = @import("test_helpers.zig");
 
 const Evm = th.Evm;
-const CallInputs = th.CallInputs;
+const CallExecutor = th.CallExecutor;
 const ExecutionStatus = th.ExecutionStatus;
 const Address = th.Address;
 const U256 = th.U256;
@@ -76,7 +76,7 @@ test "CALLVALUE returns correct value" {
     try mock.setCode(th.SIMPLE_TARGET, th.createCallvalueReturner());
     try mock.setBalance(th.SIMPLE_CALLER, U256.fromU64(100000));
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -109,7 +109,7 @@ test "ORIGIN always returns tx.origin" {
 
     try mock.setCode(th.SIMPLE_TARGET, th.createOriginReturner());
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
@@ -139,7 +139,7 @@ test "CODESIZE returns executing code size" {
     const code = th.createCodesizeReturner();
     try mock.setCode(th.SIMPLE_TARGET, code);
 
-    const inputs = CallInputs{
+    const inputs = CallExecutor.Inputs{
         .kind = .CALL,
         .target = th.SIMPLE_TARGET,
         .caller = th.SIMPLE_CALLER,
