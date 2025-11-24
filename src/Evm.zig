@@ -27,231 +27,319 @@ const JumpTable = @import("interpreter/JumpTable.zig");
 const CallExecutor = @import("CallExecutor.zig");
 const AccessList = @import("AccessList.zig");
 
-/// EVM execution engine.
-pub const Evm = struct {
-    /// Allocator for dynamic allocations.
-    allocator: Allocator,
+const Evm = @This();
 
-    /// Environmental context (block + tx info).
-    env: *const Env,
+/// Allocator for dynamic allocations.
+allocator: Allocator,
 
-    /// Host interface for state access.
-    host: Host,
+/// Environmental context (block + tx info).
+env: *const Env,
 
-    /// Spec (fork-specific rules).
-    spec: Spec,
+/// Host interface for state access.
+host: Host,
 
-    /// Current call depth.
-    depth: usize,
+/// Spec (fork-specific rules).
+spec: Spec,
 
-    /// Return data buffer (EIP-211).
-    ///
-    /// Updated after each sub-call completes.
-    return_data_buffer: []const u8,
+/// Current call depth.
+depth: usize,
 
-    /// Whether currently in static context or not.
-    is_static: bool,
+/// Return data buffer (EIP-211).
+///
+/// Updated after each sub-call completes.
+return_data_buffer: []const u8,
 
-    /// Instruction table for current spec.
-    table: *const InstructionTable,
+/// Whether currently in static context or not.
+is_static: bool,
 
-    /// Cache of analyzed jump tables by code hash.
-    ///
-    /// Entries remain valid for the lifetime of this EVM instance.
-    /// This avoids redundant `O(n)` bytecode analysis when the same contract is
-    /// called multiple times within or across transactions.
-    jump_table_cache: JumpTable.Cache,
+/// Instruction table for current spec.
+table: *const InstructionTable,
 
-    /// EIP-2929 access list for warm/cold tracking.
-    ///
-    /// Only created for Berlin+ forks. Tracks which addresses and storage
-    /// slots have been accessed during transaction execution.
-    access_list: ?AccessList,
+/// Cache of analyzed jump tables by code hash.
+///
+/// Entries remain valid for the lifetime of this EVM instance.
+/// This avoids redundant `O(n)` bytecode analysis when the same contract is
+/// called multiple times within or across transactions.
+jump_table_cache: JumpTable.Cache,
 
-    /// Snapshots of access list for revert support.
-    ///
-    /// When a sub-call is made, we clone the access list. If the call reverts,
-    /// we restore from the snapshot.
-    access_list_snapshots: std.ArrayList(AccessList),
+/// EIP-2929 access list for warm/cold tracking.
+///
+/// Only created for Berlin+ forks. Tracks which addresses and storage
+/// slots have been accessed during transaction execution.
+access_list: ?AccessList,
 
-    const Self = @This();
+/// Snapshots of access list for revert support.
+///
+/// When a sub-call is made, we clone the access list. If the call reverts,
+/// we restore from the snapshot.
+access_list_snapshots: std.ArrayList(AccessList),
 
-    /// Initialize EVM with given context and spec.
-    pub fn init(allocator: Allocator, env: *const Env, host: Host, spec: Spec) Self {
-        // Create access list for Berlin+ forks with transaction pre-warming.
-        const access_list = if (spec.fork.isAtLeast(.BERLIN))
-            AccessList.initForTransaction(allocator, env, spec)
-        else
-            null;
+/// Initialize EVM with given context and spec.
+pub fn init(allocator: Allocator, env: *const Env, host: Host, spec: Spec) Evm {
+    // Create access list for Berlin+ forks with transaction pre-warming.
+    const access_list = if (spec.fork.isAtLeast(.BERLIN))
+        AccessList.initForTransaction(allocator, env, spec)
+    else
+        null;
 
-        return Self{
-            .allocator = allocator,
-            .env = env,
-            .host = host,
-            .spec = spec,
-            .depth = 0,
-            .return_data_buffer = &[_]u8{},
-            .is_static = false,
-            .table = spec.instructionTable(),
-            .jump_table_cache = JumpTable.Cache.init(allocator),
-            .access_list = access_list,
-            .access_list_snapshots = .{},
+    return Evm{
+        .allocator = allocator,
+        .env = env,
+        .host = host,
+        .spec = spec,
+        .depth = 0,
+        .return_data_buffer = &[_]u8{},
+        .is_static = false,
+        .table = spec.instructionTable(),
+        .jump_table_cache = JumpTable.Cache.init(allocator),
+        .access_list = access_list,
+        .access_list_snapshots = .{},
+    };
+}
+
+/// Deinitialize EVM and free return data buffer.
+pub fn deinit(self: *Evm) void {
+    // Free return data buffer.
+    if (self.return_data_buffer.len > 0) {
+        self.allocator.free(self.return_data_buffer);
+    }
+
+    // Free all cached jump tables.
+    var it = self.jump_table_cache.valueIterator();
+    while (it.next()) |jt| jt.deinit();
+    self.jump_table_cache.deinit();
+
+    // Free access list and snapshots.
+    if (self.access_list) |*al| {
+        al.deinit();
+    }
+    for (self.access_list_snapshots.items) |*snapshot| {
+        snapshot.deinit();
+    }
+    self.access_list_snapshots.deinit(self.allocator);
+}
+
+/// Create a CallExecutor interface that delegates to this Evm.
+pub fn callExecutor(self: *Evm) CallExecutor {
+    return .{
+        .ptr = self,
+        .vtable = &.{
+            .call = callImpl,
+        },
+    };
+}
+
+/// Vtable wrapper for call().
+fn callImpl(ptr: *anyopaque, inputs: CallExecutor.Inputs) anyerror!CallExecutor.Result {
+    const self: *Evm = @ptrCast(@alignCast(ptr));
+    return self.call(inputs);
+}
+
+/// Create an Accessor interface that delegates to this Evm's access list.
+///
+/// For pre-Berlin forks (no access list), returns alwaysCold accessor.
+pub fn accessListAccessor(self: *Evm) AccessList.Accessor {
+    if (self.access_list) |*al| {
+        return al.accessor();
+    } else {
+        return AccessList.Accessor.alwaysCold();
+    }
+}
+
+/// Create an InterpreterConfig for this EVM.
+///
+/// This bundles all the external context needed for interpreter execution.
+pub fn interpreterConfig(self: *Evm, gas_limit: u64, is_static: bool) InterpreterConfig {
+    return .{
+        .spec = self.spec,
+        .gas_limit = gas_limit,
+        .env = self.env,
+        .host = self.host,
+        .return_data_buffer = &self.return_data_buffer,
+        .is_static = is_static,
+        .call_executor = self.callExecutor(),
+        .access_list = self.accessListAccessor(),
+    };
+}
+
+/// Resolve EIP-7702 delegation if present.
+///
+/// Takes ownership of raw_code.
+///
+/// Checks if the raw bytecode is EIP-7702 delegation (0xEF0100 + address).
+/// If so, loads the delegated code from the host and frees the original raw_code.
+/// Returns error if nested delegation is detected (delegation to another delegation).
+fn resolveDelegation(self: *Evm, raw_code: []u8) ![]u8 {
+    // Return original if not a delegation code.
+    const delegation = Eip7702Bytecode.parse(raw_code) catch {
+        return raw_code;
+    };
+
+    // Load delegated code from host.
+    const delegated_code_const = try self.host.code(delegation.delegated_address);
+    const delegated_code = @constCast(delegated_code_const);
+
+    // Avoid nested delegation (not allowed).
+    if (Eip7702Bytecode.parse(delegated_code)) |_| {
+        // Nested delegation detected - free both and error.
+        self.allocator.free(delegated_code);
+        self.allocator.free(raw_code);
+        return error.NestedDelegation;
+    } else |_| {
+        self.allocator.free(raw_code);
+        return delegated_code;
+    }
+}
+
+/// Execute a call operation
+///
+/// Loads target code, resolves EIP-7702 delegation, creates an interpreter,
+/// and executes the bytecode.
+///
+/// Handles value transfers, snapshots, and return data buffer management.
+pub fn call(self: *Evm, inputs: CallExecutor.Inputs) !CallExecutor.Result {
+    // Assert depth limit.
+    if (self.depth >= self.spec.call_depth_limit) {
+        return CallExecutor.Result{
+            .status = .CALL_DEPTH_EXCEEDED,
+            .gas_used = inputs.gas_limit,
+            .gas_refund = 0,
+            .output = &[_]u8{},
         };
     }
 
-    /// Deinitialize EVM and free return data buffer.
-    pub fn deinit(self: *Self) void {
-        // Free return data buffer.
-        if (self.return_data_buffer.len > 0) {
-            self.allocator.free(self.return_data_buffer);
-        }
+    // Increment depth (decrement on exit).
+    self.depth += 1;
+    defer self.depth -= 1;
 
-        // Free all cached jump tables.
-        var it = self.jump_table_cache.valueIterator();
-        while (it.next()) |jt| jt.deinit();
-        self.jump_table_cache.deinit();
+    // Handle static mode for STATICCALL.
+    // Save previous state and set to true if this is a STATICCALL.
+    // Static mode propagates to nested calls (once static, always static).
+    const prev_is_static = self.is_static;
+    if (inputs.kind == .STATICCALL) {
+        self.is_static = true;
+    }
+    defer self.is_static = prev_is_static;
 
-        // Free access list and snapshots.
-        if (self.access_list) |*al| {
-            al.deinit();
-        }
-        for (self.access_list_snapshots.items) |*snapshot| {
-            snapshot.deinit();
-        }
-        self.access_list_snapshots.deinit(self.allocator);
+    // Create a snapshot before state changes.
+    const snapshot = try self.host.snapshot();
+    errdefer self.host.revertToSnapshot(snapshot);
+
+    // Snapshot access list for revert support.
+    if (self.access_list) |*al| {
+        const al_snapshot = try al.clone(self.allocator);
+        try self.access_list_snapshots.append(self.allocator, al_snapshot);
     }
 
-    /// Create a CallExecutor interface that delegates to this Evm.
-    pub fn callExecutor(self: *Self) CallExecutor {
-        return .{
-            .ptr = self,
-            .vtable = &.{
-                .call = callImpl,
-            },
-        };
-    }
-
-    /// Vtable wrapper for call().
-    fn callImpl(ptr: *anyopaque, inputs: CallExecutor.Inputs) anyerror!CallExecutor.Result {
-        const self: *Self = @ptrCast(@alignCast(ptr));
-        return self.call(inputs);
-    }
-
-    /// Create an Accessor interface that delegates to this Evm's access list.
-    ///
-    /// For pre-Berlin forks (no access list), returns alwaysCold accessor.
-    pub fn accessListAccessor(self: *Self) AccessList.Accessor {
-        if (self.access_list) |*al| {
-            return al.accessor();
-        } else {
-            return AccessList.Accessor.alwaysCold();
-        }
-    }
-
-    /// Create an InterpreterConfig for this EVM.
-    ///
-    /// This bundles all the external context needed for interpreter execution.
-    pub fn interpreterConfig(self: *Self, gas_limit: u64, is_static: bool) InterpreterConfig {
-        return .{
-            .spec = self.spec,
-            .gas_limit = gas_limit,
-            .env = self.env,
-            .host = self.host,
-            .return_data_buffer = &self.return_data_buffer,
-            .is_static = is_static,
-            .call_executor = self.callExecutor(),
-            .access_list = self.accessListAccessor(),
-        };
-    }
-
-    /// Resolve EIP-7702 delegation if present.
-    ///
-    /// Takes ownership of raw_code.
-    ///
-    /// Checks if the raw bytecode is EIP-7702 delegation (0xEF0100 + address).
-    /// If so, loads the delegated code from the host and frees the original raw_code.
-    /// Returns error if nested delegation is detected (delegation to another delegation).
-    fn resolveDelegation(self: *Self, raw_code: []u8) ![]u8 {
-        // Return original if not a delegation code.
-        const delegation = Eip7702Bytecode.parse(raw_code) catch {
-            return raw_code;
-        };
-
-        // Load delegated code from host.
-        const delegated_code_const = try self.host.code(delegation.delegated_address);
-        const delegated_code = @constCast(delegated_code_const);
-
-        // Avoid nested delegation (not allowed).
-        if (Eip7702Bytecode.parse(delegated_code)) |_| {
-            // Nested delegation detected - free both and error.
-            self.allocator.free(delegated_code);
-            self.allocator.free(raw_code);
-            return error.NestedDelegation;
-        } else |_| {
-            self.allocator.free(raw_code);
-            return delegated_code;
-        }
-    }
-
-    /// Execute a call operation
-    ///
-    /// Loads target code, resolves EIP-7702 delegation, creates an interpreter,
-    /// and executes the bytecode.
-    ///
-    /// Handles value transfers, snapshots, and return data buffer management.
-    pub fn call(self: *Self, inputs: CallExecutor.Inputs) !CallExecutor.Result {
-        // Assert depth limit.
-        if (self.depth >= self.spec.call_depth_limit) {
+    // Transfer value if non-zero.
+    if (inputs.transfer_value and !inputs.value.isZero()) {
+        // Check caller has sufficient balance before transfer.
+        const caller_balance = self.host.balance(inputs.caller);
+        if (caller_balance.lt(inputs.value)) {
             return CallExecutor.Result{
-                .status = .CALL_DEPTH_EXCEEDED,
+                .status = .REVERT,
                 .gas_used = inputs.gas_limit,
                 .gas_refund = 0,
                 .output = &[_]u8{},
             };
         }
+        try self.host.transfer(inputs.caller, inputs.target, inputs.value);
+    }
 
-        // Increment depth (decrement on exit).
-        self.depth += 1;
-        defer self.depth -= 1;
+    // Load target contract code (resolve EIP-7702, if necessary).
+    const raw_code_const = try self.host.code(inputs.target);
+    const raw_code = @constCast(raw_code_const);
+    const resolved = try self.resolveDelegation(raw_code);
 
-        // Handle static mode for STATICCALL.
-        // Save previous state and set to true if this is a STATICCALL.
-        // Static mode propagates to nested calls (once static, always static).
-        const prev_is_static = self.is_static;
-        if (inputs.kind == .STATICCALL) {
-            self.is_static = true;
-        }
-        defer self.is_static = prev_is_static;
+    // On empty code, return success with no output.
+    if (resolved.len == 0) {
+        self.allocator.free(resolved);
+        return CallExecutor.Result{
+            .status = .SUCCESS,
+            .gas_used = 0,
+            .gas_refund = 0,
+            .output = &[_]u8{},
+        };
+    }
 
-        // Create a snapshot before state changes.
-        const snapshot = try self.host.snapshot();
-        errdefer self.host.revertToSnapshot(snapshot);
+    // Determine context address based on call kind.
+    // CALL/CALLCODE/STATICCALL: storage applies to target.
+    // DELEGATECALL: storage applies to caller (code borrowed from target).
+    const context_address = switch (inputs.kind) {
+        .DELEGATECALL => inputs.caller, // execute in caller's context
+        else => inputs.target,
+    };
 
-        // Snapshot access list for revert support.
+    // Analyze bytecode (uses cache for efficiency).
+    const analyzed = try AnalyzedBytecode.init(
+        self.allocator,
+        resolved,
+        &self.jump_table_cache,
+    );
+    errdefer analyzed.deinit();
+
+    // Create call context with pre-analyzed bytecode.
+    const ctx = try CallContext.init(
+        self.allocator,
+        analyzed,
+        context_address,
+        inputs.caller,
+        inputs.value,
+    );
+
+    // Create interpreter (takes ownership of ctx).
+    var interp = Interpreter.init(
+        self.allocator,
+        ctx,
+        self.interpreterConfig(inputs.gas_limit, self.is_static),
+    );
+    defer interp.deinit(); // This will also clean up ctx
+
+    // Execute bytecode instructions.
+    const result = try interp.run();
+
+    // Free any previously stored data (from previous calls).
+    if (self.return_data_buffer.len > 0) {
+        self.allocator.free(self.return_data_buffer);
+    }
+
+    // Update return_data_buffer with result output.
+    if (result.return_data) |data| {
+        // Take ownership of return_data (interpreter allocated, we free).
+        self.return_data_buffer = data;
+    } else {
+        self.return_data_buffer = &[_]u8{};
+    }
+
+    // Handle execution result.
+    if (result.status != .SUCCESS) {
+        // Revert state on non-success.
+        self.host.revertToSnapshot(snapshot);
+
+        // Restore access list from snapshot.
         if (self.access_list) |*al| {
-            const al_snapshot = try al.clone(self.allocator);
-            try self.access_list_snapshots.append(self.allocator, al_snapshot);
-        }
-
-        // Transfer value if non-zero.
-        if (inputs.transfer_value and !inputs.value.isZero()) {
-            // Check caller has sufficient balance before transfer.
-            const caller_balance = self.host.balance(inputs.caller);
-            if (caller_balance.lt(inputs.value)) {
-                return CallExecutor.Result{
-                    .status = .REVERT,
-                    .gas_used = inputs.gas_limit,
-                    .gas_refund = 0,
-                    .output = &[_]u8{},
-                };
+            if (self.access_list_snapshots.items.len > 0) {
+                const al_snapshot = self.access_list_snapshots.pop().?;
+                al.deinit();
+                self.access_list = al_snapshot;
             }
             try self.host.transfer(inputs.caller, inputs.target, inputs.value);
         }
+    } else {
+        // On success, discard the snapshot (keep current access list state).
+        if (self.access_list_snapshots.items.len > 0) {
+            var snapshot_copy = self.access_list_snapshots.pop().?;
+            snapshot_copy.deinit();
+        }
+    }
 
-        // Load target contract code (resolve EIP-7702, if necessary).
-        const raw_code_const = try self.host.code(inputs.target);
-        const raw_code = @constCast(raw_code_const);
-        const resolved = try self.resolveDelegation(raw_code);
+    return CallExecutor.Result{
+        .status = result.status,
+        .gas_used = result.gas_used,
+        .gas_refund = result.gas_refund,
+        .output = result.return_data orelse &[_]u8{},
+    };
+}
 
         // On empty code, return success with no output.
         if (resolved.len == 0) {
