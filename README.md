@@ -8,7 +8,7 @@ The goal is to create a concise and readable implementation in idiomatic Zig, wi
 
 Getting closer to wrapping up the core functionality! 
 
-Contract creation (CREATE/CREATE2) and pre-compiles are the remaining pieces.
+Two opcodes (CALLCODE, SELFDESTRUCT) and pre-compiles are the remaining pieces.
 Once those land, we can run the official Ethereum test suite end-to-end.
 
 ## Quickstart
