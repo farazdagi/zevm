@@ -27,6 +27,7 @@ pub const CAPACITY: usize = 1024;
 pub const Error = error{
     StackOverflow,
     StackUnderflow,
+    CastOverflow,
 };
 
 /// Initialize a new stack with the given allocator.
@@ -70,6 +71,11 @@ pub fn pop(self: *Stack) Error!U256 {
     return self.data[self.len];
 }
 
+/// Pop value and convert to target type.
+pub fn popAs(self: *Stack, comptime T: type) Error!T {
+    return u256To(try self.pop(), T);
+}
+
 /// Peek at the value at the given index from the top.
 ///
 /// Index 0 is the top of the stack, index 1 is second from top, etc.
@@ -88,6 +94,11 @@ pub fn peekMut(self: *Stack, index: usize) Error!*U256 {
     if (index >= self.len)
         return error.StackUnderflow;
     return &self.data[self.len - 1 - index];
+}
+
+/// Peek at value at index and convert to target type.
+pub fn peekAs(self: *const Stack, index: usize, comptime T: type) Error!T {
+    return u256To(try self.peek(index), T);
 }
 
 /// Duplicate the value at the given index from the top (1-16).
@@ -136,6 +147,118 @@ pub fn eql(self: *const Stack, other: *const Stack) bool {
     }
 
     return true;
+}
+
+/// Pop n values with type conversion.
+///
+/// Target type can be given as a single type (if all popped items have the same type), or by
+/// listing all types explicitly.
+///
+/// All values have the same type:
+/// ```zig
+/// const dest, const src, const length = try stack.popN(3, usize);
+/// ```
+///
+/// Mixed types:
+/// ```zig
+/// const offset, const value = try stack.popN(2, .{ usize, U256 });
+/// ```
+pub inline fn popN(self: *Stack, comptime n: usize, comptime types: anytype) Error!PopResult(n, types) {
+    var result: PopResult(n, types) = undefined;
+
+    inline for (0..n) |i| {
+        const value = try self.pop();
+        @field(result, std.fmt.comptimePrint("{d}", .{i})) = try u256To(value, typeAt(types, i));
+    }
+
+    return result;
+}
+
+/// Pop n-1 values with conversion, get dereferenced top value and mutable pointer to that top value.
+///
+/// Useful for operations that need to read and modify the top stack value in place.
+///
+/// Usage:
+/// ```zig
+/// const offset, const size, const size_ptr = try stack.popPeekN(2, usize);
+/// // size is already converted by dereferencing size_ptr (no extra pop!)
+/// size_ptr.* = computed_value;  // Modify top in place
+/// ```
+pub inline fn popPeekN(self: *Stack, comptime n: usize, comptime types: anytype) Error!PopPeekResult(n, types) {
+    var result: PopPeekResult(n, types) = undefined;
+
+    // Pop n-1 values with type conversion.
+    inline for (0..n - 1) |i| {
+        const value = try self.pop();
+        @field(result, std.fmt.comptimePrint("{d}", .{i})) = try u256To(value, typeAt(types, i));
+    }
+
+    // Get pointer and dereference for top value.
+    const top_ptr = try self.peekMut(0);
+    @field(result, std.fmt.comptimePrint("{d}", .{n - 1})) = try u256To(top_ptr.*, typeAt(types, n - 1));
+    @field(result, std.fmt.comptimePrint("{d}", .{n})) = top_ptr;
+
+    return result;
+}
+
+/// Convert U256 to target type or return error.CastOverflow.
+inline fn u256To(value: U256, comptime T: type) Error!T {
+    return switch (T) {
+        U256 => value,
+        usize => value.toUsize() orelse return error.CastOverflow,
+        u64 => value.toU64() orelse return error.CastOverflow,
+        else => @compileError("unsupported type: " ++ @typeName(T)),
+    };
+}
+
+/// Get type at index i from types. Single type: returns same type for all i. Tuple: returns types[i].
+fn typeAt(comptime types: anytype, comptime i: usize) type {
+    return if (@TypeOf(types) == type) types else types[i];
+}
+
+/// Validate types: if tuple, must have exactly n elements.
+fn validateTypes(comptime n: usize, comptime types: anytype) void {
+    const Types = @TypeOf(types);
+    if (Types != type) {
+        const info = @typeInfo(Types);
+        if (info != .@"struct" or !info.@"struct".is_tuple)
+            @compileError("expected type or tuple of types, got " ++ @typeName(Types));
+        if (info.@"struct".fields.len != n)
+            @compileError(std.fmt.comptimePrint("expected {d} types but got {d}", .{ n, info.@"struct".fields.len }));
+    }
+}
+
+/// Build a struct field definition.
+inline fn makeField(comptime name: [:0]const u8, comptime T: type) std.builtin.Type.StructField {
+    return .{
+        .name = name,
+        .type = T,
+        .default_value_ptr = null,
+        .is_comptime = false,
+        .alignment = @alignOf(T),
+    };
+}
+
+/// Generate return type for popAs: tuple of n converted values.
+fn PopResult(comptime n: usize, comptime types: anytype) type {
+    validateTypes(n, types);
+    var fields: [n]std.builtin.Type.StructField = undefined;
+    inline for (0..n) |i| {
+        fields[i] = makeField(std.fmt.comptimePrint("{d}", .{i}), typeAt(types, i));
+    }
+    return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = true } });
+}
+
+/// Generate return type for popAsPeek: tuple of n converted values + `*U256` pointer.
+fn PopPeekResult(comptime n: usize, comptime types: anytype) type {
+    if (n < 1) @compileError("popAsPeek requires n >= 1");
+    validateTypes(n, types);
+    var fields: [n + 1]std.builtin.Type.StructField = undefined;
+    inline for (0..n) |i| {
+        fields[i] = makeField(std.fmt.comptimePrint("{d}", .{i}), typeAt(types, i));
+    }
+    fields[n] = makeField(std.fmt.comptimePrint("{d}", .{n}), *U256);
+    return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &fields, .decls = &.{}, .is_tuple = true } });
 }
 
 // ============================================================================

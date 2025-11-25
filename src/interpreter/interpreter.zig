@@ -364,9 +364,7 @@ pub const Interpreter = struct {
         offset_from_stack_top: usize,
         access_size: usize,
     ) !void {
-        const offset_u256 = try self.ctx.stack.peek(offset_from_stack_top);
-        const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-
+        const offset = try self.ctx.stack.peekAs(offset_from_stack_top, usize);
         const old_size = self.ctx.memory.len();
         const new_size = offset +| access_size; // Saturating add for safety
 
@@ -385,16 +383,11 @@ pub const Interpreter = struct {
         offset_from_stack_top: usize,
         size_from_stack_top: usize,
     ) !void {
-        const offset_u256 = try self.ctx.stack.peek(offset_from_stack_top);
-        const size_u256 = try self.ctx.stack.peek(size_from_stack_top);
+        const offset = try self.ctx.stack.peekAs(offset_from_stack_top, usize);
+        const size = try self.ctx.stack.peekAs(size_from_stack_top, usize);
 
-        const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-        const size = size_u256.toUsize() orelse return error.InvalidOffset;
-
-        // Handle empty access case
-        if (size == 0) {
-            return;
-        }
+        // Handle empty access case.
+        if (size == 0) return;
 
         const old_size = self.ctx.memory.len();
         const new_size = offset +| size; // Saturating add for safety
@@ -414,22 +407,17 @@ pub const Interpreter = struct {
         offset2_from_stack_top: usize,
         length_from_stack_top: usize,
     ) !void {
-        const offset1_u256 = try self.ctx.stack.peek(offset1_from_stack_top);
-        const offset2_u256 = try self.ctx.stack.peek(offset2_from_stack_top);
-        const length_u256 = try self.ctx.stack.peek(length_from_stack_top);
+        const offset1 = try self.ctx.stack.peekAs(offset1_from_stack_top, usize);
+        const offset2 = try self.ctx.stack.peekAs(offset2_from_stack_top, usize);
+        const length = try self.ctx.stack.peekAs(length_from_stack_top, usize);
 
-        const offset1 = offset1_u256.toUsize() orelse return error.InvalidOffset;
-        const offset2 = offset2_u256.toUsize() orelse return error.InvalidOffset;
-        const length = length_u256.toUsize() orelse return error.InvalidOffset;
-
-        // No expansion needed for zero-length
+        // No expansion needed for zero-length.
         if (length == 0) return;
 
         const old_size = self.ctx.memory.len();
         const end1 = offset1 +| length; // Saturating add
         const end2 = offset2 +| length;
         const max_end = @max(end1, end2);
-
         const expansion_gas = self.gas.memoryExpansionCost(old_size, max_end);
         try self.gas.consume(expansion_gas);
     }
@@ -446,7 +434,7 @@ pub const Interpreter = struct {
             error.StackUnderflow => .STACK_UNDERFLOW,
             error.OutOfGas => .OUT_OF_GAS,
             error.OutOfMemory => .OUT_OF_GAS,
-            error.InvalidOffset, error.IntegerOverflow => .INVALID_OPCODE,
+            error.CastOverflow, error.InvalidOffset, error.IntegerOverflow => .INVALID_OPCODE,
             error.InvalidOpcode, error.UnimplementedOpcode, error.InvalidBytecode => .INVALID_OPCODE,
             error.InvalidProgramCounter => .INVALID_PC,
             error.InvalidJump => .INVALID_JUMP,

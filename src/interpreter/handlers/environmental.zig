@@ -113,13 +113,7 @@ pub fn opCalldatasize(interp: *Interpreter) !void {
 /// Stack: [destOffset, offset, length, ...] -> [...]
 /// Dynamic gas cost for memory expansion is charged by the interpreter.
 pub fn opCalldatacopy(interp: *Interpreter) !void {
-    const dest_offset_u256 = try interp.ctx.stack.pop();
-    const offset_u256 = try interp.ctx.stack.pop();
-    const length_u256 = try interp.ctx.stack.pop();
-
-    const dest_offset = dest_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+    const dest_offset, const offset, const length = try interp.ctx.stack.popN(3, usize);
 
     if (length == 0) return; // No-op for zero length
 
@@ -157,13 +151,7 @@ pub fn opCodesize(interp: *Interpreter) !void {
 /// Stack: [destOffset, offset, length, ...] -> [...]
 /// Dynamic gas cost for memory expansion is charged by the interpreter.
 pub fn opCodecopy(interp: *Interpreter) !void {
-    const dest_offset_u256 = try interp.ctx.stack.pop();
-    const offset_u256 = try interp.ctx.stack.pop();
-    const length_u256 = try interp.ctx.stack.pop();
-
-    const dest_offset = dest_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+    const dest_offset, const offset, const length = try interp.ctx.stack.popN(3, usize);
 
     if (length == 0) return; // No-op for zero length
 
@@ -207,14 +195,7 @@ pub fn opExtcodesize(interp: *Interpreter) !void {
 /// Stack: [address, destOffset, offset, length, ...] -> [...]
 /// Dynamic gas cost for memory expansion is charged by the interpreter.
 pub fn opExtcodecopy(interp: *Interpreter) !void {
-    const address_u256 = try interp.ctx.stack.pop();
-    const dest_offset_u256 = try interp.ctx.stack.pop();
-    const offset_u256 = try interp.ctx.stack.pop();
-    const length_u256 = try interp.ctx.stack.pop();
-
-    const dest_offset = dest_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+    const address_u256, const dest_offset, const offset, const length = try interp.ctx.stack.popN(4, .{ U256, usize, usize, usize });
 
     if (length == 0) return; // No-op for zero length
 
@@ -274,13 +255,7 @@ pub fn opReturndatasize(interp: *Interpreter) !void {
 /// Stack: [destOffset, offset, length, ...] -> [...]
 /// Note: Reverts if offset + length > return_data_buffer.len (no zero-padding)
 pub fn opReturndatacopy(interp: *Interpreter) !void {
-    const dest_offset_u256 = try interp.ctx.stack.pop();
-    const offset_u256 = try interp.ctx.stack.pop();
-    const length_u256 = try interp.ctx.stack.pop();
-
-    const dest_offset = dest_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+    const dest_offset, const offset, const length = try interp.ctx.stack.popN(3, usize);
 
     if (length == 0) return; // No-op for zero length
 

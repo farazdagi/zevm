@@ -20,11 +20,7 @@ pub const EMPTY_KECCAK256: [32]u8 = [_]u8{
 /// Reads data from memory and replaces stack operands with the keccak256 hash.
 /// Gas is charged in interpreter before calling this function.
 pub fn opKeccak256(interp: *Interpreter) !void {
-    const offset_u256 = try interp.ctx.stack.pop();
-    const size_ptr = try interp.ctx.stack.peekMut(0);
-
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_ptr.toUsize() orelse return error.InvalidOffset;
+    const offset, const size, const size_ptr = try interp.ctx.stack.popPeekN(2, usize);
 
     // Ensure memory is expanded (gas already charged by dynamic gas function)
     try interp.ctx.memory.ensureCapacity(offset, size);

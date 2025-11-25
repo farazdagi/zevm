@@ -19,11 +19,7 @@ pub fn makeOpLogFn(comptime topic_count: u3) *const fn (*Interpreter) Interprete
             }
 
             // Pop offset and size from stack
-            const offset_u256 = try interp.ctx.stack.pop();
-            const size_u256 = try interp.ctx.stack.pop();
-
-            const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-            const size = size_u256.toUsize() orelse return error.InvalidOffset;
+            const offset, const size = try interp.ctx.stack.popN(2, usize);
 
             // Pop topics from stack (topic_count is comptime, so this loop unrolls)
             var topics: [4]B256 = undefined;

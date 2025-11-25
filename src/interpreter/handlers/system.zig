@@ -44,17 +44,11 @@ fn createImpl(interp: *Interpreter, comptime variant: CreateVariant) Interpreter
     // Disallow in static context.
     if (interp.is_static) return error.StateWriteInStaticCall;
 
-    // Pop common stack parameters.
-    const value = try interp.ctx.stack.pop();
-    const offset_u256 = try interp.ctx.stack.pop();
-    const size_u256 = try interp.ctx.stack.pop();
+    // Pop stack parameters.
+    const value, const offset, const size = try interp.ctx.stack.popN(3, .{ U256, usize, usize });
 
     // Pop salt for CREATE2 only.
     const salt = if (variant == .CREATE2) try interp.ctx.stack.pop() else undefined;
-
-    // Convert offset and size to usize.
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_u256.toUsize() orelse return error.InvalidOffset;
 
     // Read init_code from memory.
     // Note: Dynamic gas for memory expansion already charged.
@@ -123,22 +117,10 @@ fn createImpl(interp: *Interpreter, comptime variant: CreateVariant) Interpreter
 /// EIPs: EIP-150 (63/64 gas rule), EIP-2929 (cold/warm access)
 pub fn opCall(interp: *Interpreter) !void {
     // Pop 7 values from stack.
-    const gas_u256 = try interp.ctx.stack.pop();
-    const address_u256 = try interp.ctx.stack.pop();
-    const value_u256 = try interp.ctx.stack.pop();
-    const args_offset_u256 = try interp.ctx.stack.pop();
-    const args_size_u256 = try interp.ctx.stack.pop();
-    const ret_offset_u256 = try interp.ctx.stack.pop();
-    const ret_size_u256 = try interp.ctx.stack.pop();
+    const gas_u256, const address_u256, const value_u256, const args_offset, const args_size, const ret_offset, const ret_size = try interp.ctx.stack.popN(7, .{ U256, U256, U256, usize, usize, usize, usize });
 
     // Convert address (last 20 bytes of U256).
     const target = Address.fromU256(address_u256);
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
 
     // Calculate gas to send using EIP-150 63/64 rule.
     // Available gas = gas remaining after dynamic costs charged.
@@ -237,21 +219,10 @@ pub fn opCallcode(interp: *Interpreter) !void {
 /// EIPs: EIP-7 (Homestead), EIP-150 (63/64 gas rule)
 pub fn opDelegatecall(interp: *Interpreter) !void {
     // Pop 6 values from stack (no value parameter).
-    const gas_u256 = try interp.ctx.stack.pop();
-    const address_u256 = try interp.ctx.stack.pop();
-    const args_offset_u256 = try interp.ctx.stack.pop();
-    const args_size_u256 = try interp.ctx.stack.pop();
-    const ret_offset_u256 = try interp.ctx.stack.pop();
-    const ret_size_u256 = try interp.ctx.stack.pop();
+    const gas_u256, const address_u256, const args_offset, const args_size, const ret_offset, const ret_size = try interp.ctx.stack.popN(6, .{ U256, U256, usize, usize, usize, usize });
 
     // Convert address (last 20 bytes of U256).
     const target = Address.fromU256(address_u256);
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
 
     // Calculate gas to send using EIP-150 63/64 rule.
     const gas_remaining = interp.gas.limit -| interp.gas.used;
@@ -324,21 +295,10 @@ pub fn opDelegatecall(interp: *Interpreter) !void {
 /// EIPs: EIP-214 (Byzantium), EIP-150 (63/64 gas rule)
 pub fn opStaticcall(interp: *Interpreter) !void {
     // Pop 6 values from stack (no value parameter).
-    const gas_u256 = try interp.ctx.stack.pop();
-    const address_u256 = try interp.ctx.stack.pop();
-    const args_offset_u256 = try interp.ctx.stack.pop();
-    const args_size_u256 = try interp.ctx.stack.pop();
-    const ret_offset_u256 = try interp.ctx.stack.pop();
-    const ret_size_u256 = try interp.ctx.stack.pop();
+    const gas_u256, const address_u256, const args_offset, const args_size, const ret_offset, const ret_size = try interp.ctx.stack.popN(6, .{ U256, U256, usize, usize, usize, usize });
 
     // Convert address (last 20 bytes of U256).
     const target = Address.fromU256(address_u256);
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
 
     // Calculate gas to send using EIP-150 63/64 rule.
     const gas_remaining = interp.gas.limit -| interp.gas.used;

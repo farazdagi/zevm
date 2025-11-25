@@ -45,8 +45,7 @@ const MemoryRegion = struct {
 ///
 /// Used by operations that read/write a known number of bytes (MLOAD, MSTORE8).
 inline fn memoryExpansionGasFixed(interp: *Interpreter, offset_pos: u8, size: usize) !u64 {
-    const offset_u256 = try interp.ctx.stack.peek(offset_pos);
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
+    const offset = try interp.ctx.stack.peekAs(offset_pos, usize);
 
     const old_size = interp.ctx.memory.len();
     const new_size = offset +| size;
@@ -59,11 +58,8 @@ inline fn memoryExpansionGasFixed(interp: *Interpreter, offset_pos: u8, size: us
 /// Used by operations that peek both offset and size from stack (RETURN, KECCAK256, copy operations).
 /// Returns region info including offset, size, and expansion gas for further processing.
 inline fn memoryRegionExpansion(interp: *Interpreter, offset_pos: u8, size_pos: u8) !MemoryRegion {
-    const offset_u256 = try interp.ctx.stack.peek(offset_pos);
-    const size_u256 = try interp.ctx.stack.peek(size_pos);
-
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+    const offset = try interp.ctx.stack.peekAs(offset_pos, usize);
+    const size = try interp.ctx.stack.peekAs(size_pos, usize);
 
     // No expansion for zero-length access
     if (size == 0) {
@@ -172,13 +168,9 @@ pub fn opKeccak256(interp: *Interpreter) !u64 {
 /// Gas depends on memory expansion for both source and destination regions,
 /// plus per-word copy cost.
 pub fn opMcopy(interp: *Interpreter) !u64 {
-    const dest_u256 = try interp.ctx.stack.peek(0);
-    const src_u256 = try interp.ctx.stack.peek(1);
-    const length_u256 = try interp.ctx.stack.peek(2);
-
-    const dest = dest_u256.toUsize() orelse return error.InvalidOffset;
-    const src = src_u256.toUsize() orelse return error.InvalidOffset;
-    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+    const dest = try interp.ctx.stack.peekAs(0, usize);
+    const src = try interp.ctx.stack.peekAs(1, usize);
+    const length = try interp.ctx.stack.peekAs(2, usize);
 
     // No cost for zero-length copy
     if (length == 0) return 0;
@@ -367,24 +359,13 @@ inline fn callMemoryExpansion(
 /// EIPs: EIP-150, EIP-2929
 pub fn opCall(interp: *Interpreter) !u64 {
     // Peek stack values (positions from top of stack).
-    const address_u256 = try interp.ctx.stack.peek(1);
+    const target = Address.fromU256(try interp.ctx.stack.peek(1));
     const value_u256 = try interp.ctx.stack.peek(2);
-    const args_offset_u256 = try interp.ctx.stack.peek(3);
-    const args_size_u256 = try interp.ctx.stack.peek(4);
-    const ret_offset_u256 = try interp.ctx.stack.peek(5);
-    const ret_size_u256 = try interp.ctx.stack.peek(6);
-
-    // Convert address U256 to Address (take last 20 bytes).
-    const target = Address.fromU256(address_u256);
-
-    // Check if value transfer.
     const has_value = !value_u256.isZero();
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+    const args_offset = try interp.ctx.stack.peekAs(3, usize);
+    const args_size = try interp.ctx.stack.peekAs(4, usize);
+    const ret_offset = try interp.ctx.stack.peekAs(5, usize);
+    const ret_size = try interp.ctx.stack.peekAs(6, usize);
 
     var total_gas: u64 = 0;
 
@@ -415,24 +396,13 @@ pub fn opCall(interp: *Interpreter) !u64 {
 /// Stack: [gas, address, value, argsOffset, argsSize, retOffset, retSize, ...]
 pub fn opCallcode(interp: *Interpreter) !u64 {
     // Peek stack values (positions from top of stack).
-    const address_u256 = try interp.ctx.stack.peek(1);
+    const target = Address.fromU256(try interp.ctx.stack.peek(1));
     const value_u256 = try interp.ctx.stack.peek(2);
-    const args_offset_u256 = try interp.ctx.stack.peek(3);
-    const args_size_u256 = try interp.ctx.stack.peek(4);
-    const ret_offset_u256 = try interp.ctx.stack.peek(5);
-    const ret_size_u256 = try interp.ctx.stack.peek(6);
-
-    // Convert address U256 to Address (take last 20 bytes).
-    const target = Address.fromU256(address_u256);
-
-    // Check if value transfer.
     const has_value = !value_u256.isZero();
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+    const args_offset = try interp.ctx.stack.peekAs(3, usize);
+    const args_size = try interp.ctx.stack.peekAs(4, usize);
+    const ret_offset = try interp.ctx.stack.peekAs(5, usize);
+    const ret_size = try interp.ctx.stack.peekAs(6, usize);
 
     var total_gas: u64 = 0;
 
@@ -459,20 +429,11 @@ pub fn opCallcode(interp: *Interpreter) !u64 {
 /// Note: No value parameter (6 args instead of 7).
 pub fn opDelegatecall(interp: *Interpreter) !u64 {
     // Peek stack values (positions from top of stack).
-    const address_u256 = try interp.ctx.stack.peek(1);
-    const args_offset_u256 = try interp.ctx.stack.peek(2);
-    const args_size_u256 = try interp.ctx.stack.peek(3);
-    const ret_offset_u256 = try interp.ctx.stack.peek(4);
-    const ret_size_u256 = try interp.ctx.stack.peek(5);
-
-    // Convert address U256 to Address (take last 20 bytes).
-    const target = Address.fromU256(address_u256);
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+    const target = Address.fromU256(try interp.ctx.stack.peek(1));
+    const args_offset = try interp.ctx.stack.peekAs(2, usize);
+    const args_size = try interp.ctx.stack.peekAs(3, usize);
+    const ret_offset = try interp.ctx.stack.peekAs(4, usize);
+    const ret_size = try interp.ctx.stack.peekAs(5, usize);
 
     var total_gas: u64 = 0;
 
@@ -495,20 +456,11 @@ pub fn opDelegatecall(interp: *Interpreter) !u64 {
 /// Note: No value parameter (6 args instead of 7).
 pub fn opStaticcall(interp: *Interpreter) !u64 {
     // Peek stack values (positions from top of stack).
-    const address_u256 = try interp.ctx.stack.peek(1);
-    const args_offset_u256 = try interp.ctx.stack.peek(2);
-    const args_size_u256 = try interp.ctx.stack.peek(3);
-    const ret_offset_u256 = try interp.ctx.stack.peek(4);
-    const ret_size_u256 = try interp.ctx.stack.peek(5);
-
-    // Convert address U256 to Address (take last 20 bytes).
-    const target = Address.fromU256(address_u256);
-
-    // Convert offsets and lengths to usize.
-    const args_offset = args_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const args_size = args_size_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_offset = ret_offset_u256.toUsize() orelse return error.InvalidOffset;
-    const ret_size = ret_size_u256.toUsize() orelse return error.InvalidOffset;
+    const target = Address.fromU256(try interp.ctx.stack.peek(1));
+    const args_offset = try interp.ctx.stack.peekAs(2, usize);
+    const args_size = try interp.ctx.stack.peekAs(3, usize);
+    const ret_offset = try interp.ctx.stack.peekAs(4, usize);
+    const ret_size = try interp.ctx.stack.peekAs(5, usize);
 
     var total_gas: u64 = 0;
 

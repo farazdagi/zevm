@@ -12,10 +12,7 @@ const Interpreter = @import("../interpreter.zig").Interpreter;
 ///
 /// Sets PC directly.
 pub fn opJump(interp: *Interpreter) !void {
-    const counter_u256 = try interp.ctx.stack.pop();
-
-    // Convert to usize, checking for overflow.
-    const counter = counter_u256.toUsize() orelse return error.InvalidJump;
+    const counter = try interp.ctx.stack.popAs(usize);
 
     // Validate destination.
     if (!interp.ctx.contract.bytecode.isValidJump(counter)) {
@@ -31,16 +28,12 @@ pub fn opJump(interp: *Interpreter) !void {
 /// Jumps to counter if b != 0, otherwise continues to next instruction.
 /// Sets interp.pc if jumping; leaves it unchanged if not (step() will auto-increment).
 pub fn opJumpi(interp: *Interpreter) !void {
-    const counter_u256 = try interp.ctx.stack.pop();
-    const b = try interp.ctx.stack.pop();
+    const counter, const b = try interp.ctx.stack.popN(2, .{ usize, U256 });
 
     // If condition is zero, don't jump (PC will auto-increment).
     if (b.isZero()) {
         return;
     }
-
-    // Convert to usize, checking for overflow.
-    const counter = counter_u256.toUsize() orelse return error.InvalidJump;
 
     // Validate destination
     if (!interp.ctx.contract.bytecode.isValidJump(counter)) {
@@ -75,11 +68,7 @@ pub fn opGas(interp: *Interpreter) !void {
 /// Sets interp.return_data and interp.is_halted.
 /// Gas is charged by the interpreter before calling this handler.
 pub fn opReturn(interp: *Interpreter) !void {
-    const offset_u256 = try interp.ctx.stack.pop();
-    const size_u256 = try interp.ctx.stack.pop();
-
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+    const offset, const size = try interp.ctx.stack.popN(2, usize);
 
     // Handle empty return data case
     if (size == 0) {
@@ -108,11 +97,7 @@ pub fn opReturn(interp: *Interpreter) !void {
 /// Available from Byzantium (EIP-140) onwards.
 /// Gas is charged by the interpreter before calling this handler.
 pub fn opRevert(interp: *Interpreter) !void {
-    const offset_u256 = try interp.ctx.stack.pop();
-    const size_u256 = try interp.ctx.stack.pop();
-
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-    const size = size_u256.toUsize() orelse return error.InvalidOffset;
+    const offset, const size = try interp.ctx.stack.popN(2, usize);
 
     // Handle empty revert data case
     if (size == 0) {

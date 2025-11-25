@@ -20,10 +20,7 @@ pub fn opMload(interp: *Interpreter) !void {
 /// Stack: [offset, value, ...] -> [...]
 /// Gas is charged in interpreter before calling this function.
 pub fn opMstore(interp: *Interpreter) !void {
-    const offset_u256 = try interp.ctx.stack.pop();
-    const value = try interp.ctx.stack.pop();
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-
+    const offset, const value = try interp.ctx.stack.popN(2, .{ usize, U256 });
     try interp.ctx.memory.mstore(offset, value);
 }
 
@@ -32,13 +29,8 @@ pub fn opMstore(interp: *Interpreter) !void {
 /// Stack: [offset, value, ...] -> [...]
 /// Gas is charged in interpreter before calling this function.
 pub fn opMstore8(interp: *Interpreter) !void {
-    const offset_u256 = try interp.ctx.stack.pop();
-    const value_u256 = try interp.ctx.stack.pop();
-    const offset = offset_u256.toUsize() orelse return error.InvalidOffset;
-
-    // Extract least significant byte
-    const byte: u8 = @truncate(value_u256.toU64() orelse 0);
-
+    const offset, const value = try interp.ctx.stack.popN(2, .{ usize, U256 });
+    const byte: u8 = @truncate(value.toU64() orelse 0);
     try interp.ctx.memory.mstore8(offset, byte);
 }
 
@@ -57,15 +49,7 @@ pub fn opMsize(interp: *Interpreter) !void {
 /// Handles overlapping regions correctly (memmove semantics).
 /// Gas is charged in interpreter before calling this function.
 pub fn opMcopy(interp: *Interpreter) !void {
-    // Pop operands (dest first per EVM stack convention)
-    const dest_u256 = try interp.ctx.stack.pop();
-    const src_u256 = try interp.ctx.stack.pop();
-    const length_u256 = try interp.ctx.stack.pop();
-
-    // Convert to usize with overflow check.
-    const dest = dest_u256.toUsize() orelse return error.InvalidOffset;
-    const src = src_u256.toUsize() orelse return error.InvalidOffset;
-    const length = length_u256.toUsize() orelse return error.InvalidOffset;
+    const dest, const src, const length = try interp.ctx.stack.popN(3, usize);
 
     // Handle zero-length case (no-op).
     if (length == 0) return;
