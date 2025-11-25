@@ -282,10 +282,10 @@ pub fn call(self: *Evm, inputs: CallExecutor.Inputs) !CallExecutor.Result {
     }
 
     // Determine context address based on call kind.
-    // CALL/CALLCODE/STATICCALL: storage applies to target.
-    // DELEGATECALL: storage applies to caller (code borrowed from target).
+    // CALL/STATICCALL: storage applies to target.
+    // DELEGATECALL/CALLCODE: storage applies to caller (code borrowed from target).
     const context_address = switch (inputs.kind) {
-        .DELEGATECALL => inputs.caller, // execute in caller's context
+        .DELEGATECALL, .CALLCODE => inputs.caller,
         else => inputs.target,
     };
 

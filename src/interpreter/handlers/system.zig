@@ -201,11 +201,88 @@ pub fn opCall(interp: *Interpreter) !void {
 
 /// Call another contract's code in current context (CALLCODE).
 ///
-/// Stack: [gas, address, value, argsOffset, argsLength, retOffset, retLength, ...] -> [success, ...]
-/// Note: Deprecated in favor of DELEGATECALL.
+/// Stack: [gas, address, value, argsOffset, argsSize, retOffset, retSize, ...] -> [success, ...]
+///
+/// Executes target's code in the current contract's context (storage, address).
+/// Unlike DELEGATECALL, msg.sender is the current contract (not preserved from parent).
+/// Unlike CALL, no actual value transfer occurs (but gas stipend still applies if value > 0).
+///
+/// Note: Deprecated in favor of DELEGATECALL. Required for backwards compatibility.
+/// EIPs: EIP-150 (63/64 gas rule), EIP-2929 (cold/warm access)
 pub fn opCallcode(interp: *Interpreter) !void {
-    _ = interp;
-    return error.UnimplementedOpcode;
+    // Pop 7 values from stack (same as CALL).
+    const gas_u256, const address_u256, const value_u256, const args_offset, const args_size, const ret_offset, const ret_size = try interp.ctx.stack.popN(7, .{ U256, U256, U256, usize, usize, usize, usize });
+
+    // Convert address (last 20 bytes of U256).
+    const target = Address.fromU256(address_u256);
+
+    // Calculate gas to send using EIP-150 63/64 rule.
+    const gas_remaining = interp.gas.limit -| interp.gas.used;
+    const max_gas = gas_remaining -| (gas_remaining / 64);
+    const requested_gas = gas_u256.toU64() orelse max_gas;
+    var gas_to_send = @min(requested_gas, max_gas);
+
+    // Add gas stipend if value > 0 (same as CALL, even though no transfer occurs).
+    const has_value = !value_u256.isZero();
+    if (has_value) {
+        gas_to_send +|= interp.spec.call_stipend;
+    }
+
+    // Consume the gas we're sending.
+    try interp.gas.consume(gas_to_send -| (if (has_value) interp.spec.call_stipend else 0));
+
+    // Copy input data from memory.
+    const input_data = if (args_size > 0)
+        try interp.ctx.memory.getSlice(args_offset, args_size)
+    else
+        &[_]u8{};
+
+    // Build call inputs.
+    // Key differences from CALL:
+    // kind = .CALLCODE (executes in caller's context)
+    // transfer_value = false (no actual ETH transfer)
+    const inputs = CallExecutor.Inputs{
+        .kind = .CALLCODE,
+        .target = target,
+        .caller = interp.ctx.contract.address,
+        .value = value_u256,
+        .input = input_data,
+        .gas_limit = gas_to_send,
+        .transfer_value = false,
+    };
+
+    // Execute the call.
+    const result = interp.call_executor.call(inputs) catch {
+        // Handle errors as failed calls (push 0 to stack).
+        interp.return_data_buffer.* = &[_]u8{};
+        try interp.ctx.stack.push(U256.ZERO);
+        return;
+    };
+
+    // Copy return data to memory.
+    if (ret_size > 0) {
+        const copy_len = @min(ret_size, result.output.len);
+        if (copy_len > 0) {
+            try interp.ctx.memory.ensureCapacity(ret_offset, ret_size);
+            const dest = try interp.ctx.memory.getSliceMut(ret_offset, copy_len);
+            @memcpy(dest, result.output[0..copy_len]);
+        }
+        if (copy_len < ret_size) {
+            const remaining = try interp.ctx.memory.getSliceMut(ret_offset + copy_len, ret_size - copy_len);
+            @memset(remaining, 0);
+        }
+    }
+
+    // Refund unused gas.
+    const gas_refund = gas_to_send -| result.gas_used;
+    interp.gas.used -|= gas_refund;
+
+    // Add sub-call refunds.
+    interp.gas.adjustRefund(result.gas_refund);
+
+    // Push success (1) or failure (0).
+    const success: u64 = if (result.status == .SUCCESS) 1 else 0;
+    try interp.ctx.stack.push(U256.fromU64(success));
 }
 
 /// Call another contract's code in current context (DELEGATECALL) - EIP-7.

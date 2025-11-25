@@ -273,9 +273,10 @@ test "CALLCODE: uses caller's context address" {
     const result = try evm.call(inputs);
     try expectEqual(ExecutionStatus.SUCCESS, result.status);
 
-    // For CALLCODE, ADDRESS should return target (code address).
+    // For CALLCODE, ADDRESS should return caller (executing context).
+    // CALLCODE executes target's code in caller's context (storage + address).
     const returned_address = th.extractAddressFromReturn(result.output);
-    try expect(std.mem.eql(u8, &returned_address.inner.bytes, &th.SIMPLE_TARGET.inner.bytes));
+    try expect(std.mem.eql(u8, &returned_address.inner.bytes, &th.SIMPLE_CALLER.inner.bytes));
 }
 
 test "DELEGATECALL preserves msg.value" {
@@ -663,4 +664,136 @@ test "Return data buffer updates between calls" {
     try mock.setCode(th.SIMPLE_TARGET, th.createStopContract());
     _ = try evm.call(inputs);
     try expectEqual(0, evm.return_data_buffer.len);
+}
+
+// ============================================================================
+// CALLCODE Tests
+// ============================================================================
+
+/// SSTORE value 42 to slot 0, then STOP.
+fn createSstoreContract() []const u8 {
+    return &[_]u8{
+        0x60, 0x2A, // PUSH1 42 (value)
+        0x60, 0x00, // PUSH1 0 (slot)
+        0x55, // SSTORE
+        0x00, // STOP
+    };
+}
+
+test "CALLCODE operations" {
+    const test_cases = [_]th.TestCase{
+        // CALLER opcode returns current contract address.
+        .{
+            .kind = .CALLCODE,
+            .target_code = th.createCallerReturner(),
+            .expected_caller_in_output = th.SIMPLE_CALLER,
+        },
+
+        // CALLVALUE returns stack value, no actual balance transfer.
+        .{
+            .kind = .CALLCODE,
+            .value = 1000,
+            .target_code = th.createCallvalueReturner(),
+            .caller_balance = 5000,
+            .target_balance = 0,
+            .expected_value_in_output = 1000,
+            .expected_caller_balance = 5000,
+            .expected_target_balance = 0,
+        },
+
+        // Out of gas handling.
+        .{
+            .kind = .CALLCODE,
+            .target_code = th.createOogContract(),
+            .gas_limit = 1000,
+            .expected_status = .OUT_OF_GAS,
+        },
+
+        // Basic success with return data.
+        .{
+            .kind = .CALLCODE,
+            .target_code = th.createValueReturner(99),
+            .expected_output_len = 32,
+            .expected_output_byte = 99,
+        },
+
+        // Call to empty account succeeds.
+        .{
+            .kind = .CALLCODE,
+            .target_code = null,
+            .expected_output_len = 0,
+        },
+    };
+
+    try th.runTestCases(&test_cases);
+}
+
+test "CALLCODE: storage written to caller not target" {
+    // CALLCODE executes target's code but writes to caller's storage.
+    const allocator = std.testing.allocator;
+    var env = Env.default();
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    try mock.setCode(th.SIMPLE_TARGET, createSstoreContract());
+
+    const inputs = CallExecutor.Inputs{
+        .kind = .CALLCODE,
+        .target = th.SIMPLE_TARGET,
+        .caller = th.SIMPLE_CALLER,
+        .value = U256.ZERO,
+        .input = &[_]u8{},
+        .gas_limit = 100000,
+        .transfer_value = false,
+    };
+
+    const result = try evm.call(inputs);
+    try expectEqual(ExecutionStatus.SUCCESS, result.status);
+
+    // Storage written to CALLER, not TARGET.
+    const h = mock.host();
+    try expect(h.sload(th.SIMPLE_CALLER, U256.ZERO).eql(U256.fromU64(42)));
+    try expect(h.sload(th.SIMPLE_TARGET, U256.ZERO).eql(U256.ZERO));
+}
+
+test "CALLCODE: storage reverts on failure" {
+    // Storage changes are reverted when CALLCODE fails.
+    const allocator = std.testing.allocator;
+    var env = Env.default();
+    var mock = MockHost.init(allocator);
+    defer mock.deinit();
+    const spec = Spec.forFork(.CANCUN);
+    var evm = Evm.init(allocator, &env, mock.host(), spec);
+    defer evm.deinit();
+
+    // SSTORE then REVERT.
+    const revert_after_sstore = &[_]u8{
+        0x60, 0x2A, // PUSH1 42
+        0x60, 0x00, // PUSH1 0
+        0x55, // SSTORE
+        0x60, 0x00, // PUSH1 0
+        0x60, 0x00, // PUSH1 0
+        0xFD, // REVERT
+    };
+    try mock.setCode(th.SIMPLE_TARGET, revert_after_sstore);
+
+    const inputs = CallExecutor.Inputs{
+        .kind = .CALLCODE,
+        .target = th.SIMPLE_TARGET,
+        .caller = th.SIMPLE_CALLER,
+        .value = U256.ZERO,
+        .input = &[_]u8{},
+        .gas_limit = 100000,
+        .transfer_value = false,
+    };
+
+    const result = try evm.call(inputs);
+    try expectEqual(ExecutionStatus.REVERT, result.status);
+
+    // Storage NOT modified (reverted).
+    const h = mock.host();
+    try expect(h.sload(th.SIMPLE_CALLER, U256.ZERO).eql(U256.ZERO));
 }
