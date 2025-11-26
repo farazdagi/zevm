@@ -331,7 +331,9 @@ pub fn call(self: *Evm, inputs: CallExecutor.Inputs) !CallExecutor.Result {
     }
 
     // Handle execution result.
-    if (result.status != .SUCCESS) {
+    // SELFDESTRUCT is treated as success for state commitment purposes.
+    const is_success = (result.status == .SUCCESS or result.status == .SELFDESTRUCT);
+    if (!is_success) {
         // Revert state on non-success.
         self.host.revertToSnapshot(snapshot);
 
@@ -344,7 +346,7 @@ pub fn call(self: *Evm, inputs: CallExecutor.Inputs) !CallExecutor.Result {
             }
         }
     } else {
-        // On success, discard the snapshot (keep current access list state).
+        // On success/selfdestruct, discard the snapshot (keep current access list state).
         if (self.access_list_snapshots.items.len > 0) {
             var snapshot_copy = self.access_list_snapshots.pop().?;
             snapshot_copy.deinit();
@@ -425,6 +427,10 @@ pub fn create(self: *Evm, inputs: CreateExecutor.Inputs) !CreateExecutor.Result 
         const al_snapshot = try al.clone(self.allocator);
         try self.access_list_snapshots.append(self.allocator, al_snapshot);
     }
+
+    // Mark address as created in this transaction (EIP-6780).
+    // This must be done AFTER snapshots so it reverts correctly on failure.
+    self.host.markCreatedInTx(address);
 
     // Increment caller nonce.
     self.host.incrementNonce(inputs.caller);
@@ -522,7 +528,7 @@ pub fn create(self: *Evm, inputs: CreateExecutor.Inputs) !CreateExecutor.Result 
     }
 
     // Handle execution result.
-    if (result.status == .SUCCESS) {
+    if (result.status == .SUCCESS or result.status == .SELFDESTRUCT) {
         // Check return data is valid runtime code.
         if (result.return_data) |runtime_code| {
             if (runtime_code.len > 0) {

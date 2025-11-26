@@ -195,7 +195,7 @@ pub fn opCall(interp: *Interpreter) !void {
     interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0) to stack.
-    const success: u64 = if (result.status == .SUCCESS) 1 else 0;
+    const success: u64 = if (result.status == .SUCCESS or result.status == .SELFDESTRUCT) 1 else 0;
     try interp.ctx.stack.push(U256.fromU64(success));
 }
 
@@ -281,7 +281,7 @@ pub fn opCallcode(interp: *Interpreter) !void {
     interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0).
-    const success: u64 = if (result.status == .SUCCESS) 1 else 0;
+    const success: u64 = if (result.status == .SUCCESS or result.status == .SELFDESTRUCT) 1 else 0;
     try interp.ctx.stack.push(U256.fromU64(success));
 }
 
@@ -358,7 +358,7 @@ pub fn opDelegatecall(interp: *Interpreter) !void {
     interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0) to stack.
-    const success: u64 = if (result.status == .SUCCESS) 1 else 0;
+    const success: u64 = if (result.status == .SUCCESS or result.status == .SELFDESTRUCT) 1 else 0;
     try interp.ctx.stack.push(U256.fromU64(success));
 }
 
@@ -433,21 +433,52 @@ pub fn opStaticcall(interp: *Interpreter) !void {
     interp.gas.adjustRefund(result.gas_refund);
 
     // Push success (1) or failure (0) to stack.
-    const success: u64 = if (result.status == .SUCCESS) 1 else 0;
+    const success: u64 = if (result.status == .SUCCESS or result.status == .SELFDESTRUCT) 1 else 0;
     try interp.ctx.stack.push(U256.fromU64(success));
 }
 
 /// Destroy contract and send funds (SELFDESTRUCT).
 ///
-/// Stack: [..., address] -> []
-/// Note: This operation requires state modifications and special handling.
-/// It will be handled specially in the interpreter's execute() function.
-pub fn opSelfdestruct(interp: *Interpreter) !void {
-    // SELFDESTRUCT is not allowed in static call context (STATICCALL).
+/// Stack: [beneficiary, ...] -> []
+///
+/// Transfers all balance from the current contract to the beneficiary address.
+/// Post-Cancun (EIP-6780): Only destroys contract if created in same transaction.
+/// Pre-London: Gives 24000 gas refund (if not already selfdestructed).
+///
+/// EIPs: EIP-150 (Tangerine), EIP-2929 (Berlin), EIP-3529 (London), EIP-6780 (Cancun)
+pub fn opSelfdestruct(interp: *Interpreter) Interpreter.Error!void {
+    // Disallow in static call context.
     if (interp.is_static) {
         return error.StateWriteInStaticCall;
     }
-    return error.UnimplementedOpcode;
+
+    // Pop beneficiary address from stack.
+    const beneficiary = Address.fromU256(try interp.ctx.stack.pop());
+    const self_address = interp.ctx.contract.address;
+
+    // EIP-6780 (Cancun+): Only destroy if created in this transaction.
+    // Pre-Cancun: Always destroy.
+    const destroy = if (interp.spec.hasEIP(6780))
+        interp.host.createdInTx(self_address)
+    else
+        true;
+
+    // Pre-London (EIP-3529): Give refund if first selfdestruct in this tx.
+    // EIP-3529 (London+): Removed SELFDESTRUCT refund entirely.
+    if (!interp.spec.hasEIP(3529)) {
+        if (!interp.host.hasSelfDestructed(self_address)) {
+            interp.gas.adjustRefund(@intCast(interp.spec.selfdestruct_refund));
+        }
+    }
+
+    // Execute selfdestruct: transfer balance and optionally destroy account.
+    _ = interp.host.selfdestruct(self_address, beneficiary, destroy);
+
+    // Mark that SELFDESTRUCT was called in this frame.
+    interp.selfdestruct_called = true;
+
+    // Halt execution.
+    interp.is_halted = true;
 }
 
 // ============================================================================

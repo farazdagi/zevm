@@ -205,6 +205,9 @@ has_prevrandao: bool = false,
 /// SELFDESTRUCT still available (may be removed in future)
 has_selfdestruct: bool = true,
 
+/// EIP-6780: SELFDESTRUCT only destroys contracts created in same transaction.
+has_eip6780: bool = false,
+
 /// EIP-1153: Transient storage (TLOAD, TSTORE)
 has_tstore: bool = false,
 
@@ -304,6 +307,8 @@ pub fn hasEIP(self: Spec, comptime eip: u16) bool {
         170 => self.max_code_size == 24576,
         // EIP-1559: Fee market
         1559 => self.has_base_fee,
+        // EIP-6780: SELFDESTRUCT only in same transaction
+        6780 => self.has_eip6780,
         else => false,
     };
 }
@@ -582,7 +587,7 @@ pub const FRONTIER = Spec{
             // Note: STATICCALL(0xFA) added in Byzantium
             // Note: REVERT(0xFD) added in Byzantium
             t[@intFromEnum(Opcode.INVALID)] = .{ .execute = InstructionTable.opInvalid, .is_control_flow = true };
-            t[@intFromEnum(Opcode.SELFDESTRUCT)] = .{ .execute = handlers.opSelfdestruct, .is_control_flow = true };
+            t[@intFromEnum(Opcode.SELFDESTRUCT)] = .{ .execute = handlers.opSelfdestruct, .dynamicGasCost = DynamicGasCosts.opSelfdestruct, .is_control_flow = true };
         }
     }.f,
 };
@@ -900,6 +905,7 @@ pub const CANCUN = forkSpec(.CANCUN, SHANGHAI, .{
     .has_blob_opcodes = true, // EIP-4844
     .has_tstore = true, // EIP-1153
     .has_mcopy = true, // EIP-5656
+    .has_eip6780 = true, // EIP-6780
     .has_blob_gas = true, // EIP-4844
     .target_blobs_per_block = 3, // EIP-4844
     .max_blobs_per_block = 6, // EIP-4844

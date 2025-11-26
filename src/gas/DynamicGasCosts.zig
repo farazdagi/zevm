@@ -585,6 +585,39 @@ pub fn opCreate2(interp: *Interpreter) !u64 {
     return createGas(interp, true);
 }
 
+/// Compute dynamic gas for SELFDESTRUCT operation.
+///
+/// Stack: [beneficiary, ...]
+/// Gas depends on:
+/// Cold/warm account access (Berlin+): 2600 if cold
+/// New account creation (Spurious Dragon+): 25000 if sending value to non-existent account
+///
+/// EIPs: EIP-150 (Tangerine), EIP-2929 (Berlin)
+pub fn opSelfdestruct(interp: *Interpreter) !u64 {
+    const beneficiary = Address.fromU256(try interp.ctx.stack.peek(0));
+
+    var total: u64 = 0;
+
+    // Cold account access cost (EIP-2929, Berlin+).
+    if (interp.spec.fork.isAtLeast(.BERLIN)) {
+        const is_cold = interp.access_list.warmAddress(beneficiary);
+        if (is_cold) {
+            total +|= interp.spec.cold_account_access_cost;
+        }
+    }
+
+    // New account creation cost (Spurious Dragon+).
+    // Only charged if transferring value to non-existent account.
+    if (interp.spec.fork.isAtLeast(.SPURIOUS_DRAGON)) {
+        const balance = interp.host.balance(interp.ctx.contract.address);
+        if (!balance.isZero() and !interp.host.accountExists(beneficiary)) {
+            total +|= interp.spec.call_new_account_cost;
+        }
+    }
+
+    return total;
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -1102,5 +1135,126 @@ test "CALL" {
         for (0..7) |_| {
             _ = try interp.ctx.stack.pop();
         }
+    }
+}
+
+test "SELFDESTRUCT" {
+    const allocator = std.testing.allocator;
+    const bytecode = &[_]u8{0x00};
+    const Env = @import("../context.zig").Env;
+    const MockHost = @import("../host/mock.zig").MockHost;
+    const env = Env.default();
+
+    const TestCase = struct {
+        fork: Spec.Fork = .CANCUN,
+        beneficiary: [20]u8 = [_]u8{0} ** 20,
+        // Self balance (contract executing SELFDESTRUCT).
+        self_balance: u64 = 0,
+        // If non-null, create beneficiary account with this balance.
+        beneficiary_balance: ?u64 = null,
+        // Expected gas components.
+        expected_cold_access: u64 = 0,
+        expected_new_account: u64 = 0,
+    };
+
+    const test_cases = [_]TestCase{
+        // Berlin+: Cold beneficiary access (2600 gas).
+        .{
+            .fork = .BERLIN,
+            .beneficiary = [_]u8{0} ** 18 ++ [_]u8{ 0x12, 0x34 },
+            .expected_cold_access = 2600,
+        },
+        // Berlin+: Cold access + new account creation (value transfer to non-existent).
+        .{
+            .fork = .BERLIN,
+            .beneficiary = [_]u8{0} ** 18 ++ [_]u8{ 0x56, 0x78 },
+            .self_balance = 100,
+            .expected_cold_access = 2600,
+            .expected_new_account = 25000,
+        },
+        // Berlin+: Cold access + existing beneficiary (no new account cost).
+        .{
+            .fork = .BERLIN,
+            .beneficiary = [_]u8{0} ** 18 ++ [_]u8{ 0x9a, 0xbc },
+            .self_balance = 100,
+            .beneficiary_balance = 50,
+            .expected_cold_access = 2600,
+            .expected_new_account = 0,
+        },
+        // Berlin+: Cold access + zero self balance (no new account cost).
+        .{
+            .fork = .BERLIN,
+            .beneficiary = [_]u8{0} ** 18 ++ [_]u8{ 0xde, 0xf0 },
+            .self_balance = 0,
+            .expected_cold_access = 2600,
+            .expected_new_account = 0,
+        },
+        // Pre-Berlin (Istanbul): No cold access cost.
+        .{
+            .fork = .ISTANBUL,
+            .beneficiary = [_]u8{0} ** 18 ++ [_]u8{ 0x11, 0x22 },
+            .self_balance = 100,
+            .expected_cold_access = 0,
+            .expected_new_account = 25000,
+        },
+        // Pre-Spurious Dragon (Tangerine): No new account cost.
+        .{
+            .fork = .TANGERINE,
+            .beneficiary = [_]u8{0} ** 18 ++ [_]u8{ 0x33, 0x44 },
+            .self_balance = 100,
+            .expected_cold_access = 0,
+            .expected_new_account = 0,
+        },
+    };
+
+    for (test_cases) |tc| {
+        var mock = MockHost.init(allocator);
+        defer mock.deinit();
+
+        // Set self balance.
+        const self_addr = Address.zero();
+        if (tc.self_balance > 0) {
+            try mock.setBalance(self_addr, U256.fromU64(tc.self_balance));
+        }
+
+        // Setup beneficiary account if specified.
+        if (tc.beneficiary_balance) |balance| {
+            const beneficiary = Address.init(tc.beneficiary);
+            try mock.setBalance(beneficiary, U256.fromU64(balance));
+        }
+
+        const spec = Spec.forFork(tc.fork);
+        const analyzed = try AnalyzedBytecode.initUncached(allocator, try allocator.dupe(u8, bytecode));
+        const ctx = try CallContext.init(
+            allocator,
+            analyzed,
+            self_addr,
+            Address.zero(),
+            U256.ZERO,
+        );
+        var return_data: []const u8 = &[_]u8{};
+        var interp = Interpreter.init(allocator, ctx, .{
+            .spec = spec,
+            .gas_limit = 1000000,
+            .env = &env,
+            .host = mock.host(),
+            .return_data_buffer = &return_data,
+            .is_static = false,
+            .call_executor = CallExecutor.noOp(),
+            .create_executor = CreateExecutor.noOp(),
+            .access_list = AccessList.Accessor.alwaysCold(),
+        });
+        defer interp.deinit();
+
+        // Push beneficiary address.
+        try interp.ctx.stack.push(U256.fromBeBytesPadded(&tc.beneficiary));
+
+        const gas = try opSelfdestruct(&interp);
+
+        const expected = tc.expected_cold_access + tc.expected_new_account;
+        try expectEqual(expected, gas);
+
+        // Cleanup stack.
+        _ = try interp.ctx.stack.pop();
     }
 }

@@ -26,6 +26,15 @@ pub const SstoreResult = struct {
     current_value: U256,
 };
 
+/// Result of SELFDESTRUCT operation with metadata for gas calculation.
+pub const SelfDestructResult = struct {
+    /// Whether the self-destructing contract had a non-zero balance.
+    had_value: bool,
+
+    /// Whether the beneficiary account existed before this operation.
+    target_exists: bool,
+};
+
 /// Opaque pointer to concrete implementation.
 ptr: *anyopaque,
 
@@ -141,6 +150,31 @@ pub const VTable = struct {
     /// The log's data field is borrowed from the interpreter's memory.
     /// The host implementation must copy the data if it needs to persist the log.
     log: *const fn (ptr: *anyopaque, log_entry: Log) void,
+
+    /// Check if account has been marked for self-destruction in this transaction.
+    ///
+    /// Returns true if the account was previously marked for destruction.
+    /// Used to determine if SELFDESTRUCT refund should be given (pre-London).
+    hasSelfDestructed: *const fn (ptr: *anyopaque, address: Address) bool,
+
+    /// Mark account for self-destruction and transfer balance to target.
+    ///
+    /// Transfers all balance from `address` to `target`.
+    /// If `destroy` is true, marks `address` for destruction (code, storage, nonce cleared).
+    /// Returns metadata needed for gas calculation.
+    selfdestruct: *const fn (ptr: *anyopaque, address: Address, target: Address, destroy: bool) SelfDestructResult,
+
+    /// Check if account was created in the current transaction.
+    ///
+    /// Used by EIP-6780 to determine if SELFDESTRUCT should destroy the contract.
+    /// Returns true if markCreatedInTx was called for this address.
+    createdInTx: *const fn (ptr: *anyopaque, address: Address) bool,
+
+    /// Mark account as created in the current transaction.
+    ///
+    /// Called by CREATE/CREATE2 after computing the new contract address.
+    /// Used by EIP-6780 SELFDESTRUCT logic.
+    markCreatedInTx: *const fn (ptr: *anyopaque, address: Address) void,
 };
 
 pub inline fn balance(self: Host, address: Address) U256 {
@@ -213,4 +247,20 @@ pub inline fn tstore(self: Host, address: Address, key: U256, value: U256) void 
 
 pub inline fn log(self: Host, log_entry: Log) void {
     self.vtable.log(self.ptr, log_entry);
+}
+
+pub inline fn hasSelfDestructed(self: Host, address: Address) bool {
+    return self.vtable.hasSelfDestructed(self.ptr, address);
+}
+
+pub inline fn selfdestruct(self: Host, address: Address, target: Address, destroy: bool) SelfDestructResult {
+    return self.vtable.selfdestruct(self.ptr, address, target, destroy);
+}
+
+pub inline fn createdInTx(self: Host, address: Address) bool {
+    return self.vtable.createdInTx(self.ptr, address);
+}
+
+pub inline fn markCreatedInTx(self: Host, address: Address) void {
+    self.vtable.markCreatedInTx(self.ptr, address);
 }

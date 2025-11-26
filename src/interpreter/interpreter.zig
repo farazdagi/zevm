@@ -31,6 +31,10 @@ pub const ExecutionStatus = enum {
     /// Execution completed successfully
     SUCCESS,
 
+    /// Contract self-destructed (SELFDESTRUCT opcode).
+    /// Treated as successful execution for call return values.
+    SELFDESTRUCT,
+
     /// Execution reverted (REVERT opcode)
     REVERT,
 
@@ -255,6 +259,11 @@ pub const Interpreter = struct {
     /// Access list accessor for EIP-2929 cold/warm tracking.
     access_list: AccessListAccessor,
 
+    /// Whether SELFDESTRUCT was executed in this call frame.
+    ///
+    /// Set by `opSelfdestruct` handler, checked by `buildResult`.
+    selfdestruct_called: bool,
+
     const Self = @This();
 
     /// Initialize interpreter with pre-created call context.
@@ -279,6 +288,7 @@ pub const Interpreter = struct {
             .call_executor = config.call_executor,
             .create_executor = config.create_executor,
             .access_list = config.access_list,
+            .selfdestruct_called = false,
         };
     }
 
@@ -457,7 +467,7 @@ pub const Interpreter = struct {
     /// Build the successful execution result.
     fn buildResult(self: *Self) InterpreterResult {
         return InterpreterResult{
-            .status = .SUCCESS,
+            .status = if (self.selfdestruct_called) .SELFDESTRUCT else .SUCCESS,
             .gas_used = self.gas.used,
             .gas_refund = self.gas.refunded,
             .return_data = self.return_data,

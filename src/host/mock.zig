@@ -16,14 +16,34 @@ const StorageMap = std.AutoHashMap(U256, U256);
 /// Address -> StorageMap mapping.
 const AccountStorageMap = std.AutoHashMap(Address, StorageMap);
 
+/// Set of addresses (for tracking destroyed/created addresses).
+const AddressSet = std.AutoHashMap(Address, void);
+
 /// Snapshot of host state for revert functionality.
 const Snapshot = struct {
+    /// Account balances at snapshot time.
     balances: std.AutoHashMap(Address, U256),
+
+    /// Account bytecode at snapshot time.
     codes: std.AutoHashMap(Address, []const u8),
+
+    /// Account nonces at snapshot time.
     nonces: std.AutoHashMap(Address, u64),
+
+    /// Persistent storage at snapshot time.
     storage: AccountStorageMap,
+
+    /// Transient storage at snapshot time (EIP-1153).
     transient_storage: AccountStorageMap,
-    log_index: usize, // For truncating logs on revert
+
+    /// Log count at snapshot time (for truncating on revert).
+    log_index: usize,
+
+    /// Created addresses at snapshot time (EIP-6780).
+    created_in_tx: AddressSet,
+
+    /// Destroyed addresses at snapshot time.
+    destroyed_in_tx: AddressSet,
 
     fn deinit(self: *Snapshot, allocator: Allocator) void {
         // Free all stored code in snapshot
@@ -48,6 +68,10 @@ const Snapshot = struct {
             slot_map.deinit();
         }
         self.transient_storage.deinit();
+
+        // Free tracking sets
+        self.created_in_tx.deinit();
+        self.destroyed_in_tx.deinit();
     }
 };
 
@@ -80,6 +104,14 @@ pub const MockHost = struct {
     /// Snapshots for state revert
     snapshots: std.ArrayList(Snapshot),
 
+    /// Addresses created in this transaction (EIP-6780).
+    /// Cleared by clearTransactionState().
+    created_in_tx: AddressSet,
+
+    /// Addresses marked for destruction in this transaction.
+    /// Cleared by clearTransactionState().
+    destroyed_in_tx: AddressSet,
+
     pub fn init(allocator: Allocator) MockHost {
         return .{
             .allocator = allocator,
@@ -91,6 +123,8 @@ pub const MockHost = struct {
             .transient_storage = AccountStorageMap.init(allocator),
             .logs = std.ArrayList(Log){},
             .snapshots = std.ArrayList(Snapshot){},
+            .created_in_tx = AddressSet.init(allocator),
+            .destroyed_in_tx = AddressSet.init(allocator),
         };
     }
 
@@ -136,6 +170,10 @@ pub const MockHost = struct {
             slot_map.deinit();
         }
         self.transient_storage.deinit();
+
+        // Free tracking sets
+        self.created_in_tx.deinit();
+        self.destroyed_in_tx.deinit();
     }
 
     /// Convert to Host interface
@@ -203,6 +241,10 @@ pub const MockHost = struct {
             slot_map.deinit();
         }
         self.transient_storage.clearRetainingCapacity();
+
+        // Clear create/destroyed address tracking (EIP-6780).
+        self.created_in_tx.clearRetainingCapacity();
+        self.destroyed_in_tx.clearRetainingCapacity();
     }
 
     // Vtable implementation
@@ -226,6 +268,10 @@ pub const MockHost = struct {
         .tload = tloadImpl,
         .tstore = tstoreImpl,
         .log = logImpl,
+        .hasSelfDestructed = hasSelfDestructedImpl,
+        .selfdestruct = selfdestructImpl,
+        .createdInTx = createdInTxImpl,
+        .markCreatedInTx = markCreatedInTxImpl,
     };
 
     fn balanceImpl(ptr: *anyopaque, address: Address) U256 {
@@ -323,6 +369,20 @@ pub const MockHost = struct {
             try snapshot_transient.put(entry.key_ptr.*, slot_map_copy);
         }
 
+        // Clone accounts created in tx.
+        var snapshot_created = AddressSet.init(self.allocator);
+        var created_iter = self.created_in_tx.keyIterator();
+        while (created_iter.next()) |key| {
+            try snapshot_created.put(key.*, {});
+        }
+
+        // Clone accounts destroyed in tx.
+        var snapshot_destroyed = AddressSet.init(self.allocator);
+        var destroyed_iter = self.destroyed_in_tx.keyIterator();
+        while (destroyed_iter.next()) |key| {
+            try snapshot_destroyed.put(key.*, {});
+        }
+
         const snapshot = Snapshot{
             .balances = snapshot_balances,
             .codes = snapshot_codes,
@@ -330,6 +390,8 @@ pub const MockHost = struct {
             .storage = snapshot_storage,
             .transient_storage = snapshot_transient,
             .log_index = self.logs.items.len,
+            .created_in_tx = snapshot_created,
+            .destroyed_in_tx = snapshot_destroyed,
         };
 
         try self.snapshots.append(self.allocator, snapshot);
@@ -431,6 +493,26 @@ pub const MockHost = struct {
                 };
             }
             self.transient_storage.put(entry.key_ptr.*, slot_map_copy) catch {
+                @panic("Out of memory during revert");
+            };
+        }
+
+        // Free current tracking sets and restore from snapshot.
+        self.created_in_tx.deinit();
+        self.destroyed_in_tx.deinit();
+
+        self.created_in_tx = AddressSet.init(self.allocator);
+        var created_iter = snapshot.created_in_tx.keyIterator();
+        while (created_iter.next()) |key| {
+            self.created_in_tx.put(key.*, {}) catch {
+                @panic("Out of memory during revert");
+            };
+        }
+
+        self.destroyed_in_tx = AddressSet.init(self.allocator);
+        var destroyed_iter = snapshot.destroyed_in_tx.keyIterator();
+        while (destroyed_iter.next()) |key| {
+            self.destroyed_in_tx.put(key.*, {}) catch {
                 @panic("Out of memory during revert");
             };
         }
@@ -617,6 +699,77 @@ pub const MockHost = struct {
         log_copy.data = data_copy;
 
         self.logs.append(self.allocator, log_copy) catch @panic("OOM");
+    }
+
+    fn hasSelfDestructedImpl(ptr: *anyopaque, address: Address) bool {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+        return self.destroyed_in_tx.contains(address);
+    }
+
+    fn selfdestructImpl(ptr: *anyopaque, address: Address, target: Address, destroy: bool) Host.SelfDestructResult {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+
+        const balance = self.balances.get(address) orelse U256.ZERO;
+        const had_value = !balance.isZero();
+        const target_exists = accountExistsImpl(ptr, target);
+
+        // Transfer balance to beneficiary.
+        //
+        // Self-send (address == target) is a no-op for balance.
+        // This matters for EIP-6780 (Cancun+) where a contract not created in the same transaction
+        // can SELFDESTRUCT to itself.
+        //
+        // If we zeroed balance unconditionally, self-send without destruction would incorrectly
+        // burn the balance.
+        if (had_value and !address.eql(target)) {
+            // Different target: transfer balance from self to target.
+            self.balances.put(address, U256.ZERO) catch @panic("OOM");
+            const target_balance = self.balances.get(target) orelse U256.ZERO;
+            self.balances.put(target, target_balance.add(balance)) catch @panic("OOM");
+        }
+        // Self-send: no balance change needed (transfer to self is no-op).
+        // If destroy=true, removeAccount() below will zero the balance.
+
+        // Mark for destruction and remove account state.
+        if (destroy) {
+            self.destroyed_in_tx.put(address, {}) catch @panic("OOM");
+            self.removeAccount(address);
+        }
+
+        return .{
+            .had_value = had_value,
+            .target_exists = target_exists,
+        };
+    }
+
+    fn createdInTxImpl(ptr: *anyopaque, address: Address) bool {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+        return self.created_in_tx.contains(address);
+    }
+
+    fn markCreatedInTxImpl(ptr: *anyopaque, address: Address) void {
+        const self: *MockHost = @ptrCast(@alignCast(ptr));
+        self.created_in_tx.put(address, {}) catch @panic("OOM");
+    }
+
+    /// Remove all state for an account (balance, code, nonce, storage).
+    pub fn removeAccount(self: *MockHost, address: Address) void {
+        // Remove balance
+        _ = self.balances.remove(address);
+
+        // Remove and free code
+        if (self.codes.fetchRemove(address)) |kv| {
+            self.allocator.free(kv.value);
+        }
+
+        // Remove nonce
+        _ = self.nonces.remove(address);
+
+        // Remove and free storage
+        if (self.storage.fetchRemove(address)) |kv| {
+            var slot_map = kv.value;
+            slot_map.deinit();
+        }
     }
 
     /// Get all emitted logs (transaction-level).
@@ -1220,106 +1373,276 @@ test "MockHost: log data survives source modification" {
     try expectEqualSlices(u8, "original", logs[0].data);
 }
 
-test "MockHost: accountExists returns true for non-empty account" {
-    var mock = MockHost.init(std.testing.allocator);
-    defer mock.deinit();
+test "MockHost: accountExists" {
+    const TestCase = struct {
+        has_balance: bool,
+        has_code: bool,
+        has_nonce: bool,
+        expected_exists: bool,
+    };
 
-    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const test_cases = [_]TestCase{
+        // Empty account does not exist.
+        .{ .has_balance = false, .has_code = false, .has_nonce = false, .expected_exists = false },
+        // Account with balance exists.
+        .{ .has_balance = true, .has_code = false, .has_nonce = false, .expected_exists = true },
+        // Account with code exists.
+        .{ .has_balance = false, .has_code = true, .has_nonce = false, .expected_exists = true },
+        // Account with nonce exists.
+        .{ .has_balance = false, .has_code = false, .has_nonce = true, .expected_exists = true },
+        // Account with all properties exists.
+        .{ .has_balance = true, .has_code = true, .has_nonce = true, .expected_exists = true },
+    };
 
-    // Account doesn't exist initially.
-    try expect(!mock.host().accountExists(addr));
+    for (test_cases) |tc| {
+        var mock = MockHost.init(std.testing.allocator);
+        defer mock.deinit();
 
-    // Set balance - account should exist.
-    try mock.setBalance(addr, U256.fromU64(100));
-    try expect(mock.host().accountExists(addr));
+        const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
 
-    // New account with code should exist.
-    const addr2 = Address.fromHex("0x2234567890123456789012345678901234567890") catch unreachable;
-    const code = [_]u8{ 0x60, 0x00 };
-    try mock.host().setCode(addr2, &code);
-    try expect(mock.host().accountExists(addr2));
+        if (tc.has_balance) try mock.setBalance(addr, U256.fromU64(100));
+        if (tc.has_code) try mock.host().setCode(addr, &[_]u8{ 0x60, 0x00 });
+        if (tc.has_nonce) mock.host().incrementNonce(addr);
 
-    // New account with nonce should exist.
-    const addr3 = Address.fromHex("0x3234567890123456789012345678901234567890") catch unreachable;
-    mock.host().incrementNonce(addr3);
-    try expect(mock.host().accountExists(addr3));
+        try expectEqual(tc.expected_exists, mock.host().accountExists(addr));
+    }
 }
 
-test "MockHost: accountExists returns false for empty account" {
+test "MockHost: setCode" {
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
 
     const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const code1 = [_]u8{ 0x60, 0x00 };
+    const code2 = [_]u8{ 0x60, 0xff, 0x60, 0x00, 0xf3 };
 
-    // Non-existent account.
-    try expect(!mock.host().accountExists(addr));
+    // Initially no code.
+    try expectEqual(0, mock.host().codeSize(addr));
+
+    // Set code stores bytecode.
+    try mock.host().setCode(addr, &code1);
+    const retrieved1 = try mock.host().code(addr);
+    defer std.testing.allocator.free(retrieved1);
+    try expectEqualSlices(u8, &code1, retrieved1);
+
+    // Set code replaces existing code.
+    try mock.host().setCode(addr, &code2);
+    const retrieved2 = try mock.host().code(addr);
+    defer std.testing.allocator.free(retrieved2);
+    try expectEqualSlices(u8, &code2, retrieved2);
 }
 
-test "MockHost: setCode stores bytecode" {
-    var mock = MockHost.init(std.testing.allocator);
-    defer mock.deinit();
-
-    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
-    const code = [_]u8{ 0x60, 0x00, 0x60, 0x00, 0xf3 };
-
-    // Set code.
-    try mock.host().setCode(addr, &code);
-
-    // Verify code was stored.
-    const retrieved = try mock.host().code(addr);
-    defer std.testing.allocator.free(retrieved);
-    try expectEqualSlices(u8, &code, retrieved);
-}
-
-test "MockHost: setCode replaces existing code" {
-    var mock = MockHost.init(std.testing.allocator);
-    defer mock.deinit();
-
-    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
-    const old_code = [_]u8{ 0x60, 0x00 };
-    const new_code = [_]u8{ 0x60, 0xff, 0x60, 0x00, 0xf3 };
-
-    // Set initial code.
-    try mock.host().setCode(addr, &old_code);
-
-    // Replace with new code.
-    try mock.host().setCode(addr, &new_code);
-
-    // Verify new code is stored.
-    const retrieved = try mock.host().code(addr);
-    defer std.testing.allocator.free(retrieved);
-    try expectEqualSlices(u8, &new_code, retrieved);
-}
-
-test "MockHost: incrementNonce increases nonce" {
+test "MockHost: incrementNonce" {
     var mock = MockHost.init(std.testing.allocator);
     defer mock.deinit();
 
     const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
 
-    // Set initial nonce.
-    try mock.nonces.put(addr, 5);
-    try expectEqual(5, mock.host().nonce(addr));
-
-    // Increment.
-    mock.host().incrementNonce(addr);
-    try expectEqual(6, mock.host().nonce(addr));
-
-    // Increment again.
-    mock.host().incrementNonce(addr);
-    try expectEqual(7, mock.host().nonce(addr));
-}
-
-test "MockHost: incrementNonce starts from 0 for new account" {
-    var mock = MockHost.init(std.testing.allocator);
-    defer mock.deinit();
-
-    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
-
-    // New account has nonce 0.
+    // New account starts with nonce 0.
     try expectEqual(0, mock.host().nonce(addr));
 
-    // Increment creates nonce entry with value 1.
+    // First increment creates nonce entry with value 1.
     mock.host().incrementNonce(addr);
     try expectEqual(1, mock.host().nonce(addr));
+
+    // Subsequent increments increase nonce.
+    mock.host().incrementNonce(addr);
+    try expectEqual(2, mock.host().nonce(addr));
+
+    mock.host().incrementNonce(addr);
+    try expectEqual(3, mock.host().nonce(addr));
+}
+
+test "MockHost: hasSelfDestructed" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const target = Address.fromHex("0x2234567890123456789012345678901234567890") catch unreachable;
+
+    // Initially false.
+    try expect(!mock.host().hasSelfDestructed(addr));
+
+    // True after selfdestruct with destroy=true.
+    try mock.setBalance(addr, U256.fromU64(100));
+    _ = mock.host().selfdestruct(addr, target, true);
+    try expect(mock.host().hasSelfDestructed(addr));
+}
+
+test "MockHost: createdInTx" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+
+    // Initially false.
+    try expect(!mock.host().createdInTx(addr));
+
+    // True after markCreatedInTx.
+    mock.host().markCreatedInTx(addr);
+    try expect(mock.host().createdInTx(addr));
+}
+
+test "MockHost: selfdestruct" {
+    const TestCase = struct {
+        self_send: bool,
+        destroy: bool,
+        target_initial: u64,
+        has_code: bool,
+        has_nonce: bool,
+        // Expected outcomes.
+        expected_addr_balance: u64,
+        expected_target_balance: u64,
+        expected_addr_exists: bool,
+        expected_code_size: usize,
+        expected_nonce: u64,
+    };
+
+    const test_cases = [_]TestCase{
+        // Transfer to different target with destroy=true.
+        .{
+            .self_send = false,
+            .destroy = true,
+            .target_initial = 50,
+            .has_code = false,
+            .has_nonce = false,
+            .expected_addr_balance = 0,
+            .expected_target_balance = 150,
+            .expected_addr_exists = false,
+            .expected_code_size = 0,
+            .expected_nonce = 0,
+        },
+        // Self-send with destroy=true burns balance (account removed).
+        .{
+            .self_send = true,
+            .destroy = true,
+            .target_initial = 0,
+            .has_code = false,
+            .has_nonce = false,
+            .expected_addr_balance = 0,
+            .expected_target_balance = 0,
+            .expected_addr_exists = false,
+            .expected_code_size = 0,
+            .expected_nonce = 0,
+        },
+        // Self-send with destroy=false preserves balance (EIP-6780).
+        .{
+            .self_send = true,
+            .destroy = false,
+            .target_initial = 0,
+            .has_code = false,
+            .has_nonce = false,
+            .expected_addr_balance = 100,
+            .expected_target_balance = 100,
+            .expected_addr_exists = true,
+            .expected_code_size = 0,
+            .expected_nonce = 0,
+        },
+        // destroy=true removes code, nonce, storage.
+        .{
+            .self_send = false,
+            .destroy = true,
+            .target_initial = 0,
+            .has_code = true,
+            .has_nonce = true,
+            .expected_addr_balance = 0,
+            .expected_target_balance = 100,
+            .expected_addr_exists = false,
+            .expected_code_size = 0,
+            .expected_nonce = 0,
+        },
+        // destroy=false transfers balance but preserves code/nonce (EIP-6780).
+        .{
+            .self_send = false,
+            .destroy = false,
+            .target_initial = 0,
+            .has_code = true,
+            .has_nonce = true,
+            .expected_addr_balance = 0,
+            .expected_target_balance = 100,
+            .expected_addr_exists = true,
+            .expected_code_size = 2,
+            .expected_nonce = 5,
+        },
+    };
+
+    for (test_cases) |tc| {
+        var mock = MockHost.init(std.testing.allocator);
+        defer mock.deinit();
+
+        const addr = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+        const target = if (tc.self_send) addr else Address.fromHex("0x2234567890123456789012345678901234567890") catch unreachable;
+
+        // Set up contract.
+        try mock.setBalance(addr, U256.fromU64(100));
+        if (!tc.self_send and tc.target_initial > 0) {
+            try mock.setBalance(target, U256.fromU64(tc.target_initial));
+        }
+        if (tc.has_code) try mock.setCode(addr, &[_]u8{ 0x60, 0x00 });
+        if (tc.has_nonce) try mock.setNonce(addr, 5);
+
+        // Execute selfdestruct.
+        _ = mock.host().selfdestruct(addr, target, tc.destroy);
+
+        // Verify outcomes.
+        try expectEqual(U256.fromU64(tc.expected_addr_balance), mock.host().balance(addr));
+        try expectEqual(U256.fromU64(tc.expected_target_balance), mock.host().balance(target));
+        try expectEqual(tc.expected_addr_exists, mock.host().accountExists(addr));
+        try expectEqual(tc.expected_code_size, mock.host().codeSize(addr));
+        try expectEqual(tc.expected_nonce, mock.host().nonce(addr));
+    }
+}
+
+test "MockHost: clearTransactionState resets both tracking sets" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr1 = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const addr2 = Address.fromHex("0x2234567890123456789012345678901234567890") catch unreachable;
+
+    // Mark addresses.
+    mock.host().markCreatedInTx(addr1);
+    try mock.setBalance(addr2, U256.fromU64(100));
+    _ = mock.host().selfdestruct(addr2, addr1, true);
+
+    try expect(mock.host().createdInTx(addr1));
+    try expect(mock.host().hasSelfDestructed(addr2));
+
+    // Clear transaction state.
+    mock.clearTransactionState();
+
+    // Both tracking sets should be cleared.
+    try expect(!mock.host().createdInTx(addr1));
+    try expect(!mock.host().hasSelfDestructed(addr2));
+}
+
+test "MockHost: revert restores tracking sets" {
+    var mock = MockHost.init(std.testing.allocator);
+    defer mock.deinit();
+
+    const addr1 = Address.fromHex("0x1234567890123456789012345678901234567890") catch unreachable;
+    const addr2 = Address.fromHex("0x2234567890123456789012345678901234567890") catch unreachable;
+    const h = mock.host();
+
+    // Set up contract for selfdestruct test.
+    try mock.setBalance(addr2, U256.fromU64(100));
+
+    // Create snapshot before modifications.
+    const snap_id = try h.snapshot();
+
+    // Mark created and destroyed.
+    h.markCreatedInTx(addr1);
+    _ = h.selfdestruct(addr2, addr1, true);
+
+    // Verify both tracking sets updated.
+    try expect(h.createdInTx(addr1));
+    try expect(h.hasSelfDestructed(addr2));
+
+    // Revert to snapshot.
+    h.revertToSnapshot(snap_id);
+
+    // Both tracking sets should be restored.
+    try expect(!h.createdInTx(addr1));
+    try expect(!h.hasSelfDestructed(addr2));
+    try expectEqual(U256.fromU64(100), h.balance(addr2));
 }
