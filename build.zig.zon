@@ -31,7 +31,23 @@
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
-    .dependencies = .{},
+    .dependencies = .{
+        .secp256k1 = .{
+            .url = "https://github.com/bitcoin-core/secp256k1/archive/refs/tags/v0.7.0.tar.gz",
+            .hash = "N-V-__8AADzeWgDl76R4dUYs2gLQu3YU3ndQvCb6IX20OuAw",
+            .lazy = true,
+        },
+        .mcl = .{
+            .url = "https://github.com/herumi/mcl/archive/refs/tags/v3.04.tar.gz",
+            .hash = "N-V-__8AAJ5LOwAk0_668msKUyA4IArprUwIQCesqghjucYS",
+            .lazy = true,
+        },
+        .blst = .{
+            .url = "https://github.com/supranational/blst/archive/refs/tags/v0.3.15.tar.gz",
+            .hash = "N-V-__8AAKDMOgDp0ule4-ieF6xoW2euEGpOwOyBPo-KRj_a",
+            .lazy = true,
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
